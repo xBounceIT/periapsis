@@ -1,0 +1,318 @@
+.tenant-settings-page {
+  --tenant-preview-primary: #172230;
+  --tenant-preview-accent: #4ea5b5;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.tenant-settings-page__heading {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.tenant-settings-page__heading > div {
+  max-width: 47rem;
+}
+
+.tenant-settings-page__heading h1 {
+  margin-bottom: 0.6rem;
+}
+
+.tenant-settings-page__heading > [data-slot="badge"] {
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+}
+
+.tenant-settings-page__notice {
+  border-left: 3px solid var(--periapsis-teal);
+}
+
+.tenant-settings-page__error {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.tenant-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(17rem, 0.72fr) minmax(0, 1.55fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.tenant-brand-preview {
+  position: sticky;
+  top: 6.2rem;
+  min-height: 31rem;
+  overflow: hidden;
+  padding: 1.6rem;
+  color: #edf2f6;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--tenant-preview-primary) 26%, transparent),
+      transparent 54%
+    ),
+    var(--periapsis-navy);
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-top: 0.3rem solid var(--tenant-preview-accent);
+  border-radius: 1rem;
+  box-shadow: 0 1rem 2.8rem rgb(23 34 48 / 16%);
+}
+
+.tenant-brand-preview__orbit {
+  position: absolute;
+  top: -3.2rem;
+  right: -5rem;
+  width: 18rem;
+  height: 10rem;
+  pointer-events: none;
+  border: 1px solid
+    color-mix(in srgb, var(--tenant-preview-accent) 52%, transparent);
+  border-radius: 50%;
+  transform: rotate(-16deg);
+}
+
+.tenant-brand-preview__orbit span {
+  position: absolute;
+  right: 5.3rem;
+  bottom: -0.38rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  background: var(--tenant-preview-accent);
+  border: 2px solid var(--periapsis-navy);
+  border-radius: 50%;
+}
+
+.tenant-brand-preview__label {
+  position: relative;
+  margin: 0;
+  color: #aebbc7;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tenant-brand-preview__identity {
+  position: relative;
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 2.2rem 0 2rem;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.tenant-brand-preview__mark {
+  display: grid;
+  width: 3.3rem;
+  height: 3.3rem;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--tenant-preview-primary) 78%, #172230);
+  border: 2px solid var(--tenant-preview-accent);
+  border-radius: 0.9rem;
+}
+
+.tenant-brand-preview__identity strong,
+.tenant-brand-preview__identity small {
+  display: block;
+}
+
+.tenant-brand-preview__identity strong {
+  max-width: 14rem;
+  overflow: hidden;
+  color: #fff;
+  font-size: 1.02rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-brand-preview__identity small {
+  margin-top: 0.2rem;
+  color: #9eacbb;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.63rem;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.tenant-brand-preview dl {
+  display: grid;
+  gap: 1.1rem;
+  margin: 1.5rem 0 0;
+}
+
+.tenant-brand-preview dl > div {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.tenant-brand-preview dt {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  color: #92a3b2;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tenant-brand-preview dt svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.tenant-brand-preview dd {
+  margin: 0;
+  color: #fff;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+}
+
+.tenant-settings-card {
+  overflow: hidden;
+  border-top: 3px solid var(--tenant-preview-accent);
+}
+
+.tenant-settings-card__title {
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.tenant-settings-card__title > span {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  color: var(--periapsis-navy);
+  background: var(--periapsis-teal-pale);
+  border-radius: 0.7rem;
+}
+
+.tenant-settings-card__title svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.tenant-settings-form fieldset {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.tenant-settings-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.15rem;
+}
+
+.tenant-settings-form__mark-input {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tenant-settings-color-field {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.tenant-settings-color-field input[type="color"] {
+  width: 3rem;
+  height: 2.5rem;
+  padding: 0.2rem;
+  cursor: pointer;
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.45rem;
+}
+
+.tenant-settings-color-field input[type="color"]:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.tenant-settings-color-field input[type="text"] {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.tenant-settings-form__commit {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1.35rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--periapsis-line);
+}
+
+.tenant-settings-form__actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tenant-settings-form__actions p,
+.tenant-settings-form__readonly {
+  margin: 0;
+  color: var(--periapsis-muted);
+  font-size: 0.76rem;
+}
+
+.tenant-settings-form__actions p {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.tenant-settings-form__actions p svg {
+  width: 0.92rem;
+  height: 0.92rem;
+  color: var(--periapsis-teal);
+}
+
+.tenant-settings-form__readonly {
+  padding: 1rem;
+  margin-top: 1.5rem;
+  background: var(--periapsis-teal-pale);
+  border-left: 3px solid var(--periapsis-teal);
+  border-radius: 0.4rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 62rem) {
+  .tenant-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tenant-brand-preview {
+    position: relative;
+    top: auto;
+    min-height: auto;
+  }
+}
+
+@media (max-width: 42rem) {
+  .tenant-settings-page__heading,
+  .tenant-settings-form__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tenant-settings-form__grid {
+    grid-template-columns: 1fr;
+  }
+}

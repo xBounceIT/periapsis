@@ -1,0 +1,108 @@
+.custom-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.custom-field-grid > legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.2rem;
+  color: var(--periapsis-navy);
+  font-size: 1rem;
+  font-weight: 680;
+}
+
+.custom-field {
+  display: grid;
+  align-content: start;
+  gap: 0.48rem;
+  min-width: 0;
+  padding: 0.9rem;
+  background: color-mix(in srgb, var(--periapsis-paper) 90%, white);
+  border: 1px solid var(--periapsis-line);
+  border-left: 3px solid var(--periapsis-teal);
+  border-radius: 0.45rem;
+}
+
+.custom-field[data-readonly] {
+  border-left-color: var(--periapsis-line);
+}
+
+.custom-field__heading,
+.custom-field__badges,
+.custom-field__boolean,
+.custom-field__null-control,
+.custom-field__presence-control {
+  display: flex;
+  align-items: center;
+}
+
+.custom-field__heading {
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.custom-field__badges,
+.custom-field__boolean,
+.custom-field__null-control,
+.custom-field__presence-control {
+  gap: 0.45rem;
+}
+
+.custom-field__description,
+.custom-field__error,
+.custom-field-empty {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.custom-field__description,
+.custom-field-empty {
+  color: var(--periapsis-muted);
+}
+
+.custom-field__error {
+  color: var(--periapsis-danger);
+  font-weight: 620;
+}
+
+.custom-field select {
+  min-height: 2.5rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  color: var(--periapsis-ink);
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.45rem;
+}
+
+.custom-field select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--periapsis-teal) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.custom-field select[multiple] {
+  min-height: 7rem;
+}
+
+.custom-field__code {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.custom-field__boolean,
+.custom-field__null-control,
+.custom-field__presence-control {
+  width: fit-content;
+  color: var(--periapsis-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 50rem) {
+  .custom-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

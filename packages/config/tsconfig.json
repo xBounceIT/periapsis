@@ -1,0 +1,4 @@
+{
+  "extends": "@periapsis/tsconfig/base.json",
+  "include": ["src"]
+}

@@ -1,0 +1,4 @@
+version: 1
+
+# Intentionally empty. Auth-test identities must be created explicitly with
+# operator-supplied ephemeral credentials; never inherit upstream sample passwords.

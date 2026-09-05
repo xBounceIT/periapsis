@@ -1,0 +1,1616 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787472409685,
+      "tag": "0000_little_red_shift",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787472415216,
+      "tag": "0001_security_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787473527702,
+      "tag": "0002_redundant_magus",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787473536723,
+      "tag": "0003_audit_chain_concurrency",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787474082034,
+      "tag": "0004_uuidv7_fail_closed",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787474089267,
+      "tag": "0005_audit_tail_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787475027656,
+      "tag": "0006_audit_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787475184077,
+      "tag": "0007_schema_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787488565252,
+      "tag": "0008_phase_2a_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787488569966,
+      "tag": "0009_phase_2a_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787492910536,
+      "tag": "0010_phase_2b_tenant_rbac",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787493031146,
+      "tag": "0011_phase_2b_tenant_rbac_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787494284382,
+      "tag": "0012_youthful_the_initiative",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787495115125,
+      "tag": "0013_smooth_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787495293635,
+      "tag": "0014_lumpy_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787495819997,
+      "tag": "0015_fix_tenant_role_policy_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787495999394,
+      "tag": "0016_fix_auth_admission_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787496124539,
+      "tag": "0017_audit_verifier_least_privilege",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787496880587,
+      "tag": "0018_polite_boom_boom",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787496982733,
+      "tag": "0019_colossal_naoko",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787496987011,
+      "tag": "0020_phase_2b_security_groups_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787501702276,
+      "tag": "0021_direct_grant_supersession_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787506296280,
+      "tag": "0022_tenant_role_policy_mutation_result",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787507888755,
+      "tag": "0023_archived_role_direct_grant_revoke",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787508523197,
+      "tag": "0024_direct_grant_inventory_boundary_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787516694668,
+      "tag": "0025_authorization_compatibility_and_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787571776845,
+      "tag": "0026_schema_compatibility_fail_closed",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787581350373,
+      "tag": "0027_flimsy_bloodscream",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787581530382,
+      "tag": "0028_phase_2b_operator_teams_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787582150087,
+      "tag": "0029_operator_team_readiness_v4",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787591930962,
+      "tag": "0030_operator_team_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787591938733,
+      "tag": "0031_operator_team_hardening_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787592230466,
+      "tag": "0032_operator_team_readiness_v5",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787612620574,
+      "tag": "0033_service_principal_preflight",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787613580320,
+      "tag": "0034_service_principal_additive",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787613592459,
+      "tag": "0035_service_principal_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787613744526,
+      "tag": "0036_service_principal_final",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787613746038,
+      "tag": "0037_service_principal_alert_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787613747552,
+      "tag": "0038_service_principal_readiness_v6",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1787613749000,
+      "tag": "0039_service_principal_audit_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787635396524,
+      "tag": "0040_identity_provider_preflight",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787635417084,
+      "tag": "0041_identity_provider_additive",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1787635433516,
+      "tag": "0042_identity_provider_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1787635452090,
+      "tag": "0043_identity_provider_final",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787635459707,
+      "tag": "0044_identity_provider_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1787635471570,
+      "tag": "0045_identity_provider_crud",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1787635525474,
+      "tag": "0046_identity_profile_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1787635788324,
+      "tag": "0047_identity_provider_test_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1787635828723,
+      "tag": "0048_identity_provider_test_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787637794128,
+      "tag": "0049_identity_provider_keyring_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1787637795761,
+      "tag": "0050_identity_provider_readiness_v7",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787643146844,
+      "tag": "0051_complex_the_santerians",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787643153628,
+      "tag": "0052_identity_access_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787643609827,
+      "tag": "0053_identity_access_readiness_v8",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787648180127,
+      "tag": "0054_magical_the_spike",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1787648190820,
+      "tag": "0055_lazy_taskmaster",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1787648201836,
+      "tag": "0056_identity_mapping_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1787648215689,
+      "tag": "0057_identity_provider_binding_idempotency_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1787648225321,
+      "tag": "0058_identity_mapping_readiness_v9",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787649465766,
+      "tag": "0059_certain_psynapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1787649478666,
+      "tag": "0060_identity_directory_operation_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1787649523649,
+      "tag": "0061_tired_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1787649541586,
+      "tag": "0062_identity_directory_operation_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787650610199,
+      "tag": "0063_serious_pixie",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1787650730983,
+      "tag": "0064_identity_directory_operation_readiness_v10",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1787653130160,
+      "tag": "0065_sweet_richard_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1787653143051,
+      "tag": "0066_identity_jit_sync_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1787653149806,
+      "tag": "0067_identity_jit_sync_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1787653151267,
+      "tag": "0068_identity_sync_lifecycle_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1787653305313,
+      "tag": "0069_productive_maverick",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1787655186569,
+      "tag": "0070_late_ozymandias",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1787655192148,
+      "tag": "0071_identity_jit_preauth_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1787655197869,
+      "tag": "0072_identity_jit_preauth_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1787655813403,
+      "tag": "0073_bright_proudstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1787655819028,
+      "tag": "0074_identity_sync_worker_claim_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1787655824109,
+      "tag": "0075_identity_jit_sync_readiness_v11",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1787657661213,
+      "tag": "0076_thin_korath",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1787657666680,
+      "tag": "0077_identity_sync_fenced_worker_abi_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1787658281433,
+      "tag": "0078_condemned_hardball",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1787658434202,
+      "tag": "0079_identity_sync_fenced_readiness_v12",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1787659622481,
+      "tag": "0080_identity_sync_access_grant_planning_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1787659623982,
+      "tag": "0081_identity_sync_readiness_v13",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1787664581262,
+      "tag": "0082_ancient_hydra",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1787664767505,
+      "tag": "0083_ticketing_foundation_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1787664955067,
+      "tag": "0084_petite_sentry",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1787665119323,
+      "tag": "0085_skinny_phil_sheldon",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1787665128173,
+      "tag": "0086_ticketing_transaction_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1787672101246,
+      "tag": "0087_optimal_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1787672114811,
+      "tag": "0088_phase4_tenant_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1787672134042,
+      "tag": "0089_phase4_transaction_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1787673489517,
+      "tag": "0090_early_madelyne_pryor",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1787677373554,
+      "tag": "0091_spooky_hellfire_club",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1787677383849,
+      "tag": "0092_phase6_notification_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1787677403239,
+      "tag": "0093_phase6_notification_dispatch_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1787677416302,
+      "tag": "0094_phase6_notification_planning_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1787677427915,
+      "tag": "0095_phase6_notification_delivery_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1787679172524,
+      "tag": "0096_phase6_notification_administration_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1787680410777,
+      "tag": "0097_lowly_may_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1787680424626,
+      "tag": "0098_phase6_notification_trace_and_test_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1787682162037,
+      "tag": "0099_common_purple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1787686749137,
+      "tag": "0100_easy_stark_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1787689670779,
+      "tag": "0101_contacts_portal_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1787692062461,
+      "tag": "0102_hard_warbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1787693815749,
+      "tag": "0103_crazy_scarlet_witch",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1787698427209,
+      "tag": "0104_dazzling_morph",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1787698449287,
+      "tag": "0105_sla_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1787699142047,
+      "tag": "0106_sla_abi_and_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1787705439947,
+      "tag": "0107_nasty_revanche",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1787705463307,
+      "tag": "0108_remarkable_slipstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1787705470675,
+      "tag": "0109_contacts_portal_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1787705476966,
+      "tag": "0110_contacts_portal_fanout",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1787705484785,
+      "tag": "0111_contacts_portal_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1787705491869,
+      "tag": "0112_contacts_portal_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1787707721918,
+      "tag": "0113_sla_configuration_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1787707724010,
+      "tag": "0114_sla_runtime_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1787707726069,
+      "tag": "0115_sla_v23_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1787711774160,
+      "tag": "0116_workflow_administration_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1787714672362,
+      "tag": "0117_identity_mfa_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1787714674442,
+      "tag": "0118_identity_mfa_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1787714676640,
+      "tag": "0119_identity_mfa_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1787716104120,
+      "tag": "0120_identity_mfa_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1787719987372,
+      "tag": "0121_spotty_crusher_hogan",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1787719999609,
+      "tag": "0122_workflow_administration_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1787721876116,
+      "tag": "0123_workflow_administration_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1787723201274,
+      "tag": "0124_identity_mfa_device_management_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1787723203494,
+      "tag": "0125_identity_mfa_device_management_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1787732404997,
+      "tag": "0126_rich_pride",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1787732423963,
+      "tag": "0127_rare_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1787732426000,
+      "tag": "0128_federated_authentication_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1787732428000,
+      "tag": "0129_federated_authentication_transaction_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1787732430000,
+      "tag": "0130_federated_authentication_read_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1787732432000,
+      "tag": "0131_federated_authentication_apply_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1787732434000,
+      "tag": "0132_federated_authentication_mfa_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1787732436000,
+      "tag": "0133_federated_authentication_session_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1787732438000,
+      "tag": "0134_federated_authentication_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1787737707040,
+      "tag": "0135_sla_queue_metrics_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1787741353171,
+      "tag": "0136_white_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1787741354171,
+      "tag": "0137_saved_ticket_views_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1787741355171,
+      "tag": "0138_saved_ticket_views_abi_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1787747398262,
+      "tag": "0139_tricky_hawkeye",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1787747399262,
+      "tag": "0140_ticket_query_projections_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1787747400262,
+      "tag": "0141_ticket_query_projections_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1787751875723,
+      "tag": "0142_burly_sage",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1787752062111,
+      "tag": "0143_minor_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1787752076413,
+      "tag": "0144_burly_elektra",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1787752129946,
+      "tag": "0145_striped_gladiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1787753338492,
+      "tag": "0146_amazing_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1787753339492,
+      "tag": "0147_saml_session_material_id_abi",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1787753340492,
+      "tag": "0148_saml_session_material_id_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1787756689913,
+      "tag": "0149_condemned_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1787758674256,
+      "tag": "0150_high_blob",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1787758694313,
+      "tag": "0151_platform_tenant_lifecycle_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1787759373746,
+      "tag": "0152_platform_tenant_lifecycle_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1787852011539,
+      "tag": "0153_lovely_sprite",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1787852085088,
+      "tag": "0154_platform_tenant_lifecycle_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1787854721196,
+      "tag": "0155_jazzy_felicia_hardy",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1787854845465,
+      "tag": "0156_panoramic_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1787854846465,
+      "tag": "0157_platform_identity_provider_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1787929625096,
+      "tag": "0158_platform_identity_provider_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1787934110266,
+      "tag": "0159_material_talkback",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1787934129921,
+      "tag": "0160_tenant_platform_identity_binding_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1787936025344,
+      "tag": "0161_lazy_shiver_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1787936037593,
+      "tag": "0162_tenant_platform_identity_binding_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1788049988181,
+      "tag": "0163_workable_hannibal_king",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1788049988182,
+      "tag": "0164_platform_oidc_binding_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1788049988183,
+      "tag": "0165_platform_oidc_binding_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1788049988184,
+      "tag": "0166_platform_oidc_binding_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1788061087353,
+      "tag": "0167_platform_identity_account_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1788061103011,
+      "tag": "0168_platform_identity_account_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1788062677386,
+      "tag": "0169_platform_identity_account_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1788064758607,
+      "tag": "0170_platform_identity_account_retirement_observation_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1788066123639,
+      "tag": "0171_platform_identity_account_resource_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1788066137213,
+      "tag": "0172_platform_identity_account_representation_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1788067083196,
+      "tag": "0173_platform_identity_account_representation_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1788069078081,
+      "tag": "0174_platform_identity_account_observation_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1788069130619,
+      "tag": "0175_platform_identity_account_observation_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1788069336676,
+      "tag": "0176_platform_identity_account_observation_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1788073466742,
+      "tag": "0177_aspiring_mojo",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1788075000000,
+      "tag": "0178_platform_oidc_direct_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1788077000000,
+      "tag": "0179_platform_oidc_direct_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1788085734144,
+      "tag": "0180_platform_oidc_direct_administration",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1788085744122,
+      "tag": "0181_platform_oidc_direct_administration_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1788091350019,
+      "tag": "0182_mfa_policy_administration",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1788094095501,
+      "tag": "0183_mfa_policy_administration_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1788101577954,
+      "tag": "0184_platform_saml_direct_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1788105787857,
+      "tag": "0185_platform_saml_direct_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1788107111835,
+      "tag": "0186_platform_saml_direct_runtime_successor",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1788107911419,
+      "tag": "0187_platform_saml_direct_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1788112827374,
+      "tag": "0188_platform_saml_metadata_projection_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1788113074763,
+      "tag": "0189_platform_saml_metadata_projection_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1788116370566,
+      "tag": "0190_alert_soft_delete_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1788116847038,
+      "tag": "0191_ticket_escalation_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1788117621212,
+      "tag": "0192_sla_trigger_action_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1788119195854,
+      "tag": "0193_platform_local_account_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1788120835092,
+      "tag": "0194_ticket_bulk_export_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1788125794295,
+      "tag": "0195_alert_dfir_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1788126621907,
+      "tag": "0196_v44_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1788128074116,
+      "tag": "0197_ticket_metadata_replace_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1788128702258,
+      "tag": "0198_v45_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1788250072583,
+      "tag": "0199_ticket_watcher_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1788250073583,
+      "tag": "0200_v46_forward_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1788250074583,
+      "tag": "0201_v46_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1788261607189,
+      "tag": "0202_ticket_comment_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1788262394557,
+      "tag": "0203_ticket_comment_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1788273255756,
+      "tag": "0204_ticket_comment_downstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1788273295446,
+      "tag": "0205_sla_object_event_ingress",
+      "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1788273313150,
+      "tag": "0206_smtp_runtime_assurance",
+      "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1788273361566,
+      "tag": "0207_interactive_ldap_authentication",
+      "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1788275200000,
+      "tag": "0208_v47_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1788276508454,
+      "tag": "0209_ticket_comment_aggregate_guard_v48",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1788276509454,
+      "tag": "0210_ldap_denied_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1788276510454,
+      "tag": "0211_platform_global_ldap",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1788276511454,
+      "tag": "0212_tenant_membership_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1788276512454,
+      "tag": "0213_audit_export_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1788276513454,
+      "tag": "0214_tenant_branding_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1788276514454,
+      "tag": "0215_platform_tenant_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1788276515454,
+      "tag": "0216_platform_operations_administration",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1788276516454,
+      "tag": "0217_alert_case_link_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1788276517454,
+      "tag": "0218_v48_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1788371662984,
+      "tag": "0219_sla_system_principal_guard_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1788372227803,
+      "tag": "0220_api_request_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1788376991132,
+      "tag": "0221_alert_relations",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1788379386446,
+      "tag": "0222_customer_contact_recipient_fanout",
+      "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1788429929183,
+      "tag": "0223_notification_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1788433305562,
+      "tag": "0224_tenant_ticket_numbering",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1788436481970,
+      "tag": "0225_custom_field_bulk_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1788444374163,
+      "tag": "0226_alert_dfir_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1788444569008,
+      "tag": "0227_tenant_webhook_url_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1788520202871,
+      "tag": "0228_tenant_federation_administration",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1788520217531,
+      "tag": "0229_v49_compatibility",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+CREATE INDEX "operator_team_assignment_epochs_active_team_idx" ON "operator_team_assignment_epochs" USING btree ("operator_team_id") WHERE "operator_team_assignment_epochs"."ended_at" is null;

@@ -1,0 +1,881 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  javascript:
+    name: TypeScript, tests, and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Validate Compose database runner syntax
+        run: |
+          node --check deploy/compose/database-task.mjs
+          node --check tests/integration/auth-smoke.mjs
+          node --check tests/integration/ldap-auth-acceptance.mjs
+          sh -n deploy/compose/auth/openldap-acceptance-fixture.sh
+      - name: Transpile and enumerate the live browser acceptance
+        run: pnpm test:e2e:live:list
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Validate deployment source security contracts
+        run: node --test scripts/deploy/validate-manifests.test.mjs
+      - name: Install Playwright Chromium
+        run: pnpm --filter @periapsis/web exec playwright install --with-deps chromium
+      - name: Exercise the browser acceptance flow
+        run: pnpm test:e2e
+      - name: Build
+        run: pnpm build
+
+  smtp-mailpit-acceptance:
+    name: SMTP Mailpit acceptance
+    needs: javascript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      COMPOSE_PROJECT_NAME: periapsis_smtp_${{ github.run_id }}_${{ github.run_attempt }}
+      PERIAPSIS_API_DATABASE_PASSWORD: unused-mailpit-acceptance
+      PERIAPSIS_DEV_TLS_CA_FILE: /dev/null
+      PERIAPSIS_DEV_TLS_CERT_FILE: /dev/null
+      PERIAPSIS_DEV_TLS_KEY_FILE: /dev/null
+      PERIAPSIS_MAILPIT_ACCEPTANCE: "1"
+      PERIAPSIS_MAILPIT_API_ORIGIN: http://127.0.0.1:18025
+      PERIAPSIS_MAILPIT_PORT: "18025"
+      PERIAPSIS_MAILPIT_SMTP_HOST: 127.0.0.1
+      PERIAPSIS_MAILPIT_SMTP_PORT: "11025"
+      PERIAPSIS_WORKER_DATABASE_PASSWORD: unused-mailpit-acceptance
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install notifier dependencies
+        run: pnpm install --frozen-lockfile --filter @periapsis/notifier...
+      - name: Start the full-profile SMTP fixture
+        run: docker compose --file deploy/compose/compose.yaml --profile full up --detach --wait mailpit
+      - name: Probe, deliver, and inspect the captured message
+        run: pnpm --filter @periapsis/notifier test:mailpit
+      - name: Stop the SMTP fixture
+        if: always()
+        run: docker compose --file deploy/compose/compose.yaml --profile full down --volumes --remove-orphans
+
+  go:
+    name: Go vet and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          check-latest: false
+          cache-dependency-path: |
+            modules/customfields/go.sum
+            modules/dfir/go.sum
+            services/api/go.sum
+            modules/identity/go.sum
+            modules/sla/go.sum
+            modules/ticketing/go.sum
+            services/worker/go.sum
+      - name: Vet
+        run: go vet ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
+      - name: Vet shell-free healthcheck
+        run: go vet ./deploy/compose/healthcheck.go
+      - name: Test with race detector
+        run: go test -race ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
+
+  generated:
+    name: Generated and schema drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          check-latest: false
+          cache-dependency-path: |
+            modules/customfields/go.sum
+            modules/dfir/go.sum
+            services/api/go.sum
+            modules/identity/go.sum
+            modules/sla/go.sum
+            modules/ticketing/go.sum
+            services/worker/go.sum
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify OpenAPI, clients, and migrations
+        run: pnpm verify:generated
+      - name: Verify permission catalog
+        run: pnpm verify:permission-catalog
+      - name: Verify canonical SLA seed documents and kernel behavior
+        run: pnpm verify:sla-fixture
+      - name: Verify generated Go contract and queries
+        run: pnpm verify:go-generated
+
+  supply-chain:
+    name: Source SBOM and security scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Generate source SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          artifact-name: periapsis-source.spdx.json
+          format: spdx-json
+          output-file: periapsis-source.spdx.json
+          path: .
+          upload-release-assets: false
+      - name: Scan dependencies, source secrets, and deployment configuration
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_INCLUDE_DEV_DEPS: "true"
+        with:
+          exit-code: "1"
+          format: table
+          ignore-unfixed: false
+          scan-ref: .
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          version: v0.74.0
+
+  kubernetes-manifests:
+    name: Render and validate Kubernetes manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          check-latest: false
+          cache: false
+      - name: Install pinned manifest tooling
+        run: |
+          go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.1
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+      - name: Render and validate development overlay
+        run: |
+          kustomize build deploy/k8s/overlays/dev > "${RUNNER_TEMP}/periapsis-dev.yaml"
+          kubeconform -strict -summary -kubernetes-version 1.35.0 "${RUNNER_TEMP}/periapsis-dev.yaml"
+      - name: Render and validate production overlay
+        run: |
+          kustomize build deploy/k8s/overlays/prod > "${RUNNER_TEMP}/periapsis-prod.yaml"
+          kubeconform -strict -summary -kubernetes-version 1.35.0 "${RUNNER_TEMP}/periapsis-prod.yaml"
+
+  containers:
+    name: Containers and Compose smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: periapsis_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      PERIAPSIS_API_PORT: "18080"
+      PERIAPSIS_IMAGE_REVISION: ${{ github.sha }}
+      PERIAPSIS_IMAGE_TAG: ci-${{ github.run_id }}-${{ github.run_attempt }}
+      PERIAPSIS_WEB_PORT: "18081"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Install Node.js for integration drivers
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install integration-driver dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter @periapsis/web exec playwright install --with-deps chromium
+      - name: Generate ephemeral integration credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '127.0.0.1 idp.localhost storage.localhost' | sudo tee -a /etc/hosts >/dev/null
+          tls_directory="${RUNNER_TEMP}/periapsis-compose-tls"
+          mkdir -p "${tls_directory}"
+          openssl genrsa -out "${tls_directory}/ca.key" 2048
+          openssl req -x509 -new -sha256 -days 1 \
+            -key "${tls_directory}/ca.key" \
+            -subj "/CN=Periapsis CI Compose CA" \
+            -out "${tls_directory}/ca.crt"
+          openssl genrsa -out "${tls_directory}/server.key" 2048
+          openssl req -new -sha256 \
+            -key "${tls_directory}/server.key" \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,DNS:idp.localhost,DNS:storage.localhost,IP:127.0.0.1,IP:::1" \
+            -out "${tls_directory}/server.csr"
+          openssl x509 -req -sha256 -days 1 \
+            -in "${tls_directory}/server.csr" \
+            -CA "${tls_directory}/ca.crt" \
+            -CAkey "${tls_directory}/ca.key" \
+            -CAcreateserial \
+            -copy_extensions copy \
+            -out "${tls_directory}/server.crt"
+          chmod 0444 "${tls_directory}/ca.crt" "${tls_directory}/server.crt"
+          chmod 0400 "${tls_directory}/server.key"
+          api_credential_root="$(openssl rand -base64 32 | tr -d '\n')"
+          identity_root="$(openssl rand -base64 32 | tr -d '\n')"
+          notification_root="$(openssl rand 32 | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+          {
+            echo "PERIAPSIS_API_DATABASE_PASSWORD=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_API_CREDENTIAL_KEYRING={\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${api_credential_root}\"}]}"
+            echo "PERIAPSIS_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_DEV_TLS_CA_FILE=${tls_directory}/ca.crt"
+            echo "PERIAPSIS_DEV_TLS_CERT_FILE=${tls_directory}/server.crt"
+            echo "PERIAPSIS_DEV_TLS_KEY_FILE=${tls_directory}/server.key"
+            echo "PERIAPSIS_IDENTITY_KEYRING={\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${identity_root}\"}]}"
+            echo "PERIAPSIS_IDP_ADMIN_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "PERIAPSIS_IDP_ADMIN_USERNAME=admin"
+            echo "PERIAPSIS_LDAP_ACCEPTANCE_CUSTOMER_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "PERIAPSIS_LDAP_ACCEPTANCE_ISOLATION_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "PERIAPSIS_LDAP_ACCEPTANCE_SECOND_USER_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "PERIAPSIS_LDAP_ACCEPTANCE_USER_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "PERIAPSIS_LDAP_ADMIN_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "PERIAPSIS_MASTER_KEY=$(openssl rand -base64 32)"
+            echo "PERIAPSIS_MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_MINIO_ROOT_USER=ciroot$(openssl rand -hex 8)"
+            echo "PERIAPSIS_NOTIFIER_DATABASE_PASSWORD=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_NOTIFIER_IMAGE=periapsis/notifier:${PERIAPSIS_IMAGE_TAG}"
+            echo "PERIAPSIS_NOTIFIER_PREVIEW_TOKEN=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_NOTIFICATION_KEYRING={\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${notification_root}\"}]}"
+            echo "PERIAPSIS_POSTGRES_PASSWORD=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_S3_ACCESS_KEY=ciapp$(openssl rand -hex 8)"
+            echo "PERIAPSIS_S3_SECRET_KEY=$(openssl rand -hex 32)"
+            echo "PERIAPSIS_SMOKE_ADMIN_PASSWORD=$(openssl rand -base64 48)"
+            echo "PERIAPSIS_WORKER_DATABASE_PASSWORD=$(openssl rand -hex 32)"
+          } >> "${GITHUB_ENV}"
+      - name: Validate resolved Compose model
+        run: docker compose --file deploy/compose/compose.yaml --profile minimal config --quiet
+      - name: Build application and database images
+        run: |
+          docker compose --file deploy/compose/compose.yaml --profile auth-test build api worker web migration ldap-tls identity-provider minio minio-provision
+          docker build \
+            --file deploy/images/Dockerfile.notifier \
+            --build-arg REVISION="${PERIAPSIS_IMAGE_REVISION}" \
+            --build-arg VERSION="${PERIAPSIS_IMAGE_TAG}" \
+            --tag "periapsis/notifier:${PERIAPSIS_IMAGE_TAG}" \
+            .
+      - name: Verify image users and web runtime contents
+        run: |
+          set -euo pipefail
+          api_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint /healthcheck "periapsis/api:${PERIAPSIS_IMAGE_TAG}" --print-uid)"
+          worker_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint /healthcheck "periapsis/worker:${PERIAPSIS_IMAGE_TAG}" --print-uid)"
+          web_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "periapsis/web:${PERIAPSIS_IMAGE_TAG}" -p 'process.getuid()')"
+          notifier_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "periapsis/notifier:${PERIAPSIS_IMAGE_TAG}" -p 'process.getuid()')"
+          database_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "periapsis/database-task:${PERIAPSIS_IMAGE_TAG}" -p 'process.getuid()')"
+          test "${api_uid}" = "10001"
+          test "${worker_uid}" = "10001"
+          test "${web_uid}" = "10001"
+          test "${notifier_uid}" = "10001"
+          test "${database_uid}" = "10001"
+          test "$(docker image inspect --format '{{.Config.User}}' "periapsis/api:${PERIAPSIS_IMAGE_TAG}")" = "10001:10001"
+          test "$(docker image inspect --format '{{.Config.User}}' "periapsis/worker:${PERIAPSIS_IMAGE_TAG}")" = "10001:10001"
+          test "$(docker image inspect --format '{{.Config.User}}' "periapsis/web:${PERIAPSIS_IMAGE_TAG}")" = "10001:10001"
+          test "$(docker image inspect --format '{{.Config.User}}' "periapsis/notifier:${PERIAPSIS_IMAGE_TAG}")" = "10001:10001"
+          test "$(docker image inspect --format '{{.Config.User}}' "periapsis/database-task:${PERIAPSIS_IMAGE_TAG}")" = "10001:10001"
+          docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "periapsis/web:${PERIAPSIS_IMAGE_TAG}" -e '
+            const { existsSync, readdirSync } = require("node:fs");
+            const files = readdirSync("/app/dist-server", { recursive: true }).map(String);
+            if (!existsSync("/app/dist-server/index.js") || files.some((file) => file.includes(".test."))) process.exit(1);
+          '
+      - name: Scan application images for high-impact vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          exit-code: "1"
+          format: table
+          ignore-unfixed: false
+          image-ref: periapsis/api:${{ env.PERIAPSIS_IMAGE_TAG }}
+          scan-type: image
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          version: v0.74.0
+      - name: Scan remaining runtime images with the pinned Trivy installation
+        run: |
+          set -euo pipefail
+          for image in \
+            "periapsis/worker:${PERIAPSIS_IMAGE_TAG}" \
+            "periapsis/notifier:${PERIAPSIS_IMAGE_TAG}" \
+            "periapsis/web:${PERIAPSIS_IMAGE_TAG}" \
+            "periapsis/database-task:${PERIAPSIS_IMAGE_TAG}"; do
+            trivy image \
+              --exit-code 1 \
+              --format table \
+              --scanners vuln,secret \
+              --severity HIGH,CRITICAL \
+              "${image}"
+          done
+      - name: Start hardened minimal stack
+        run: docker compose --file deploy/compose/compose.yaml --profile minimal up --detach --no-build
+      - name: Wait for service health
+        run: |
+          set -euo pipefail
+          healthy=false
+          terminal_failure=false
+          for attempt in $(seq 1 60); do
+            healthy=true
+            for service in postgres api worker web; do
+              container="$(docker compose --file deploy/compose/compose.yaml --profile minimal ps --quiet "${service}")"
+              if [ -z "${container}" ]; then
+                healthy=false
+                break
+              fi
+              status="$(docker inspect --format '{{.State.Health.Status}}' "${container}")"
+              if [ "${status}" = "unhealthy" ]; then
+                healthy=false
+                terminal_failure=true
+                break
+              fi
+              if [ "${status}" != "healthy" ]; then
+                healthy=false
+              fi
+            done
+            if [ "${healthy}" = "true" ] || [ "${terminal_failure}" = "true" ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "${healthy}" != "true" ]; then
+            docker compose --file deploy/compose/compose.yaml --profile minimal ps --all
+            docker compose --file deploy/compose/compose.yaml --profile minimal logs --no-color
+            exit 1
+          fi
+          migration_container="$(docker compose --file deploy/compose/compose.yaml --profile minimal ps --all --quiet migration)"
+          test -n "${migration_container}"
+          test "$(docker inspect --format '{{.State.ExitCode}}' "${migration_container}")" = "0"
+          curl --fail --silent --show-error --cacert "${PERIAPSIS_DEV_TLS_CA_FILE}" \
+            https://localhost:18081/health/live > /dev/null
+      - name: Exercise one-time bootstrap, MFA, sessions, authorization, and tenant selection
+        run: |
+          NODE_EXTRA_CA_CERTS="${PERIAPSIS_DEV_TLS_CA_FILE}" \
+          PERIAPSIS_SMOKE_BASE_URL=https://localhost:18081 \
+          node tests/integration/auth-smoke.mjs
+      - name: Prove runtime login reprovisioning removes stale memberships
+        run: |
+          set -euo pipefail
+          postgres_container="$(docker compose --file deploy/compose/compose.yaml --profile minimal ps --quiet postgres)"
+          test -n "${postgres_container}"
+          docker exec -i "${postgres_container}" psql -X -v ON_ERROR_STOP=1 -U postgres -d periapsis <<'SQL'
+          GRANT periapsis_migrator TO periapsis_api_login;
+          GRANT periapsis_auditor TO periapsis_worker_login;
+          SQL
+          docker compose --file deploy/compose/compose.yaml --profile minimal run --rm --no-deps migration
+          memberships="$(docker exec "${postgres_container}" psql -X -v ON_ERROR_STOP=1 -U postgres -d periapsis -Atc "
+            SELECT member_role.rolname || '|' || granted_role.rolname
+            FROM pg_catalog.pg_auth_members AS membership
+            JOIN pg_catalog.pg_roles AS granted_role
+              ON granted_role.oid = membership.roleid
+            JOIN pg_catalog.pg_roles AS member_role
+              ON member_role.oid = membership.member
+            WHERE member_role.rolname IN ('periapsis_api_login', 'periapsis_worker_login')
+            ORDER BY member_role.rolname, granted_role.rolname
+          ")"
+          expected="$(printf '%s\n%s' \
+            'periapsis_api_login|periapsis_api' \
+            'periapsis_worker_login|periapsis_worker')"
+          test "${memberships}" = "${expected}"
+      - name: Stop minimal stack
+        if: always()
+        run: docker compose --file deploy/compose/compose.yaml --profile minimal down --volumes --remove-orphans
+      - name: Validate the composed full acceptance profile
+        run: docker compose --file deploy/compose/compose.yaml --profile full config --quiet
+      - name: Start fresh API, worker, notifier, Mailpit, edge, OpenLDAP, and Keycloak stack
+        run: docker compose --file deploy/compose/compose.yaml --profile full up --detach --no-build --wait edge openldap identity-provider worker notifier mailpit
+      - name: Probe the hardened full acceptance containers and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in api worker web notifier edge; do
+            container="$(docker compose --file deploy/compose/compose.yaml --profile full ps --quiet "${service}")"
+            test -n "${container}"
+            test "$(docker inspect --format '{{.State.Health.Status}}' "${container}")" = "healthy"
+            test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "${container}")" = "true"
+            test "$(docker inspect --format '{{.Config.User}}' "${container}")" = "10001:10001"
+          done
+          for service in postgres openldap mailpit minio clamav; do
+            container="$(docker compose --file deploy/compose/compose.yaml --profile full ps --quiet "${service}")"
+            test -n "${container}"
+            test "$(docker inspect --format '{{.State.Health.Status}}' "${container}")" = "healthy"
+          done
+          identity_container="$(docker compose --file deploy/compose/compose.yaml --profile full ps --quiet identity-provider)"
+          test -n "${identity_container}"
+          test "$(docker inspect --format '{{.State.Health.Status}}' "${identity_container}")" = "healthy"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "${identity_container}")" = "true"
+          identity_user="$(docker inspect --format '{{.Config.User}}' "${identity_container}")"
+          test -n "${identity_user}"
+          [[ "${identity_user}" =~ ^[0-9]+(:[0-9]+)?$ ]]
+          test "${identity_user%%:*}" != "0"
+          idp_origin="https://idp.localhost:${PERIAPSIS_IDP_PORT:-18090}"
+          curl --fail --silent --show-error --cacert "${PERIAPSIS_DEV_TLS_CA_FILE}" \
+            "${idp_origin}/realms/periapsis-test/.well-known/openid-configuration" | \
+            jq --arg issuer "${idp_origin}/realms/periapsis-test" --exit-status \
+              '.issuer == $issuer' > /dev/null
+          curl --fail --silent --show-error --cacert "${PERIAPSIS_DEV_TLS_CA_FILE}" \
+            https://localhost:18081/health/ready | \
+            jq --exit-status '
+              .status == "ready" and
+              .checks.dfir_object_storage.status == "ready" and
+              .checks.dfir_malware_scanner.status == "ready"
+            ' > /dev/null
+      - name: Export only the ephemeral OpenLDAP public CA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ldap_container="$(docker compose --file deploy/compose/compose.yaml --profile full ps --quiet openldap)"
+          test -n "${ldap_container}"
+          ldap_ca_file="${RUNNER_TEMP}/periapsis-openldap-ca.crt"
+          docker cp "${ldap_container}:/run/secrets/ldap/ca.crt" "${ldap_ca_file}"
+          chmod 0444 "${ldap_ca_file}"
+          echo "PERIAPSIS_LDAP_ACCEPTANCE_CA_FILE=${ldap_ca_file}" >> "${GITHUB_ENV}"
+      - name: Exercise composed OpenLDAP and live Phase 3 browser acceptance
+        run: |
+          NODE_EXTRA_CA_CERTS="${PERIAPSIS_DEV_TLS_CA_FILE}" \
+          PERIAPSIS_LDAP_ACCEPTANCE_BASE_URL=https://localhost:18081 \
+          PERIAPSIS_LDAP_ACCEPTANCE_COMPOSE_PROFILE=full \
+          PERIAPSIS_LDAP_ACCEPTANCE_RUN_LIVE_PLAYWRIGHT=1 \
+          node tests/integration/ldap-auth-acceptance.mjs
+      - name: Prove the API login cannot mutate append-only tenant audit rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          postgres_container="$(docker compose --file deploy/compose/compose.yaml --profile full ps --quiet postgres)"
+          test -n "${postgres_container}"
+          if PGPASSWORD="${PERIAPSIS_API_DATABASE_PASSWORD}" docker exec -e PGPASSWORD "${postgres_container}" \
+            psql -X -v ON_ERROR_STOP=1 -U periapsis_api_login -d periapsis \
+            -c 'UPDATE public.audit_events SET action = action WHERE false'; then
+            echo 'periapsis_api_login unexpectedly updated audit_events' >&2
+            exit 1
+          fi
+          if PGPASSWORD="${PERIAPSIS_API_DATABASE_PASSWORD}" docker exec -e PGPASSWORD "${postgres_container}" \
+            psql -X -v ON_ERROR_STOP=1 -U periapsis_api_login -d periapsis \
+            -c 'DELETE FROM public.audit_events WHERE false'; then
+            echo 'periapsis_api_login unexpectedly deleted audit_events' >&2
+            exit 1
+          fi
+      - name: Stop composed full acceptance stack
+        if: always()
+        run: docker compose --file deploy/compose/compose.yaml --profile full down --volumes --remove-orphans
+
+  postgres-security-upgrades:
+    name: PostgreSQL ${{ matrix.name }} upgrade
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: authorization
+            script: test:security:authorization-upgrade
+            database_env: PERIAPSIS_AUTHORIZATION_UPGRADE_TEST_DATABASE_URL
+          - name: federated authentication
+            script: test:security:federated-authentication-upgrade
+            database_env: PERIAPSIS_FEDERATED_AUTH_UPGRADE_TEST_DATABASE_URL
+          - name: tenant federation administration
+            script: test:security:tenant-federation-administration-upgrade
+            database_env: PERIAPSIS_TENANT_FEDERATION_ADMIN_UPGRADE_TEST_DATABASE_URL
+          - name: identity MFA
+            script: test:security:identity-mfa-upgrade
+            database_env: PERIAPSIS_IDENTITY_MFA_UPGRADE_TEST_DATABASE_URL
+          - name: MFA policy administration
+            script: test:security:mfa-policy-administration-upgrade
+            database_env: PERIAPSIS_MFA_POLICY_ADMIN_UPGRADE_TEST_DATABASE_URL
+          - name: platform identity accounts
+            script: test:security:platform-identity-accounts-upgrade
+            database_env: PERIAPSIS_PLATFORM_IDENTITY_ACCOUNT_UPGRADE_TEST_DATABASE_URL
+          - name: platform identity bindings
+            script: test:security:platform-identity-bindings-upgrade
+            database_env: PERIAPSIS_PLATFORM_IDENTITY_BINDING_UPGRADE_TEST_DATABASE_URL
+          - name: direct platform OIDC
+            script: test:security:platform-oidc-direct-authentication-upgrade
+            database_env: PERIAPSIS_PLATFORM_OIDC_DIRECT_UPGRADE_TEST_DATABASE_URL
+          - name: direct platform SAML
+            script: test:security:platform-saml-direct-upgrade
+            database_env: PERIAPSIS_PLATFORM_SAML_DIRECT_UPGRADE_TEST_DATABASE_URL
+          - name: tenant lifecycle
+            script: test:security:tenant-lifecycle-upgrade
+            database_env: PERIAPSIS_TENANT_LIFECYCLE_UPGRADE_TEST_DATABASE_URL
+          - name: tenant membership lifecycle
+            script: test:security:membership-lifecycle-upgrade
+            database_env: PERIAPSIS_TENANT_MEMBERSHIP_LIFECYCLE_UPGRADE_TEST_DATABASE_URL
+          - name: SAML session material
+            script: test:security:saml-session-material-id-upgrade
+            database_env: PERIAPSIS_SAML_MATERIAL_UPGRADE_TEST_DATABASE_URL
+          - name: saved ticket views
+            script: test:security:saved-ticket-views-upgrade
+            database_env: PERIAPSIS_SAVED_VIEWS_UPGRADE_TEST_DATABASE_URL
+          - name: SLA queue metrics
+            script: test:security:sla-queue-metrics-upgrade
+            database_env: PERIAPSIS_SLA_QUEUE_METRICS_UPGRADE_TEST_DATABASE_URL
+          - name: tenant-provider MFA continuation
+            script: test:security:tenant-provider-mfa-continuation-upgrade
+            database_env: PERIAPSIS_TENANT_PROVIDER_MFA_UPGRADE_TEST_DATABASE_URL
+          - name: ticket query projections
+            script: test:security:ticket-query-projections-upgrade
+            database_env: PERIAPSIS_TICKET_QUERY_PROJECTION_UPGRADE_TEST_DATABASE_URL
+          - name: webhook URL policy
+            script: test:security:webhook-url-policy-upgrade
+            database_env: PERIAPSIS_WEBHOOK_URL_POLICY_UPGRADE_TEST_DATABASE_URL
+          - name: Alert DFIR completion
+            script: test:security:alert-dfir-upgrade
+            database_env: PERIAPSIS_ALERT_DFIR_UPGRADE_TEST_DATABASE_URL
+            second_database_env: PERIAPSIS_ALERT_DFIR_INVALID_UPGRADE_TEST_DATABASE_URL
+            second_database_name: periapsis_alert_dfir_invalid
+          - name: V49 compatibility seal
+            script: test:security:schema-compatibility-v49-upgrade
+            database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V49_UPGRADE_TEST_DATABASE_URL
+    services:
+      postgres:
+        image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
+        env:
+          POSTGRES_DB: periapsis
+          POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+          POSTGRES_PASSWORD: periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d periapsis"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install database dependencies
+        run: pnpm install --frozen-lockfile --filter @periapsis/db...
+      - name: Exercise the real upgrade path
+        shell: bash
+        env:
+          DATABASE_ENV: ${{ matrix.database_env }}
+          SECOND_DATABASE_ENV: ${{ matrix.second_database_env }}
+          SECOND_DATABASE_NAME: ${{ matrix.second_database_name }}
+          POSTGRES_PASSWORD: periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          UPGRADE_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis?sslmode=disable
+          UPGRADE_SCRIPT: ${{ matrix.script }}
+        run: |
+          export "${DATABASE_ENV}=${UPGRADE_DATABASE_URL}"
+          if [[ -n "${SECOND_DATABASE_NAME}" ]]; then
+            PGPASSWORD="${POSTGRES_PASSWORD}" createdb \
+              --host 127.0.0.1 --port 5432 --username postgres \
+              "${SECOND_DATABASE_NAME}"
+            second_database_url="postgresql://postgres:${POSTGRES_PASSWORD}@127.0.0.1:5432/${SECOND_DATABASE_NAME}?sslmode=disable"
+            export "${SECOND_DATABASE_ENV}=${second_database_url}"
+          fi
+          pnpm --filter @periapsis/db run "${UPGRADE_SCRIPT}"
+
+  postgres-rls:
+    name: PostgreSQL migration and RLS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
+        env:
+          POSTGRES_DB: periapsis
+          POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+          POSTGRES_PASSWORD: periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d periapsis"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      readiness-postgres:
+        image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
+        env:
+          POSTGRES_DB: periapsis
+          POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+          POSTGRES_PASSWORD: periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_USER: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d periapsis"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          check-latest: false
+          cache-dependency-path: services/api/go.sum
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.22.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install database dependencies
+        run: pnpm install --frozen-lockfile --filter @periapsis/db...
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis?sslmode=disable
+        run: pnpm --filter @periapsis/db db:migrate
+      - name: Apply migrations to the isolated readiness database
+        env:
+          DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5433/periapsis?sslmode=disable
+        run: pnpm --filter @periapsis/db db:migrate
+      - name: Provision least-privileged runtime logins
+        env:
+          DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis?sslmode=disable
+          PERIAPSIS_API_DATABASE_PASSWORD: periapsis-api-${{ github.run_id }}-${{ github.run_attempt }}
+          PERIAPSIS_WORKER_DATABASE_PASSWORD: periapsis-worker-${{ github.run_id }}-${{ github.run_attempt }}
+          PERIAPSIS_NOTIFIER_DATABASE_PASSWORD: periapsis-notifier-${{ github.run_id }}-${{ github.run_attempt }}
+          PERIAPSIS_AUDITOR_DATABASE_PASSWORD: periapsis-auditor-${{ github.run_id }}-${{ github.run_attempt }}
+        run: pnpm --filter @periapsis/db db:provision
+      - name: Pin the isolated PostgreSQL test cluster
+        id: postgres_test_pin
+        run: |
+          set -euo pipefail
+          task_data_directory="$(docker exec "${{ job.services.postgres.id }}" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SHOW data_directory')"
+          [[ "$task_data_directory" =~ ^/[a-zA-Z0-9_./-]+$ && "$task_data_directory" != "/" ]]
+          printf 'data_directory=%s\n' "$task_data_directory" >> "$GITHUB_OUTPUT"
+      - name: Clone isolated security databases from the migrated template
+        run: |
+          set -euo pipefail
+          for database in \
+            periapsis_core_security \
+            periapsis_rls \
+            periapsis_go_authorization \
+            periapsis_go_dfir_shared \
+            periapsis_dfir_shared_content_ci \
+            periapsis_session_logout_ci \
+            periapsis_api_rate_limit \
+            periapsis_identity_access \
+            periapsis_identity_mapping \
+            periapsis_identity_directory \
+            periapsis_identity_jit \
+            periapsis_ldap_denied_reconciliation \
+            periapsis_interactive_ldap_auth \
+            periapsis_identity_mfa \
+            periapsis_ldap_administration \
+            periapsis_contacts_portal \
+            periapsis_federated_auth \
+            periapsis_tenant_federation_admin \
+            periapsis_saml_material \
+            periapsis_passkey_revalidation \
+            periapsis_mfa_policy \
+            periapsis_tenant_lifecycle \
+            periapsis_membership_lifecycle \
+            periapsis_tenant_settings \
+            periapsis_ticket_numbering \
+            periapsis_platform_tenant_access \
+            periapsis_platform_operations \
+            periapsis_platform_provider \
+            periapsis_platform_binding \
+            periapsis_platform_identity_account \
+            periapsis_platform_oidc_auth \
+            periapsis_platform_oidc_direct \
+            periapsis_platform_saml_direct \
+            periapsis_alert_dfir \
+            periapsis_case_dfir \
+            periapsis_dfir_generic_relationships \
+            periapsis_dfir_mutation_retention \
+            periapsis_shared_dfir \
+            periapsis_dfir_storage_scan \
+            periapsis_custom_field_import \
+            periapsis_saved_views \
+            periapsis_sla_runtime \
+            periapsis_sla_event_ingress \
+            periapsis_sla_trigger_actions \
+            periapsis_ticket_bulk_export \
+            periapsis_ticket_query \
+            periapsis_ticket_link_lifecycle \
+            periapsis_ticket_metadata \
+            periapsis_ticket_comment_repair \
+            periapsis_ticket_watchers \
+            periapsis_alert_relations \
+            periapsis_notifications \
+            periapsis_notification_inbox \
+            periapsis_webhook_url_policy \
+            periapsis_audit_operations \
+            periapsis_tenant_provider_mfa; do
+            docker exec "${{ job.services.postgres.id }}" \
+              createdb -U postgres -T periapsis "${database}"
+          done
+      - name: Prove idempotent seed authorization auditing
+        env:
+          DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis?sslmode=disable
+        run: |
+          pnpm --filter @periapsis/db db:seed
+          pnpm --filter @periapsis/db db:seed
+          pnpm --filter @periapsis/db test:security:seed-audit
+      - name: Prove atomic protected-configuration binding
+        env:
+          DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_core_security?sslmode=disable
+          PERIAPSIS_API_RATE_LIMIT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_api_rate_limit?sslmode=disable
+          PERIAPSIS_IDENTITY_ACCESS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_identity_access?sslmode=disable
+          PERIAPSIS_IDENTITY_MAPPING_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_identity_mapping?sslmode=disable
+          PERIAPSIS_IDENTITY_DIRECTORY_OPERATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_identity_directory?sslmode=disable
+          PERIAPSIS_IDENTITY_JIT_SYNC_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_identity_jit?sslmode=disable
+          PERIAPSIS_LDAP_DENIED_RECONCILIATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ldap_denied_reconciliation?sslmode=disable
+          PERIAPSIS_INTERACTIVE_LDAP_AUTH_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_interactive_ldap_auth?sslmode=disable
+          PERIAPSIS_IDENTITY_MFA_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_identity_mfa?sslmode=disable
+          PERIAPSIS_LDAP_SYNC_ADMINISTRATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ldap_administration?sslmode=disable
+          PERIAPSIS_CONTACTS_PORTAL_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_contacts_portal?sslmode=disable
+          PERIAPSIS_CONTACTS_PORTAL_SECURITY_NOTIFIER_DATABASE_URL: postgresql://periapsis_notifier_login:periapsis-notifier-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_contacts_portal?sslmode=disable
+          PERIAPSIS_FEDERATED_AUTH_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_federated_auth?sslmode=disable
+          PERIAPSIS_TENANT_FEDERATION_ADMIN_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_federation_admin?sslmode=disable
+          PERIAPSIS_SAML_MATERIAL_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_saml_material?sslmode=disable
+          PERIAPSIS_PASSKEY_REVALIDATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_passkey_revalidation?sslmode=disable
+          PERIAPSIS_MFA_POLICY_ADMIN_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_mfa_policy?sslmode=disable
+          PERIAPSIS_TENANT_LIFECYCLE_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_lifecycle?sslmode=disable
+          PERIAPSIS_TENANT_MEMBERSHIP_LIFECYCLE_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_membership_lifecycle?sslmode=disable
+          PERIAPSIS_TENANT_SETTINGS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_settings?sslmode=disable
+          PERIAPSIS_TICKET_NUMBERING_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_numbering?sslmode=disable
+          PERIAPSIS_PLATFORM_TENANT_ACCESS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_tenant_access?sslmode=disable
+          PERIAPSIS_PLATFORM_OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_operations?sslmode=disable
+          PERIAPSIS_PLATFORM_IDENTITY_PROVIDER_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_provider?sslmode=disable
+          PERIAPSIS_PLATFORM_IDENTITY_BINDING_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_binding?sslmode=disable
+          PERIAPSIS_PLATFORM_IDENTITY_ACCOUNT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_identity_account?sslmode=disable
+          PERIAPSIS_PLATFORM_OIDC_BINDING_AUTH_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_oidc_auth?sslmode=disable
+          PERIAPSIS_PLATFORM_OIDC_BINDING_READINESS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5433/periapsis?sslmode=disable
+          PERIAPSIS_PLATFORM_OIDC_DIRECT_AUTH_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_oidc_direct?sslmode=disable
+          PERIAPSIS_PLATFORM_SAML_DIRECT_RUNTIME_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_platform_saml_direct?sslmode=disable
+          PERIAPSIS_ALERT_DFIR_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_alert_dfir?sslmode=disable
+          PERIAPSIS_CASE_DFIR_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_case_dfir?sslmode=disable
+          PERIAPSIS_DFIR_GENERIC_RELATIONSHIP_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_dfir_generic_relationships?sslmode=disable
+          PERIAPSIS_DFIR_MUTATION_RETENTION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_dfir_mutation_retention?sslmode=disable
+          PERIAPSIS_SHARED_DFIR_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_shared_dfir?sslmode=disable
+          PERIAPSIS_DFIR_STORAGE_SCAN_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_dfir_storage_scan?sslmode=disable
+          PERIAPSIS_CUSTOM_FIELD_IMPORT_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_custom_field_import?sslmode=disable
+          PERIAPSIS_SAVED_VIEWS_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_saved_views?sslmode=disable
+          PERIAPSIS_SLA_RUNTIME_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_sla_runtime?sslmode=disable
+          PERIAPSIS_SLA_EVENT_INGRESS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_sla_event_ingress?sslmode=disable
+          PERIAPSIS_SLA_TRIGGER_ACTION_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_sla_trigger_actions?sslmode=disable
+          PERIAPSIS_TICKET_BULK_EXPORT_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_bulk_export?sslmode=disable
+          PERIAPSIS_TICKET_QUERY_PROJECTION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_query?sslmode=disable
+          PERIAPSIS_TICKET_LINK_LIFECYCLE_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_link_lifecycle?sslmode=disable
+          PERIAPSIS_TICKET_METADATA_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_metadata?sslmode=disable
+          PERIAPSIS_TICKET_COMMENT_REPAIR_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_comment_repair?sslmode=disable
+          PERIAPSIS_TICKET_WATCHER_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_ticket_watchers?sslmode=disable
+          PERIAPSIS_ALERT_RELATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_alert_relations?sslmode=disable
+          PERIAPSIS_AUDIT_OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_audit_operations?sslmode=disable
+          PERIAPSIS_TENANT_PROVIDER_MFA_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_provider_mfa?sslmode=disable
+          PERIAPSIS_NOTIFICATION_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_notifications?sslmode=disable
+          PERIAPSIS_NOTIFICATION_INBOX_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_notification_inbox?sslmode=disable
+          PERIAPSIS_WEBHOOK_URL_POLICY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_webhook_url_policy?sslmode=disable
+          PERIAPSIS_WEBHOOK_URL_POLICY_API_DATABASE_URL: postgresql://periapsis_api_login:periapsis-api-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_webhook_url_policy?sslmode=disable
+          PERIAPSIS_WEBHOOK_URL_POLICY_NOTIFIER_DATABASE_URL: postgresql://periapsis_notifier_login:periapsis-notifier-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_webhook_url_policy?sslmode=disable
+          PERIAPSIS_NOTIFICATION_SECURITY_NOTIFIER_DATABASE_URL: postgresql://periapsis_notifier_login:periapsis-notifier-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_notifications?sslmode=disable
+          PERIAPSIS_NOTIFICATION_SECURITY_API_DATABASE_URL: postgresql://periapsis_api_login:periapsis-api-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_notifications?sslmode=disable
+        run: pnpm --filter @periapsis/db test:security
+      - name: Prove tenant isolation and append-only audit
+        run: docker exec -i "${{ job.services.postgres.id }}" psql -X -v ON_ERROR_STOP=1 -U postgres -d periapsis_rls < tests/security/rls.sql
+      - name: Exercise PostgreSQL API admission, authorization, and shared DFIR repositories
+        env:
+          PERIAPSIS_API_RATE_LIMIT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_api_rate_limit?sslmode=disable
+          PERIAPSIS_AUTHORIZATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_go_authorization?sslmode=disable
+          PERIAPSIS_DFIR_SHARED_ATTACHMENTS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_go_dfir_shared?sslmode=disable
+          PERIAPSIS_DFIR_SHARED_CONTENT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_dfir_shared_content_ci?sslmode=disable
+          PERIAPSIS_DFIR_SHARED_CONTENT_EXPECTED_DATA_DIRECTORY: ${{ steps.postgres_test_pin.outputs.data_directory }}
+          PERIAPSIS_SESSION_LOGOUT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_session_logout_ci?sslmode=disable
+          PERIAPSIS_SESSION_LOGOUT_EXPECTED_DATA_DIRECTORY: ${{ steps.postgres_test_pin.outputs.data_directory }}
+        run: go test -count=1 -run '^(TestAPIRateLimitRepositoryPostgreSQL|TestAuthorizationRepository.*|TestDFIRSharedAttachmentsStayPathBoundInPostgres|TestDFIRSharedContentReplacementsPostgreSQL|TestSessionLogoutRepositoryFreshConnectionPostgreSQL)$' ./services/api/internal/postgres
+      - name: Drop the committed repository test databases
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          for database in periapsis_dfir_shared_content_ci periapsis_session_logout_ci; do
+            docker exec "${{ job.services.postgres.id }}" dropdb -U postgres --if-exists "${database}"
+          done
+          task_remaining="$(docker exec "${{ job.services.postgres.id }}" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT count(*) FROM pg_database WHERE datname IN ('periapsis_dfir_shared_content_ci','periapsis_session_logout_ci')")"
+          [[ "$task_remaining" == "0" ]]

@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: periapsis
+resources:
+  - namespace.yaml
+  - service-account.yaml
+  - config-map.yaml
+  - clamav-config.yaml
+  - api-deployment.yaml
+  - worker-deployment.yaml
+  - notifier-deployment.yaml
+  - web-deployment.yaml
+  - services.yaml
+  - ingress.yaml
+  - migration-job.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - network-policies.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: periapsis
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+    includeTemplates: true
+images:
+  - name: periapsis/api
+    newTag: development
+  - name: periapsis/worker
+    newTag: development
+  - name: periapsis/notifier
+    newTag: development
+  - name: periapsis/web
+    newTag: development
+  - name: periapsis/database-task
+    newTag: development

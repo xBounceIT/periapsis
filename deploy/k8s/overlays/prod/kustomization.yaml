@@ -1,0 +1,112 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: periapsis
+resources:
+  - ../../base
+images:
+  - name: periapsis/api
+    newName: registry.example.invalid/periapsis/api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: periapsis/worker
+    newName: registry.example.invalid/periapsis/worker
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: periapsis/notifier
+    newName: registry.example.invalid/periapsis/notifier
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: periapsis/web
+    newName: registry.example.invalid/periapsis/web
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: periapsis/database-task
+    newName: registry.example.invalid/periapsis/database-task
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+replicas:
+  - name: periapsis-api
+    count: 3
+  - name: periapsis-worker
+    count: 2
+  - name: periapsis-notifier
+    count: 2
+  - name: periapsis-web
+    count: 3
+patches:
+  - target:
+      kind: ConfigMap
+      name: periapsis-runtime
+    patch: |-
+      - op: replace
+        path: /data/PERIAPSIS_PUBLIC_URL
+        value: https://periapsis.example.com
+      - op: replace
+        path: /data/PERIAPSIS_RELEASE
+        value: 0.0.0
+  - target:
+      kind: Ingress
+      name: periapsis-web
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: periapsis.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: periapsis.example.com
+  - target:
+      kind: NetworkPolicy
+      name: allow-api-worker-external-dependencies
+    patch: |-
+      - op: replace
+        path: /spec/egress
+        value:
+          - to:
+              - ipBlock:
+                  cidr: 192.0.2.0/24
+            ports:
+              - protocol: TCP
+                port: 5432
+          - to:
+              - ipBlock:
+                  cidr: 198.51.100.0/24
+            ports:
+              - protocol: TCP
+                port: 443
+          - to:
+              - ipBlock:
+                  cidr: 203.0.113.0/24
+            ports:
+              - protocol: TCP
+                port: 389
+              - protocol: TCP
+                port: 636
+  - target:
+      kind: NetworkPolicy
+      name: allow-notifier-external-dependencies
+    patch: |-
+      - op: replace
+        path: /spec/egress
+        value:
+          - to:
+              - ipBlock:
+                  cidr: 192.0.2.0/24
+            ports:
+              - protocol: TCP
+                port: 5432
+          - to:
+              - ipBlock:
+                  cidr: 198.51.100.0/24
+            ports:
+              - protocol: TCP
+                port: 465
+              - protocol: TCP
+                port: 587
+          - to:
+              - ipBlock:
+                  cidr: 203.0.113.0/24
+            ports:
+              - protocol: TCP
+                port: 443
+  - target:
+      kind: NetworkPolicy
+      name: allow-migration-database
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 192.0.2.0/24

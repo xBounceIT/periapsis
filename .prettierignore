@@ -1,0 +1,14 @@
+**/dist/**
+**/dist-server/**
+**/coverage/**
+node_modules/**
+.tmp/**
+packages/contracts/generated/**
+packages/db/migrations/**
+services/api/internal/contract/api.gen.go
+services/api/internal/contract/openapi.json
+services/api/internal/httpserver/swagger-ui/swagger-ui*.css
+services/api/internal/httpserver/swagger-ui/swagger-ui*.js
+pnpm-lock.yaml
+tests/security/*.sql
+**/*.sql

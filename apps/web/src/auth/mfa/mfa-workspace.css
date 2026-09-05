@@ -1,0 +1,225 @@
+.mfa-security {
+  --mfa-ink: color-mix(in oklab, var(--foreground) 88%, #17223d);
+  --mfa-accent: color-mix(in oklab, var(--primary) 76%, #7be6d2);
+  display: grid;
+  gap: 1.5rem;
+  padding-bottom: 3rem;
+}
+
+.mfa-security__heading,
+.mfa-security__section-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.mfa-security__heading h1,
+.mfa-security__section-heading h2 {
+  color: var(--mfa-ink);
+  letter-spacing: -0.04em;
+  margin: 0;
+}
+
+.mfa-security__heading p:last-child {
+  max-width: 66ch;
+}
+
+.mfa-security__status:empty {
+  display: none;
+}
+
+.mfa-security__grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mfa-security__card,
+.mfa-security__device,
+.mfa-security__sessions {
+  border-color: color-mix(in oklab, var(--border) 72%, var(--mfa-accent));
+  overflow: hidden;
+}
+
+.mfa-security__card--assurance {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--card) 92%, var(--mfa-accent)),
+    var(--card)
+  );
+  grid-column: 1 / -1;
+}
+
+.mfa-security__card [data-slot="card-header"],
+.mfa-security__device [data-slot="card-header"],
+.mfa-security__sessions [data-slot="card-header"] {
+  align-items: center;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.mfa-security__icon,
+.mfa-security__device-icon {
+  align-items: center;
+  background: color-mix(in oklab, var(--mfa-accent) 18%, transparent);
+  border: 1px solid color-mix(in oklab, var(--mfa-accent) 42%, var(--border));
+  border-radius: 0.85rem;
+  color: var(--mfa-accent);
+  display: inline-flex;
+  height: 2.5rem;
+  justify-content: center;
+  width: 2.5rem;
+}
+
+.mfa-security__form,
+.mfa-security__inventory,
+.mfa-security__devices,
+.mfa-security__empty,
+.mfa-security__confirmation {
+  display: grid;
+  gap: 1rem;
+}
+
+.mfa-security__actions,
+.mfa-security__method-picker {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.mfa-security__method-picker {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.mfa-security__method-picker legend {
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  width: 100%;
+}
+
+.mfa-security__one-time {
+  border-color: color-mix(in oklab, #e6a94f 65%, var(--border));
+}
+
+.mfa-security__secret,
+.mfa-security__codes code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.mfa-security__secret {
+  background: color-mix(in oklab, var(--muted) 86%, var(--mfa-accent));
+  border-radius: 0.65rem;
+  padding: 0.85rem;
+}
+
+.mfa-security__codes {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.mfa-security__toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.55rem;
+  white-space: nowrap;
+}
+
+.mfa-security__devices {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mfa-security__device [data-slot="card-content"] {
+  display: grid;
+  gap: 1rem;
+}
+
+.mfa-security__metadata {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.mfa-security__metadata div {
+  min-width: 0;
+}
+
+.mfa-security__metadata dt {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.mfa-security__metadata dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.mfa-security__confirmation {
+  border-left: 3px solid var(--destructive);
+  padding-left: 0.9rem;
+}
+
+.mfa-security__empty {
+  justify-items: start;
+  padding: 1.5rem 0;
+}
+
+.mfa-security__skeleton {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mfa-security__skeleton span {
+  animation: mfa-pulse 1.2s ease-in-out infinite alternate;
+  background: var(--muted);
+  border-radius: 0.9rem;
+  min-height: 12rem;
+}
+
+@keyframes mfa-pulse {
+  to {
+    opacity: 0.48;
+  }
+}
+
+@media (max-width: 860px) {
+  .mfa-security__grid,
+  .mfa-security__devices,
+  .mfa-security__skeleton {
+    grid-template-columns: 1fr;
+  }
+
+  .mfa-security__codes {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .mfa-security__heading,
+  .mfa-security__section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mfa-security__metadata {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mfa-security__skeleton span {
+    animation: none;
+  }
+}

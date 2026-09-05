@@ -1,0 +1,74 @@
+.dfir-resource-form fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.dfir-resource-form legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.25rem;
+  color: var(--periapsis-navy);
+  font-size: 1.15rem;
+  font-weight: 680;
+}
+
+.dfir-resource-form__field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.dfir-resource-form__field--wide,
+.dfir-resource-form__check,
+.dfir-resource-form__actions {
+  grid-column: 1 / -1;
+}
+
+.dfir-resource-form select {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.65rem;
+  color: var(--periapsis-ink);
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.45rem;
+}
+
+.dfir-resource-form select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--periapsis-teal) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.dfir-resource-form__field > p,
+.dfir-resource-form__guidance {
+  margin: 0;
+  color: var(--periapsis-danger);
+  font-size: 0.75rem;
+}
+
+.dfir-resource-form__field > .dfir-resource-form__guidance {
+  color: var(--periapsis-muted);
+}
+
+.dfir-resource-form__check {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  color: var(--periapsis-muted);
+  font-size: 0.8rem;
+}
+
+.dfir-resource-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding-top: 0.35rem;
+}
+
+@media (max-width: 44rem) {
+  .dfir-resource-form fieldset {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

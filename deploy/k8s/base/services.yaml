@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: periapsis-api
+  labels:
+    app.kubernetes.io/name: periapsis-api
+    app.kubernetes.io/component: api
+    observability.periapsis.io/scrape: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: periapsis-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: periapsis-worker
+  labels:
+    app.kubernetes.io/name: periapsis-worker
+    app.kubernetes.io/component: worker
+    observability.periapsis.io/scrape: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: periapsis-worker
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: periapsis-notifier
+  labels:
+    app.kubernetes.io/name: periapsis-notifier
+    app.kubernetes.io/component: notifier
+    observability.periapsis.io/scrape: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: periapsis-notifier
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: periapsis-web
+  labels:
+    app.kubernetes.io/name: periapsis-web
+    app.kubernetes.io/component: web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: periapsis-web
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http

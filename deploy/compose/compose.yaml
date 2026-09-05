@@ -1,0 +1,936 @@
+name: periapsis
+
+x-application-security: &application-security
+  init: true
+  user: "10001:10001"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001,mode=1770
+  stop_grace_period: 30s
+
+x-runtime-profiles: &runtime-profiles
+  - minimal
+  - auth-test
+  - full
+
+x-database-profiles: &database-profiles
+  - minimal
+  - auth-test
+  - full
+  - seed
+
+x-database-task: &database-task
+  build:
+    context: ../..
+    dockerfile: deploy/compose/Dockerfile.database
+    args:
+      REVISION: ${PERIAPSIS_IMAGE_REVISION:-local}
+      VERSION: ${PERIAPSIS_IMAGE_TAG:-development}
+  image: periapsis/database-task:${PERIAPSIS_IMAGE_TAG:-development}
+  user: "10001:10001"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001,mode=1770
+  environment:
+    PERIAPSIS_ENV: development
+    PERIAPSIS_WEBHOOK_ALLOW_PLAIN_LOCAL: "true"
+    PERIAPSIS_DATABASE_ADMIN_USER: postgres
+    PERIAPSIS_DATABASE_HOST: postgres
+    PERIAPSIS_DATABASE_NAME: periapsis
+    PERIAPSIS_DATABASE_PORT: "5432"
+  secrets:
+    - postgres_password
+    - api_database_password
+    - worker_database_password
+  networks:
+    - backend
+  restart: "no"
+
+services:
+  postgres:
+    profiles: *database-profiles
+    image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
+    user: "70:70"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: periapsis
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=peer --locale=C --encoding=UTF8
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: postgres
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    tmpfs:
+      - /tmp:uid=70,gid=70,mode=1770
+      - /var/run/postgresql:uid=70,gid=70,mode=3777
+    shm_size: 128mb
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U postgres -d periapsis
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks:
+      - backend
+    stop_grace_period: 30s
+
+  migration:
+    <<: *database-task
+    profiles: *database-profiles
+    command:
+      - migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  db-seed:
+    <<: *database-task
+    profiles:
+      - seed
+    command:
+      - seed
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+
+  notifier-provision:
+    <<: *database-task
+    profiles:
+      - full
+    command:
+      - provision-notifier
+    secrets:
+      - postgres_password
+      - notifier_database_password
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+
+  api:
+    <<: *application-security
+    profiles: *runtime-profiles
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile.api
+      args:
+        REVISION: ${PERIAPSIS_IMAGE_REVISION:-local}
+        VERSION: ${PERIAPSIS_IMAGE_TAG:-development}
+    image: periapsis/api:${PERIAPSIS_IMAGE_TAG:-development}
+    environment:
+      PERIAPSIS_API_ADDR: 0.0.0.0:8080
+      PERIAPSIS_API_CREDENTIAL_KEYRING_FILE: /run/secrets/periapsis_api_credential_keyring
+      PERIAPSIS_API_RATE_LIMIT_CREDENTIAL_RPS: ${PERIAPSIS_API_RATE_LIMIT_CREDENTIAL_RPS:-60}
+      PERIAPSIS_API_RATE_LIMIT_NETWORK_RPS: ${PERIAPSIS_API_RATE_LIMIT_NETWORK_RPS:-100}
+      PERIAPSIS_API_RATE_LIMIT_TENANT_SUBJECT_RPS: ${PERIAPSIS_API_RATE_LIMIT_TENANT_SUBJECT_RPS:-40}
+      PERIAPSIS_AUTH_KDF_CONCURRENCY: ${PERIAPSIS_AUTH_KDF_CONCURRENCY:-2}
+      PERIAPSIS_BOOTSTRAP_TOKEN_FILE: /run/secrets/periapsis_bootstrap_token
+      PERIAPSIS_DATABASE_URL: postgresql://periapsis_api_login:${PERIAPSIS_API_DATABASE_PASSWORD:?set PERIAPSIS_API_DATABASE_PASSWORD}@postgres:5432/periapsis?sslmode=disable
+      PERIAPSIS_DOCS_ENABLED: "true"
+      PERIAPSIS_DFIR_MAX_OBJECT_BYTES: ${PERIAPSIS_DFIR_MAX_OBJECT_BYTES:-5000000000}
+      PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS:-172.30.242.2/32,172.30.242.3/32}
+      PERIAPSIS_DFIR_SCANNER_ALLOW_PLAINTEXT_LOCAL: "true"
+      PERIAPSIS_DFIR_SCANNER_ENDPOINT: tcp://clamav:3310
+      PERIAPSIS_DFIR_SCANNER_TIMEOUT: ${PERIAPSIS_DFIR_SCANNER_TIMEOUT:-5m}
+      PERIAPSIS_ENV: development
+      PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
+      PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/periapsis-dev-tls-ca.crt
+      PERIAPSIS_FEDERATED_HTTPS_PORTS: ${PERIAPSIS_FEDERATED_HTTPS_PORTS:-443,18090}
+      PERIAPSIS_FEDERATED_MAX_CONCURRENT: ${PERIAPSIS_FEDERATED_MAX_CONCURRENT:-16}
+      PERIAPSIS_FEDERATED_OIDC_CLOCK_SKEW: ${PERIAPSIS_FEDERATED_OIDC_CLOCK_SKEW:-1m}
+      PERIAPSIS_FEDERATED_OPERATION_TIMEOUT: ${PERIAPSIS_FEDERATED_OPERATION_TIMEOUT:-20s}
+      PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
+      PERIAPSIS_IDENTITY_KEYRING_FILE: /run/secrets/periapsis_identity_keyring
+      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-636}
+      PERIAPSIS_LDAP_MAX_CONCURRENT: ${PERIAPSIS_LDAP_MAX_CONCURRENT:-8}
+      PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
+      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-389}
+      PERIAPSIS_MASTER_KEY_FILE: /run/secrets/periapsis_master_key
+      NOTIFICATION_KEYRING_FILE: /run/secrets/notification-keyring
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: periapsis-api
+      PERIAPSIS_NOTIFIER_INTERNAL_URL: http://notifier-preview:8083
+      PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE: /run/secrets/notifier_preview_token
+      PERIAPSIS_PUBLIC_URL: https://localhost:${PERIAPSIS_WEB_PORT:-8443}
+      PERIAPSIS_REQUEST_TIMEOUT: ${PERIAPSIS_REQUEST_TIMEOUT:-15s}
+      PERIAPSIS_S3_ACCESS_KEY_FILE: /run/secrets/minio_access_key
+      PERIAPSIS_S3_ALLOW_PLAINTEXT_LOCAL: "true"
+      PERIAPSIS_S3_BUCKET: periapsis-evidence
+      PERIAPSIS_S3_ENDPOINT: http://minio:9000
+      PERIAPSIS_S3_MAX_CONCURRENT: ${PERIAPSIS_S3_MAX_CONCURRENT:-16}
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: https://storage.localhost:${PERIAPSIS_MINIO_API_PORT:-19000}
+      PERIAPSIS_S3_REGION: eu-south-1
+      PERIAPSIS_S3_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+      PERIAPSIS_RELEASE: ${PERIAPSIS_IMAGE_TAG:-development}
+      PERIAPSIS_SMTP_ALLOW_PLAIN_LOCAL: "true"
+      PERIAPSIS_WEBHOOK_ALLOW_PLAIN_LOCAL: "true"
+      # Only the web service address below may supply the sanitized client IP.
+      PERIAPSIS_TRUSTED_PROXY_CIDRS: 172.30.240.3/32
+    secrets:
+      - periapsis_api_credential_keyring
+      - periapsis_bootstrap_token
+      - periapsis_identity_keyring
+      - periapsis_master_key
+      - notifier_preview_token
+      - notification-keyring
+      - minio_access_key
+      - minio_secret_key
+      - source: dev_tls_ca
+        target: periapsis-dev-tls-ca.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+    healthcheck:
+      test:
+        - CMD
+        - /healthcheck
+        - http://127.0.0.1:8080/health/ready
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      minio-provision:
+        condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+    networks:
+      backend: {}
+      frontend:
+        ipv4_address: 172.30.240.2
+      identity: {}
+      notification-preview: {}
+      storage:
+        ipv4_address: 172.30.242.4
+
+  worker:
+    <<: *application-security
+    profiles: *runtime-profiles
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile.worker
+      args:
+        REVISION: ${PERIAPSIS_IMAGE_REVISION:-local}
+        VERSION: ${PERIAPSIS_IMAGE_TAG:-development}
+    image: periapsis/worker:${PERIAPSIS_IMAGE_TAG:-development}
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: periapsis-worker
+      PERIAPSIS_AUTH_CLEANUP_BATCH_SIZE: ${PERIAPSIS_AUTH_CLEANUP_BATCH_SIZE:-250}
+      PERIAPSIS_AUTH_CLEANUP_INTERVAL: ${PERIAPSIS_AUTH_CLEANUP_INTERVAL:-5m}
+      PERIAPSIS_DATABASE_URL: postgresql://periapsis_worker_login:${PERIAPSIS_WORKER_DATABASE_PASSWORD:?set PERIAPSIS_WORKER_DATABASE_PASSWORD}@postgres:5432/periapsis?sslmode=disable
+      PERIAPSIS_DATABASE_TIMEOUT: ${PERIAPSIS_DATABASE_TIMEOUT:-5s}
+      PERIAPSIS_DFIR_CLEANUP_BATCH_SIZE: ${PERIAPSIS_DFIR_CLEANUP_BATCH_SIZE:-16}
+      PERIAPSIS_DFIR_CLEANUP_DELETE_TIMEOUT: ${PERIAPSIS_DFIR_CLEANUP_DELETE_TIMEOUT:-30s}
+      PERIAPSIS_DFIR_CLEANUP_LEASE_DURATION: ${PERIAPSIS_DFIR_CLEANUP_LEASE_DURATION:-2m}
+      PERIAPSIS_DFIR_CLEANUP_POLL_INTERVAL: ${PERIAPSIS_DFIR_CLEANUP_POLL_INTERVAL:-30s}
+      PERIAPSIS_DFIR_CLEANUP_RETRY_BASE_DELAY: ${PERIAPSIS_DFIR_CLEANUP_RETRY_BASE_DELAY:-10s}
+      PERIAPSIS_DFIR_MAX_OBJECT_BYTES: ${PERIAPSIS_DFIR_MAX_OBJECT_BYTES:-5000000000}
+      PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS:-172.30.242.2/32,172.30.242.3/32}
+      PERIAPSIS_DFIR_SCANNER_ALLOW_PLAINTEXT_LOCAL: "true"
+      PERIAPSIS_DFIR_SCANNER_ENDPOINT: tcp://clamav:3310
+      PERIAPSIS_DFIR_SCANNER_TIMEOUT: ${PERIAPSIS_DFIR_SCANNER_TIMEOUT:-5m}
+      PERIAPSIS_DFIR_SCAN_BATCH_SIZE: ${PERIAPSIS_DFIR_SCAN_BATCH_SIZE:-4}
+      PERIAPSIS_DFIR_SCAN_LEASE_DURATION: ${PERIAPSIS_DFIR_SCAN_LEASE_DURATION:-10m}
+      PERIAPSIS_DFIR_SCAN_OPERATION_TIMEOUT: ${PERIAPSIS_DFIR_SCAN_OPERATION_TIMEOUT:-6m}
+      PERIAPSIS_DFIR_SCAN_POLL_INTERVAL: ${PERIAPSIS_DFIR_SCAN_POLL_INTERVAL:-2s}
+      PERIAPSIS_DFIR_SCAN_RETRY_BASE_DELAY: ${PERIAPSIS_DFIR_SCAN_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_DFIR_SCAN_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_DFIR_SCAN_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_DFIR_SCAN_UPLOAD_POLL_DELAY: ${PERIAPSIS_DFIR_SCAN_UPLOAD_POLL_DELAY:-5s}
+      PERIAPSIS_ENV: development
+      PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/periapsis-dev-tls-ca.crt
+      PERIAPSIS_FEDERATED_HTTPS_PORTS: ${PERIAPSIS_FEDERATED_HTTPS_PORTS:-443,18090}
+      PERIAPSIS_FEDERATED_MAX_CONCURRENT: ${PERIAPSIS_FEDERATED_MAX_CONCURRENT:-16}
+      PERIAPSIS_FEDERATED_OPERATION_TIMEOUT: ${PERIAPSIS_FEDERATED_OPERATION_TIMEOUT:-20s}
+      PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
+      PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
+      PERIAPSIS_IDENTITY_KEYRING_FILE: /run/secrets/periapsis_identity_keyring
+      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-636}
+      PERIAPSIS_LDAP_MAX_CONCURRENT: ${PERIAPSIS_LDAP_MAX_CONCURRENT:-8}
+      PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
+      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-389}
+      PERIAPSIS_LDAP_SYNC_ABSENCE_BATCH_SIZE: ${PERIAPSIS_LDAP_SYNC_ABSENCE_BATCH_SIZE:-100}
+      PERIAPSIS_LDAP_SYNC_LEASE: ${PERIAPSIS_LDAP_SYNC_LEASE:-30s}
+      PERIAPSIS_LDAP_SYNC_MAX_BACKOFF: ${PERIAPSIS_LDAP_SYNC_MAX_BACKOFF:-30s}
+      PERIAPSIS_LDAP_SYNC_MIN_BACKOFF: ${PERIAPSIS_LDAP_SYNC_MIN_BACKOFF:-1s}
+      PERIAPSIS_LDAP_SYNC_OPERATION_TIMEOUT: ${PERIAPSIS_LDAP_SYNC_OPERATION_TIMEOUT:-30m}
+      PERIAPSIS_LDAP_SYNC_PARALLELISM: ${PERIAPSIS_LDAP_SYNC_PARALLELISM:-2}
+      PERIAPSIS_OIDC_MAINTENANCE_BATCH_SIZE: ${PERIAPSIS_OIDC_MAINTENANCE_BATCH_SIZE:-12}
+      PERIAPSIS_OIDC_MAINTENANCE_LEASE_SAFETY: ${PERIAPSIS_OIDC_MAINTENANCE_LEASE_SAFETY:-5s}
+      PERIAPSIS_OIDC_MAINTENANCE_POLL_INTERVAL: ${PERIAPSIS_OIDC_MAINTENANCE_POLL_INTERVAL:-2s}
+      PERIAPSIS_RELEASE: ${PERIAPSIS_IMAGE_TAG:-development}
+      PERIAPSIS_SLA_BATCH_SIZE: ${PERIAPSIS_SLA_BATCH_SIZE:-10}
+      PERIAPSIS_SLA_LEASE_DURATION: ${PERIAPSIS_SLA_LEASE_DURATION:-2m}
+      PERIAPSIS_SLA_MAXIMUM_ATTEMPTS: ${PERIAPSIS_SLA_MAXIMUM_ATTEMPTS:-10}
+      PERIAPSIS_SLA_OPERATION_TIMEOUT: ${PERIAPSIS_SLA_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_SLA_POLL_INTERVAL: ${PERIAPSIS_SLA_POLL_INTERVAL:-2s}
+      PERIAPSIS_SLA_RETRY_BASE_DELAY: ${PERIAPSIS_SLA_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_SLA_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_SLA_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_SLA_RUN_TIMEOUT: ${PERIAPSIS_SLA_RUN_TIMEOUT:-2m}
+      PERIAPSIS_SLA_ACTION_BATCH_SIZE: ${PERIAPSIS_SLA_ACTION_BATCH_SIZE:-10}
+      PERIAPSIS_SLA_ACTION_LEASE_DURATION: ${PERIAPSIS_SLA_ACTION_LEASE_DURATION:-2m}
+      PERIAPSIS_SLA_ACTION_LEASE_SAFETY: ${PERIAPSIS_SLA_ACTION_LEASE_SAFETY:-15s}
+      PERIAPSIS_SLA_ACTION_OPERATION_TIMEOUT: ${PERIAPSIS_SLA_ACTION_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_SLA_ACTION_POLL_INTERVAL: ${PERIAPSIS_SLA_ACTION_POLL_INTERVAL:-2s}
+      PERIAPSIS_SLA_ACTION_QUEUE_LIMIT: ${PERIAPSIS_SLA_ACTION_QUEUE_LIMIT:-100}
+      PERIAPSIS_SLA_ACTION_RUN_TIMEOUT: ${PERIAPSIS_SLA_ACTION_RUN_TIMEOUT:-2m}
+      PERIAPSIS_SLA_EVENT_BATCH_SIZE: ${PERIAPSIS_SLA_EVENT_BATCH_SIZE:-10}
+      PERIAPSIS_SLA_EVENT_LEASE_DURATION: ${PERIAPSIS_SLA_EVENT_LEASE_DURATION:-2m}
+      PERIAPSIS_SLA_EVENT_MAXIMUM_ATTEMPTS: ${PERIAPSIS_SLA_EVENT_MAXIMUM_ATTEMPTS:-10}
+      PERIAPSIS_SLA_EVENT_OPERATION_TIMEOUT: ${PERIAPSIS_SLA_EVENT_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_SLA_EVENT_POLL_INTERVAL: ${PERIAPSIS_SLA_EVENT_POLL_INTERVAL:-2s}
+      PERIAPSIS_SLA_EVENT_RETRY_BASE_DELAY: ${PERIAPSIS_SLA_EVENT_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_SLA_EVENT_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_SLA_EVENT_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_SLA_EVENT_RUN_TIMEOUT: ${PERIAPSIS_SLA_EVENT_RUN_TIMEOUT:-2m}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_BATCH_SIZE: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_BATCH_SIZE:-25}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_DURATION: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_DURATION:-2m}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_SAFETY: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_SAFETY:-15s}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_MAXIMUM_ATTEMPTS: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_MAXIMUM_ATTEMPTS:-10}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_OPERATION_TIMEOUT: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_BASE_DELAY: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_S3_ACCESS_KEY_FILE: /run/secrets/minio_access_key
+      PERIAPSIS_S3_ALLOW_PLAINTEXT_LOCAL: "true"
+      PERIAPSIS_S3_BUCKET: periapsis-evidence
+      PERIAPSIS_S3_ENDPOINT: http://minio:9000
+      PERIAPSIS_S3_MAX_CONCURRENT: ${PERIAPSIS_S3_MAX_CONCURRENT:-16}
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: https://storage.localhost:${PERIAPSIS_MINIO_API_PORT:-19000}
+      PERIAPSIS_S3_REGION: eu-south-1
+      PERIAPSIS_S3_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+      PERIAPSIS_WORKER_ADDR: 0.0.0.0:8082
+      PERIAPSIS_WORKER_POLL_INTERVAL: ${PERIAPSIS_WORKER_POLL_INTERVAL:-5s}
+    secrets:
+      - periapsis_identity_keyring
+      - source: dev_tls_ca
+        target: periapsis-dev-tls-ca.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+      - minio_access_key
+      - minio_secret_key
+    healthcheck:
+      test:
+        - CMD
+        - /healthcheck
+        - http://127.0.0.1:8082/health/ready
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      minio-provision:
+        condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+    networks:
+      backend: {}
+      identity: {}
+      storage: {}
+
+  web:
+    <<: *application-security
+    profiles: *runtime-profiles
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        REVISION: ${PERIAPSIS_IMAGE_REVISION:-local}
+        VERSION: ${PERIAPSIS_IMAGE_TAG:-development}
+    image: periapsis/web:${PERIAPSIS_IMAGE_TAG:-development}
+    environment:
+      PERIAPSIS_API_URL: http://api:8080
+      PERIAPSIS_ENV: development
+      PERIAPSIS_RELEASE: ${PERIAPSIS_IMAGE_TAG:-development}
+      # Only the TLS edge below may supply a sanitized forwarding chain.
+      PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS: 172.30.240.4/32
+      PERIAPSIS_WEB_ADDR: 0.0.0.0:8081
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8081/health/live',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      frontend:
+        ipv4_address: 172.30.240.3
+
+  edge:
+    <<: *application-security
+    profiles: *runtime-profiles
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    environment:
+      PERIAPSIS_IDP_PORT: ${PERIAPSIS_IDP_PORT:-18090}
+      PERIAPSIS_MINIO_API_PORT: ${PERIAPSIS_MINIO_API_PORT:-19000}
+      PERIAPSIS_WEB_PORT: ${PERIAPSIS_WEB_PORT:-8443}
+      XDG_CONFIG_HOME: /config
+      XDG_DATA_HOME: /data
+    volumes:
+      - ./edge/Caddyfile:/etc/caddy/Caddyfile:ro
+    secrets:
+      - source: dev_tls_certificate
+        target: periapsis-dev-tls.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+      - source: dev_tls_private_key
+        target: periapsis-dev-tls.key
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: dev_tls_ca
+        target: periapsis-dev-tls-ca.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+      - /data:uid=10001,gid=10001,mode=0700
+      - /config:uid=10001,gid=10001,mode=0700
+    ports:
+      - 127.0.0.1:${PERIAPSIS_WEB_PORT:-8443}:${PERIAPSIS_WEB_PORT:-8443}
+      - 127.0.0.1:${PERIAPSIS_IDP_PORT:-18090}:${PERIAPSIS_IDP_PORT:-18090}
+      - 127.0.0.1:${PERIAPSIS_MINIO_API_PORT:-19000}:${PERIAPSIS_MINIO_API_PORT:-19000}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent --show-error --max-time 2 --cacert /run/secrets/periapsis-dev-tls-ca.crt https://localhost:${PERIAPSIS_WEB_PORT:-8443}/health/live >/dev/null
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      web:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      frontend:
+        ipv4_address: 172.30.240.4
+      identity:
+        ipv4_address: 172.30.241.6
+        aliases:
+          - idp.localhost
+      storage:
+        ipv4_address: 172.30.242.6
+        aliases:
+          - storage.localhost
+
+  ldap-tls:
+    profiles:
+      - auth-test
+      - full
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.ldap-tls
+    image: periapsis/ldap-tls-init:3.5.7
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+    volumes:
+      - openldap_tls:/tls
+    network_mode: none
+    restart: "no"
+
+  openldap:
+    profiles:
+      - auth-test
+      - full
+    image: vegardit/openldap:2.6.10@sha256:8161e8fa74c518697776fff27b403cc4c273aede07b6d87f473a45201050d0de
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LDAPTLS_CACERT: /run/secrets/ldap/ca.crt
+      LDAPTLS_REQCERT: demand
+      LDAP_INIT_ALLOW_ANONYMOUS_ROOT_DSE: "false"
+      LDAP_INIT_ORG_DN: DC=periapsis,DC=test
+      LDAP_INIT_ORG_NAME: Periapsis Test Directory
+      LDAP_INIT_ROOT_USER_PW_FILE: /run/secrets/ldap-admin-password
+      LDAP_INIT_ROOT_USER_DN: uid=admin,DC=periapsis,DC=test
+      LDAP_LOG_LEVELS: Stats
+      LDAP_LDAPS_ENABLED: "true"
+      LDAP_TLS_ENABLED: "true"
+      LDAP_TLS_SSF: "128"
+      LDAP_TLS_VERIFY_CLIENT: never
+    secrets:
+      - source: ldap_admin_password
+        target: ldap-admin-password
+    volumes:
+      - ./auth/openldap-empty-entries.ldif:/opt/ldifs/init_org_entries.ldif:ro
+      - ./auth/openldap-acceptance-fixture.sh:/opt/ldifs/periapsis-acceptance-fixture.sh:ro
+      - openldap_data:/var/lib/ldap
+      - openldap_config:/etc/ldap/slapd.d
+      - openldap_tls:/run/secrets/ldap:ro
+    tmpfs:
+      - /tmp
+      - /run
+    healthcheck:
+      test:
+        - CMD
+        - ldapsearch
+        - -x
+        - -ZZ
+        - -H
+        - ldap://openldap:389
+        - -D
+        - uid=admin,DC=periapsis,DC=test
+        - -y
+        - /run/secrets/ldap-admin-password
+        - -s
+        - base
+        - -b
+        - ""
+        - namingContexts
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      ldap-tls:
+        condition: service_completed_successfully
+    networks:
+      identity:
+        ipv4_address: 172.30.241.4
+    stop_grace_period: 30s
+
+  identity-provider:
+    profiles:
+      - auth-test
+      - full
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.keycloak
+    image: periapsis/keycloak-test:26.7.2
+    command:
+      - start
+      - --optimized
+      - --import-realm
+      - --http-enabled=true
+      - --http-port=8080
+    user: "1000:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${PERIAPSIS_IDP_ADMIN_PASSWORD:-}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${PERIAPSIS_IDP_ADMIN_USERNAME:-admin}
+      KC_HOSTNAME: https://idp.localhost:${PERIAPSIS_IDP_PORT:-18090}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: 172.30.241.6/32
+      PERIAPSIS_WEB_PORT: ${PERIAPSIS_WEB_PORT:-8443}
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./auth/keycloak-realm.json:/opt/keycloak/data/import/periapsis-realm.json:ro
+    tmpfs:
+      - /tmp:uid=1000,gid=0,mode=1770
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |-
+          exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q '200 OK' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    networks:
+      identity:
+        ipv4_address: 172.30.241.5
+    stop_grace_period: 30s
+
+  mailpit:
+    profiles:
+      - full
+    image: axllent/mailpit:v1.30.3@sha256:956d688cbd13dca36c72d8e94c34d6d1cdf4a005aa6aa4ff6edaaac56c34d8df
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "1000"
+      MP_SMTP_AUTH_ACCEPT_ANY: "false"
+      MP_SMTP_BIND_ADDR: 0.0.0.0:1025
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+      - /data:uid=10001,gid=10001,mode=1770
+    ports:
+      - 127.0.0.1:${PERIAPSIS_MAILPIT_PORT:-18025}:8025
+      - 127.0.0.1:${PERIAPSIS_MAILPIT_SMTP_PORT:-11025}:1025
+    healthcheck:
+      test:
+        - CMD
+        - /mailpit
+        - readyz
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    networks:
+      - integrations
+
+  minio:
+    profiles: *runtime-profiles
+    # The final open-source MinIO release is local-test-only; production uses external S3.
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.minio
+    image: periapsis/minio-test:RELEASE.2025-09-07T16-13-09Z
+    command:
+      - server
+      - /data
+      - --console-address
+      - :9001
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+    secrets:
+      - minio_root_password
+      - minio_root_user
+    volumes:
+      - minio_data:/data
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=1770
+    ports:
+      - 127.0.0.1:${PERIAPSIS_MINIO_CONSOLE_PORT:-19001}:9001
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - http://127.0.0.1:9000/minio/health/live
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    networks:
+      storage:
+        ipv4_address: 172.30.242.2
+
+  minio-provision:
+    profiles: *runtime-profiles
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.minio-provision
+    image: periapsis/minio-provision:${PERIAPSIS_IMAGE_TAG:-development}
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PERIAPSIS_DFIR_CORS_ORIGIN: https://localhost:${PERIAPSIS_WEB_PORT:-8443}
+      PERIAPSIS_S3_BUCKET: periapsis-evidence
+    secrets:
+      - minio_root_password
+      - minio_root_user
+      - minio_access_key
+      - minio_secret_key
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      storage:
+        ipv4_address: 172.30.242.5
+    restart: "no"
+
+  clamav:
+    profiles: *runtime-profiles
+    image: clamav/clamav-debian:1.5.4_base@sha256:bbefacdc028635d83f4e6c81abf94db4f1d859b6f6009d90c94ae3d22625b235
+    user: "1000:1000"
+    entrypoint:
+      - /init-unprivileged
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+      FRESHCLAM_CHECKS: "12"
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+      - ./clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+      - ./clamav/freshclam.conf:/etc/clamav/freshclam.conf:ro
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=1770
+      - /run/clamav:uid=1000,gid=1000,mode=0770
+      - /var/log/clamav:uid=1000,gid=1000,mode=0770
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /usr/local/bin/clamdcheck.sh && test -n "$$(find /var/lib/clamav -maxdepth 1 -type f \( -name 'daily.cvd' -o -name 'daily.cld' \) -mmin -1560 -print -quit)"
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 5m
+    networks:
+      storage:
+        ipv4_address: 172.30.242.3
+      clamav-updates: {}
+    stop_grace_period: 30s
+
+  notifier:
+    <<: *application-security
+    profiles:
+      - full
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile.notifier
+      args:
+        REVISION: ${PERIAPSIS_IMAGE_REVISION:-local}
+        VERSION: ${PERIAPSIS_IMAGE_TAG:-development}
+    image: ${PERIAPSIS_NOTIFIER_IMAGE:-periapsis/notifier:development}
+    environment:
+      PERIAPSIS_DATABASE_URL: postgresql://periapsis_notifier_login:${PERIAPSIS_NOTIFIER_DATABASE_PASSWORD:-}@postgres:5432/periapsis?sslmode=disable
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: periapsis-notifier
+      PERIAPSIS_ENV: development
+      PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
+      PERIAPSIS_NOTIFIER_ADDR: 0.0.0.0:8083
+      PERIAPSIS_NOTIFIER_BATCH_SIZE: ${PERIAPSIS_NOTIFIER_BATCH_SIZE:-50}
+      PERIAPSIS_NOTIFIER_BUSY_POLL_MS: ${PERIAPSIS_NOTIFIER_BUSY_POLL_MS:-25}
+      PERIAPSIS_NOTIFIER_CONCURRENCY: ${PERIAPSIS_NOTIFIER_CONCURRENCY:-8}
+      PERIAPSIS_NOTIFIER_DELIVERY_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_DELIVERY_TIMEOUT_MS:-30000}
+      PERIAPSIS_NOTIFIER_FAILURE_POLL_MS: ${PERIAPSIS_NOTIFIER_FAILURE_POLL_MS:-5000}
+      PERIAPSIS_NOTIFIER_FANOUT_BATCH_SIZE: ${PERIAPSIS_NOTIFIER_FANOUT_BATCH_SIZE:-50}
+      PERIAPSIS_NOTIFIER_FANOUT_CONCURRENCY: ${PERIAPSIS_NOTIFIER_FANOUT_CONCURRENCY:-8}
+      PERIAPSIS_NOTIFIER_FANOUT_HEARTBEAT_MS: ${PERIAPSIS_NOTIFIER_FANOUT_HEARTBEAT_MS:-15000}
+      PERIAPSIS_NOTIFIER_FANOUT_INITIAL_RETRY_MS: ${PERIAPSIS_NOTIFIER_FANOUT_INITIAL_RETRY_MS:-1000}
+      PERIAPSIS_NOTIFIER_FANOUT_LEASE_MS: ${PERIAPSIS_NOTIFIER_FANOUT_LEASE_MS:-60000}
+      PERIAPSIS_NOTIFIER_FANOUT_MAX_RETRY_MS: ${PERIAPSIS_NOTIFIER_FANOUT_MAX_RETRY_MS:-60000}
+      PERIAPSIS_NOTIFIER_FANOUT_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_FANOUT_TIMEOUT_MS:-30000}
+      PERIAPSIS_NOTIFIER_HEARTBEAT_MS: ${PERIAPSIS_NOTIFIER_HEARTBEAT_MS:-15000}
+      PERIAPSIS_NOTIFIER_IDLE_POLL_MS: ${PERIAPSIS_NOTIFIER_IDLE_POLL_MS:-1000}
+      PERIAPSIS_NOTIFIER_LEASE_MS: ${PERIAPSIS_NOTIFIER_LEASE_MS:-60000}
+      PERIAPSIS_NOTIFIER_MAX_OUTPUT_BYTES: ${PERIAPSIS_NOTIFIER_MAX_OUTPUT_BYTES:-262144}
+      PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE: /run/secrets/notifier_preview_token
+      PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS:-2000}
+      PERIAPSIS_NOTIFIER_RENDER_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_RENDER_TIMEOUT_MS:-100}
+      PERIAPSIS_RELEASE: ${PERIAPSIS_IMAGE_TAG:-development}
+      PERIAPSIS_SMTP_ALLOW_PLAIN_LOCAL: "true"
+      PERIAPSIS_WEBHOOK_ALLOW_PLAIN_LOCAL: "true"
+      PERIAPSIS_WEBHOOK_ALLOWED_PORTS: ${PERIAPSIS_WEBHOOK_ALLOWED_PORTS:-80,443,8080}
+      PERIAPSIS_SMTP_ALLOWED_PORTS: "1025"
+      PERIAPSIS_SMTP_ALLOWED_PRIVATE_HOSTS: mailpit
+      NOTIFICATION_KEYRING_FILE: /run/secrets/notification-keyring
+    secrets:
+      - notifier_preview_token
+      - notification-keyring
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8083/health/ready',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    depends_on:
+      notifier-provision:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+    networks:
+      backend: {}
+      integrations: {}
+      notification-preview:
+        aliases:
+          - notifier-preview
+      storage: {}
+
+  otel-collector:
+    profiles:
+      - full
+    image: otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+    command:
+      - --config=/etc/otelcol-contrib/config.yaml
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ../observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+    healthcheck:
+      test:
+        - CMD
+        - /otelcol-contrib
+        - validate
+        - --config=/etc/otelcol-contrib/config.yaml
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - backend
+      - integrations
+    stop_grace_period: 15s
+
+  prometheus:
+    profiles:
+      - full
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    user: "65534:65534"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ../observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ../observability/alert-rules.yaml:/etc/prometheus/alert-rules.yaml:ro
+      - prometheus_data:/prometheus
+    tmpfs:
+      - /tmp:uid=65534,gid=65534,mode=1770
+    healthcheck:
+      test:
+        - CMD
+        - /bin/promtool
+        - check
+        - ready
+        - --url=http://127.0.0.1:9090
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    ports:
+      - 127.0.0.1:${PERIAPSIS_PROMETHEUS_PORT:-19090}:9090
+    networks:
+      - backend
+      - frontend
+      - integrations
+    stop_grace_period: 15s
+
+volumes:
+  clamav_signatures:
+  keycloak_data:
+  minio_data:
+  openldap_config:
+  openldap_data:
+  openldap_tls:
+  postgres_data:
+  prometheus_data:
+
+networks:
+  backend:
+    internal: true
+  frontend:
+    ipam:
+      config:
+        - subnet: 172.30.240.0/29
+  identity:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.241.0/28
+  integrations:
+    internal: true
+  notification-preview:
+    internal: true
+  storage:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.242.0/28
+  clamav-updates: {}
+
+secrets:
+  dev_tls_certificate:
+    file: ${PERIAPSIS_DEV_TLS_CERT_FILE:?set PERIAPSIS_DEV_TLS_CERT_FILE to an external PEM certificate path}
+  dev_tls_private_key:
+    file: ${PERIAPSIS_DEV_TLS_KEY_FILE:?set PERIAPSIS_DEV_TLS_KEY_FILE to an external PEM private-key path}
+  dev_tls_ca:
+    file: ${PERIAPSIS_DEV_TLS_CA_FILE:?set PERIAPSIS_DEV_TLS_CA_FILE to an external PEM CA path}
+  postgres_password:
+    environment: PERIAPSIS_POSTGRES_PASSWORD
+  api_database_password:
+    environment: PERIAPSIS_API_DATABASE_PASSWORD
+  worker_database_password:
+    environment: PERIAPSIS_WORKER_DATABASE_PASSWORD
+  notifier_database_password:
+    environment: PERIAPSIS_NOTIFIER_DATABASE_PASSWORD
+  notifier_preview_token:
+    environment: PERIAPSIS_NOTIFIER_PREVIEW_TOKEN
+  notification-keyring:
+    environment: PERIAPSIS_NOTIFICATION_KEYRING
+  periapsis_bootstrap_token:
+    environment: PERIAPSIS_BOOTSTRAP_TOKEN
+  periapsis_master_key:
+    environment: PERIAPSIS_MASTER_KEY
+  periapsis_api_credential_keyring:
+    environment: PERIAPSIS_API_CREDENTIAL_KEYRING
+  periapsis_identity_keyring:
+    environment: PERIAPSIS_IDENTITY_KEYRING
+  ldap_admin_password:
+    environment: PERIAPSIS_LDAP_ADMIN_PASSWORD
+  minio_root_user:
+    environment: PERIAPSIS_MINIO_ROOT_USER
+  minio_root_password:
+    environment: PERIAPSIS_MINIO_ROOT_PASSWORD
+  minio_access_key:
+    environment: PERIAPSIS_S3_ACCESS_KEY
+  minio_secret_key:
+    environment: PERIAPSIS_S3_SECRET_KEY

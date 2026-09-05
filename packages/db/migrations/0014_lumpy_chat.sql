@@ -1,0 +1,2 @@
+ALTER TABLE "tenant_permissions" DROP CONSTRAINT "tenant_permissions_description_check";--> statement-breakpoint
+ALTER TABLE "tenant_permissions" ADD CONSTRAINT "tenant_permissions_description_check" CHECK (btrim("tenant_permissions"."description") <> '' and char_length("tenant_permissions"."description") <= 500 and "tenant_permissions"."description" !~ '[[:cntrl:]]');

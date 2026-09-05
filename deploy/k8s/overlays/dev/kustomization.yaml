@@ -1,0 +1,107 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: periapsis-dev
+nameSuffix: -dev
+resources:
+  - ../../base
+images:
+  - name: periapsis/api
+    newName: periapsis/api
+    newTag: development
+  - name: periapsis/worker
+    newName: periapsis/worker
+    newTag: development
+  - name: periapsis/notifier
+    newName: periapsis/notifier
+    newTag: development
+  - name: periapsis/web
+    newName: periapsis/web
+    newTag: development
+  - name: periapsis/database-task
+    newName: periapsis/database-task
+    newTag: development
+replicas:
+  - name: periapsis-api
+    count: 1
+  - name: periapsis-worker
+    count: 1
+  - name: periapsis-notifier
+    count: 1
+  - name: periapsis-web
+    count: 1
+patches:
+  - target:
+      kind: ConfigMap
+      name: periapsis-runtime
+    patch: |-
+      - op: replace
+        path: /data/PERIAPSIS_ENV
+        value: development
+      - op: replace
+        path: /data/PERIAPSIS_PUBLIC_URL
+        value: https://periapsis.local
+      - op: replace
+        path: /data/PERIAPSIS_DOCS_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/PERIAPSIS_API_URL
+        value: http://periapsis-api-dev:8080
+  - target:
+      kind: Ingress
+      name: periapsis-web
+    patch: |-
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1ssl-redirect
+        value: "true"
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1force-ssl-redirect
+        value: "true"
+      - op: replace
+        path: /spec/rules/0/host
+        value: periapsis.local
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: periapsis.local
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: periapsis-ingress-tls-dev
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: periapsis-api
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: periapsis-worker
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: periapsis-notifier
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: periapsis-web
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3

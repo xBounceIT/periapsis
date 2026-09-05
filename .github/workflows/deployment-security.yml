@@ -1,0 +1,401 @@
+name: Deployment and supply-chain security
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      notifier_image:
+        description: Optional immutable notifier image digest to scan
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  PERIAPSIS_API_IMAGE: registry.example.invalid/periapsis/api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  PERIAPSIS_API_DATABASE_PASSWORD: compose-validation-api-password
+  PERIAPSIS_API_CREDENTIAL_KEYRING: '{"activeVersion":1,"keys":[{"version":1,"key":"ERERERERERERERERERERERERERERERERERERERERERE="}]}'
+  PERIAPSIS_BOOTSTRAP_TOKEN: compose-validation-bootstrap-token
+  PERIAPSIS_IDENTITY_KEYRING: '{"activeVersion":1,"keys":[{"version":1,"key":"IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="}]}'
+  PERIAPSIS_IDP_ADMIN_PASSWORD: compose-validation-idp-password
+  PERIAPSIS_LDAP_ADMIN_PASSWORD: compose-validation-ldap-password
+  PERIAPSIS_MASTER_KEY: MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=
+  PERIAPSIS_MINIO_ROOT_PASSWORD: compose-validation-minio-password
+  PERIAPSIS_MINIO_ROOT_USER: compose-validation-minio-user
+  PERIAPSIS_DATABASE_TASK_IMAGE: registry.example.invalid/periapsis/database-task@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  PERIAPSIS_DEV_TLS_CA_FILE: /dev/null
+  PERIAPSIS_DEV_TLS_CERT_FILE: /dev/null
+  PERIAPSIS_DEV_TLS_KEY_FILE: /dev/null
+  PERIAPSIS_DFIR_SCANNER_ENDPOINT: tls://clamd-gateway.example.invalid:3310
+  PERIAPSIS_NOTIFIER_DATABASE_PASSWORD: compose-validation-notifier-password
+  PERIAPSIS_NOTIFIER_IMAGE: registry.example.invalid/periapsis/notifier@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  PERIAPSIS_NOTIFIER_PREVIEW_TOKEN: compose-validation-preview-token-0000000000000000
+  PERIAPSIS_NOTIFICATION_KEYRING: '{"activeVersion":1,"keys":[{"version":1,"key":"REREREREREREREREREREREREREREREREREREREREREQ"}]}'
+  PERIAPSIS_POSTGRES_PASSWORD: compose-validation-postgres-password
+  PERIAPSIS_PUBLIC_URL: https://periapsis.example.invalid
+  PERIAPSIS_RELEASE: validation
+  PERIAPSIS_S3_BUCKET: periapsis-validation
+  PERIAPSIS_S3_ENDPOINT: https://s3.example.invalid
+  PERIAPSIS_S3_PUBLIC_ENDPOINT: https://storage.example.invalid
+  PERIAPSIS_S3_REGION: eu-west-1
+  PERIAPSIS_WEB_IMAGE: registry.example.invalid/periapsis/web@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  PERIAPSIS_WORKER_DATABASE_PASSWORD: compose-validation-worker-password
+  PERIAPSIS_WORKER_IMAGE: registry.example.invalid/periapsis/worker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+jobs:
+  manifests:
+    name: Manifest source, render, and schema validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up pinned Docker Engine and CLI
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v28.5.2
+      - name: Install checksum-verified Docker Compose
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.docker/cli-plugins"
+          curl --fail --silent --show-error --location \
+            --output "${HOME}/.docker/cli-plugins/docker-compose" \
+            https://github.com/docker/compose/releases/download/v5.4.0/docker-compose-linux-x86_64
+          echo "837fd1d35bf6a494f41b5b5988269a7be79de337cf1a1a6ff0e45ab51bb4e9be  ${HOME}/.docker/cli-plugins/docker-compose" | sha256sum --check
+          chmod 0755 "${HOME}/.docker/cli-plugins/docker-compose"
+          test "$(docker compose version --short)" = "5.4.0"
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          check-latest: false
+          cache: false
+      - name: Run dependency-free deployment contract tests
+        run: |
+          node --test scripts/deploy/validate-manifests.test.mjs
+          node --test scripts/operations/recovery-evidence.test.mjs
+          node scripts/deploy/validate-manifests.mjs
+      - name: Install pinned manifest validators
+        env:
+          GOBIN: ${{ runner.temp }}/deployment-tools
+        run: |
+          set -euo pipefail
+          mkdir -p "${GOBIN}"
+          go install sigs.k8s.io/kustomize/kustomize/v5@v5.7.1
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${GOBIN}" >> "${GITHUB_PATH}"
+      - name: Validate workflow syntax
+        run: actionlint
+      - name: Validate Compose profiles and Swarm model
+        run: |
+          set -euo pipefail
+          for profile in minimal auth-test full seed; do
+            docker compose --file deploy/compose/compose.yaml --profile "${profile}" config --quiet
+          done
+          docker stack config --compose-file deploy/swarm/stack.yml >/dev/null
+      - name: Smoke-test local LDAP, OIDC, and SAML providers
+        run: |
+          set -euo pipefail
+          compose=(docker compose --file deploy/compose/compose.yaml --profile auth-test)
+          "${compose[@]}" up --build --wait openldap identity-provider
+          common=(-LLL -x -D uid=admin,DC=periapsis,DC=test -y /run/secrets/ldap-admin-password -b DC=periapsis,DC=test)
+          "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -ZZ -H ldap://openldap:389 -s base namingContexts >/dev/null
+          "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldaps://openldap:636 -s base namingContexts >/dev/null
+          if "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldap://openldap:389 -s base namingContexts >/dev/null 2>&1; then
+            echo "OpenLDAP accepted a clear-text authenticated operation" >&2
+            exit 1
+          fi
+          seeded="$("${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldaps://openldap:636 '(|(uid=employee1)(uid=guest1)(uid=machine1))' dn)"
+          test -z "${seeded}"
+          probe_identity_provider() {
+            local path="$1"
+            local expected="$2"
+            "${compose[@]}" exec -T identity-provider bash -ceu '
+              request_path="$1"
+              expected_marker="$2"
+              exec 3<>/dev/tcp/127.0.0.1/8080
+              printf "GET %s HTTP/1.1\r\nHost: idp.localhost:18090\r\nConnection: close\r\n\r\n" "${request_path}" >&3
+              response="$(cat <&3)"
+              grep -Eq "^HTTP/1\\.[01] 200 " <<<"${response}"
+              grep -Fq "${expected_marker}" <<<"${response}"
+            ' probe-identity-provider "${path}" "${expected}"
+          }
+          probe_identity_provider /realms/periapsis-test/.well-known/openid-configuration '"issuer"'
+          probe_identity_provider /realms/periapsis-test/protocol/saml/descriptor EntityDescriptor
+      - name: Tear down authentication smoke profile
+        if: always()
+        run: docker compose --file deploy/compose/compose.yaml --profile auth-test down --volumes --remove-orphans
+      - name: Render and validate Kubernetes overlays
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/kustomize"
+          for environment in base overlays/dev overlays/prod; do
+            output="${RUNNER_TEMP}/kustomize/$(echo "${environment}" | tr '/' '-').yaml"
+            kustomize build "deploy/k8s/${environment}" > "${output}"
+            kubeconform -strict -summary -kubernetes-version 1.32.0 "${output}"
+          done
+          kubeconform -strict -summary -ignore-missing-schemas deploy/k8s/optional
+      - name: Validate Prometheus and OpenTelemetry examples
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/prometheus.tar.gz" \
+            https://github.com/prometheus/prometheus/releases/download/v3.13.1/prometheus-3.13.1.linux-amd64.tar.gz
+          echo "962b812371aff838d152b6ff2d56fdb7a6396f5542f48ebf73421b9721f0d103  ${RUNNER_TEMP}/prometheus.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/prometheus.tar.gz" --directory "${RUNNER_TEMP}"
+          "${RUNNER_TEMP}/prometheus-3.13.1.linux-amd64/promtool" check config --syntax-only deploy/observability/prometheus.yaml
+          "${RUNNER_TEMP}/prometheus-3.13.1.linux-amd64/promtool" check rules --lint=all deploy/observability/alert-rules.yaml
+          docker run --rm --user 10001:10001 --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 \
+            --volume "${PWD}/deploy/observability:/config:ro" \
+            otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa \
+            validate --config=/config/otel-collector.yaml
+          docker run --rm --user 10001:10001 --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 \
+            --env PERIAPSIS_OTEL_BACKEND_ENDPOINT=https://otel.example.invalid \
+            --volume "${PWD}/deploy/observability:/config:ro" \
+            otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa \
+            validate --config=/config/otel-collector-production.example.yaml
+      - name: Scan rendered production Kubernetes configuration
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          echo "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/trivy.tar.gz" --directory "${RUNNER_TEMP}" trivy
+          "${RUNNER_TEMP}/trivy" config --exit-code 1 --severity HIGH,CRITICAL "${RUNNER_TEMP}/kustomize/overlays-prod.yaml"
+
+  secrets:
+    name: Repository secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Install checksum-verified Gitleaks
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/gitleaks.tar.gz" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${RUNNER_TEMP}/gitleaks.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/gitleaks.tar.gz" --directory "${RUNNER_TEMP}" gitleaks
+      - name: Scan Git history with redacted output
+        run: "${RUNNER_TEMP}/gitleaks detect --source . --redact --no-banner --verbose"
+
+  application-images:
+    name: Image security (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dockerfile: deploy/images/Dockerfile.api
+          - name: worker
+            dockerfile: deploy/images/Dockerfile.worker
+          - name: notifier
+            dockerfile: deploy/images/Dockerfile.notifier
+          - name: web
+            dockerfile: apps/web/Dockerfile
+          - name: database-task
+            dockerfile: deploy/compose/Dockerfile.database
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up pinned Docker Engine and CLI
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v28.5.2
+      - name: Set up ARM64 emulation
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.36.1
+      - name: Build immutable test image
+        env:
+          IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}
+        run: |
+          docker buildx build --pull --load --platform linux/amd64 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg VERSION="${GITHUB_SHA}" \
+            --file "${{ matrix.dockerfile }}" \
+            --tag "${IMAGE}" .
+      - name: Prove AMD64 and ARM64 builds
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/${{ matrix.name }}.multiarch.oci.tar"
+          docker buildx build --pull \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg VERSION="${GITHUB_SHA}" \
+            --file "${{ matrix.dockerfile }}" \
+            --output "type=oci,dest=${output}" .
+          test -s "${output}"
+      - name: Load ARM64 runtime image under emulation
+        env:
+          IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}-arm64
+        run: |
+          docker buildx build --pull --load --platform linux/arm64 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg VERSION="${GITHUB_SHA}" \
+            --file "${{ matrix.dockerfile }}" \
+            --tag "${IMAGE}" .
+      - name: Prove numeric non-root and read-only runtime on both architectures
+        env:
+          AMD64_IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}
+          ARM64_IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}-arm64
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/${{ matrix.name }}.runtime.txt"
+          : > "${evidence}"
+          for architecture in amd64 arm64; do
+            if [ "${architecture}" = "amd64" ]; then
+              image="${AMD64_IMAGE}"
+            else
+              image="${ARM64_IMAGE}"
+            fi
+            test "$(docker image inspect --format '{{.Architecture}}' "${image}")" = "${architecture}"
+            test "$(docker image inspect --format '{{.Config.User}}' "${image}")" = "10001:10001"
+            case "${{ matrix.name }}" in
+              api|worker)
+                uid="$(docker run --rm --platform "linux/${architecture}" --read-only --cap-drop ALL --security-opt no-new-privileges \
+                  --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint /healthcheck "${image}" --print-uid)"
+                ;;
+              web|database-task|notifier)
+                uid="$(docker run --rm --platform "linux/${architecture}" --read-only --cap-drop ALL --security-opt no-new-privileges \
+                  --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "${image}" -p 'process.getuid()')"
+                docker run --rm --platform "linux/${architecture}" --read-only --cap-drop ALL --security-opt no-new-privileges \
+                  --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint /bin/sh "${image}" -ec '
+                    for manager in apk corepack npm npx pnpm pnpx yarn yarnpkg; do
+                      if command -v "${manager}" >/dev/null 2>&1; then
+                        echo "unexpected package manager: ${manager}" >&2
+                        exit 1
+                      fi
+                    done
+                    for path in /etc/apk /var/cache/apk /sbin/apk /usr/bin/apk; do
+                      test ! -e "${path}"
+                    done
+                    test -s /lib/apk/db/installed
+                  '
+                ;;
+            esac
+            test "${uid}" = "10001"
+            image_id="$(docker image inspect --format '{{.Id}}' "${image}")"
+            printf 'architecture=%s image_id=%s configured_user=10001:10001 observed_uid=%s read_only=true package_managers_absent=true package_inventory_present=true\n' \
+              "${architecture}" "${image_id}" "${uid}" >> "${evidence}"
+          done
+      - name: Install checksum-verified SBOM and vulnerability tools
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/syft.tar.gz" \
+            https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_linux_amd64.tar.gz
+          echo "2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f  ${RUNNER_TEMP}/syft.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/syft.tar.gz" --directory "${RUNNER_TEMP}" syft
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          echo "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/trivy.tar.gz" --directory "${RUNNER_TEMP}" trivy
+      - name: Generate SPDX SBOM
+        env:
+          IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}
+        run: "${RUNNER_TEMP}/syft docker:${IMAGE} --output spdx-json=${RUNNER_TEMP}/${{ matrix.name }}.spdx.json"
+      - name: Scan image vulnerabilities and embedded secrets
+        env:
+          IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}
+        run: |
+          "${RUNNER_TEMP}/trivy" image \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --scanners vuln,secret \
+            --format sarif \
+            --output "${RUNNER_TEMP}/${{ matrix.name }}.trivy.sarif" \
+            "${IMAGE}"
+      - name: Upload security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.name }}.spdx.json
+            ${{ runner.temp }}/${{ matrix.name }}.trivy.sarif
+            ${{ runner.temp }}/${{ matrix.name }}.runtime.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+  notifier-image:
+    name: External notifier image security
+    if: github.event_name == 'workflow_dispatch' && inputs.notifier_image != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Set up pinned Docker Engine and CLI
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v28.5.2
+      - name: Require and pull immutable digest
+        env:
+          IMAGE: ${{ inputs.notifier_image }}
+        run: |
+          set -euo pipefail
+          echo "${IMAGE}" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          docker pull "${IMAGE}"
+          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE}")" = "10001:10001"
+          test "$(docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "${IMAGE}" -p 'process.getuid()')" = "10001"
+      - name: Install checksum-verified scanners
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/syft.tar.gz" \
+            https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_linux_amd64.tar.gz
+          echo "2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f  ${RUNNER_TEMP}/syft.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/syft.tar.gz" --directory "${RUNNER_TEMP}" syft
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          echo "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "${RUNNER_TEMP}/trivy.tar.gz" --directory "${RUNNER_TEMP}" trivy
+      - name: Generate and scan external notifier evidence
+        env:
+          IMAGE: ${{ inputs.notifier_image }}
+        run: |
+          "${RUNNER_TEMP}/syft" "docker:${IMAGE}" --output spdx-json="${RUNNER_TEMP}/notifier.spdx.json"
+          "${RUNNER_TEMP}/trivy" image \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --scanners vuln,secret \
+            --format sarif \
+            --output "${RUNNER_TEMP}/notifier.trivy.sarif" \
+            "${IMAGE}"
+      - name: Upload notifier security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-notifier-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/notifier.spdx.json
+            ${{ runner.temp }}/notifier.trivy.sarif
+          if-no-files-found: warn
+          retention-days: 30

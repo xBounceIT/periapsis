@@ -1,0 +1,4 @@
+ALTER TABLE "tenant_roles" DROP CONSTRAINT "tenant_roles_display_name_check";--> statement-breakpoint
+ALTER TABLE "tenant_roles" DROP CONSTRAINT "tenant_roles_description_check";--> statement-breakpoint
+ALTER TABLE "tenant_roles" ADD CONSTRAINT "tenant_roles_display_name_check" CHECK (btrim("tenant_roles"."display_name") <> '' and char_length("tenant_roles"."display_name") <= 120 and "tenant_roles"."display_name" !~ '[[:cntrl:]]');--> statement-breakpoint
+ALTER TABLE "tenant_roles" ADD CONSTRAINT "tenant_roles_description_check" CHECK (char_length("tenant_roles"."description") <= 500 and "tenant_roles"."description" !~ '[[:cntrl:]]');

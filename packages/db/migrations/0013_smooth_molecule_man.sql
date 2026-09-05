@@ -1,0 +1,2 @@
+ALTER TABLE "tenant_roles" DROP CONSTRAINT "tenant_roles_key_canonical_check";--> statement-breakpoint
+ALTER TABLE "tenant_roles" ADD CONSTRAINT "tenant_roles_key_canonical_check" CHECK ("tenant_roles"."key" ~ '^[a-z][a-z0-9_]{2,63}$');

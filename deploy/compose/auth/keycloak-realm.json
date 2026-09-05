@@ -1,0 +1,43 @@
+{
+  "realm": "periapsis-test",
+  "displayName": "Periapsis authentication test",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "periapsis-oidc",
+      "name": "Periapsis OIDC PKCE test client",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://localhost:${PERIAPSIS_WEB_PORT}/*"],
+      "webOrigins": ["https://localhost:${PERIAPSIS_WEB_PORT}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost:${PERIAPSIS_WEB_PORT}/*"
+      },
+      "defaultClientScopes": ["profile", "email", "roles", "web-origins"]
+    },
+    {
+      "clientId": "periapsis-saml",
+      "name": "Periapsis SAML test service provider",
+      "protocol": "saml",
+      "publicClient": true,
+      "enabled": true,
+      "redirectUris": ["https://localhost:${PERIAPSIS_WEB_PORT}/*"],
+      "attributes": {
+        "saml.assertion.signature": "true",
+        "saml.client.signature": "false",
+        "saml.force.post.binding": "true",
+        "saml_name_id_format": "username",
+        "saml.server.signature": "true"
+      }
+    }
+  ]
+}

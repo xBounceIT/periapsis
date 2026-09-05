@@ -1,0 +1,2 @@
+ALTER TABLE "platform_audit_events" DROP CONSTRAINT "platform_audit_events_reason_check";--> statement-breakpoint
+ALTER TABLE "platform_audit_events" ADD CONSTRAINT "platform_audit_events_reason_check" CHECK ("platform_audit_events"."reason" is null or octet_length("platform_audit_events"."reason") between 1 and 2048);

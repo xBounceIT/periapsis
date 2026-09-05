@@ -1,0 +1,14 @@
+go 1.26.0
+
+toolchain go1.26.7
+
+use (
+	./modules/contacts
+	./modules/customfields
+	./modules/identity
+	./modules/sla
+	./modules/dfir
+	./modules/ticketing
+	./services/api
+	./services/worker
+)

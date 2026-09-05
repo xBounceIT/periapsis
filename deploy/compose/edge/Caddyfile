@@ -1,0 +1,27 @@
+{
+	admin off
+	auto_https off
+}
+
+# No `log` directive: browser, identity, and object-store access logs stay disabled.
+
+(periapsis_dev_tls) {
+	tls /run/secrets/periapsis-dev-tls.crt /run/secrets/periapsis-dev-tls.key {
+		protocols tls1.2 tls1.3
+	}
+}
+
+https://localhost:{$PERIAPSIS_WEB_PORT:8443} {
+	import periapsis_dev_tls
+	reverse_proxy http://web:8081
+}
+
+https://idp.localhost:{$PERIAPSIS_IDP_PORT:18090} {
+	import periapsis_dev_tls
+	reverse_proxy http://identity-provider:8080
+}
+
+https://storage.localhost:{$PERIAPSIS_MINIO_API_PORT:19000} {
+	import periapsis_dev_tls
+	reverse_proxy http://minio:9000
+}

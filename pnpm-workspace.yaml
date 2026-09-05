@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - services/notifier
+  - packages/*
+
+allowBuilds:
+  "@scarf/scarf": false
+  esbuild: true
+
+overrides:
+  js-yaml: 4.3.1

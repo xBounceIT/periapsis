@@ -1,0 +1,1 @@
+ALTER TABLE "tenant_saml_session_materials" ALTER COLUMN "aad_version" DROP DEFAULT;

@@ -1,0 +1,9 @@
+{
+  "extends": "@periapsis/tsconfig/base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "exactOptionalPropertyTypes": false,
+    "lib": ["DOM", "DOM.Iterable", "ES2024"]
+  },
+  "include": ["generated/typescript"]
+}

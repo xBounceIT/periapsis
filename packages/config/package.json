@@ -1,0 +1,19 @@
+{
+  "name": "@periapsis/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "oxlint --type-aware --deny-warnings src",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@periapsis/tsconfig": "workspace:*",
+    "oxlint": "1.79.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "7.0.2"
+  }
+}

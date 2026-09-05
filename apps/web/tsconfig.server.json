@@ -1,0 +1,12 @@
+{
+  "extends": "@periapsis/tsconfig/node.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-server",
+    "rootDir": "server",
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["server"],
+  "exclude": ["server/**/*.test.ts"]
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "tenant_saml_logout_commands" ADD CONSTRAINT "tenant_saml_logout_commands_material_transaction_fk" FOREIGN KEY ("tenant_id","material_id") REFERENCES "public"."tenant_federated_authentication_transactions"("tenant_id","operation_run_id") ON DELETE restrict ON UPDATE cascade;

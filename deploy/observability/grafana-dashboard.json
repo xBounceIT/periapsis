@@ -1,0 +1,462 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status_class) (rate(periapsis_http_requests_total{service=\"api\"}[5m]))",
+          "legendFormat": "{{status_class}}",
+          "refId": "A"
+        }
+      ],
+      "title": "API request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(periapsis_http_request_duration_seconds_bucket{service=\"api\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ],
+      "title": "API latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "periapsis_outbox_oldest_pending_seconds",
+          "legendFormat": "outbox",
+          "refId": "A"
+        },
+        {
+          "expr": "max(periapsis_sla_queue_oldest_pending_seconds)",
+          "legendFormat": "sla",
+          "refId": "B"
+        },
+        {
+          "expr": "max(periapsis_sla_action_queue_oldest_pending_seconds)",
+          "legendFormat": "sla actions",
+          "refId": "C"
+        },
+        {
+          "expr": "max(periapsis_ticket_export_reconcile_queue_oldest_pending_seconds)",
+          "legendFormat": "export cleanup",
+          "refId": "D"
+        },
+        {
+          "expr": "max(periapsis_sla_event_ingress_queue_oldest_pending_seconds)",
+          "legendFormat": "sla ingress",
+          "refId": "E"
+        },
+        {
+          "expr": "max by (kind) (periapsis_worker_oidc_maintenance_queue_oldest_due_seconds)",
+          "legendFormat": "oidc {{kind}}",
+          "refId": "F"
+        }
+      ],
+      "title": "Queue age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(periapsis_notification_deliveries_total[10m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Notification delivery",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum by (provider, outcome) (rate(periapsis_authentication_attempt_total[5m]))",
+          "legendFormat": "{{provider}} {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Authentication outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(periapsis_sla_worker_jobs_total[10m]))",
+          "legendFormat": "evaluation {{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (outcome) (rate(periapsis_sla_action_worker_actions_total[10m]))",
+          "legendFormat": "action {{outcome}}",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (outcome) (rate(periapsis_sla_event_ingress_worker_events_total[10m]))",
+          "legendFormat": "ingress {{outcome}}",
+          "refId": "C"
+        }
+      ],
+      "title": "SLA worker job outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "min(periapsis_worker_sla_ready)",
+          "legendFormat": "ready",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(periapsis_sla_worker_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "evaluation failures/s",
+          "refId": "B"
+        },
+        {
+          "expr": "min(periapsis_worker_sla_action_ready)",
+          "legendFormat": "action ready",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(periapsis_sla_action_worker_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "action failures/s",
+          "refId": "D"
+        },
+        {
+          "expr": "min(periapsis_worker_sla_event_ingress_ready)",
+          "legendFormat": "ingress ready",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(periapsis_sla_event_ingress_worker_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "ingress failures/s",
+          "refId": "F"
+        }
+      ],
+      "title": "SLA worker health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "max(periapsis_sla_queue_pending_jobs)",
+          "legendFormat": "eligible jobs",
+          "refId": "A"
+        },
+        {
+          "expr": "max(periapsis_sla_action_queue_pending_actions)",
+          "legendFormat": "pending actions",
+          "refId": "B"
+        },
+        {
+          "expr": "max(periapsis_sla_event_ingress_queue_pending_events)",
+          "legendFormat": "ingress pending",
+          "refId": "C"
+        },
+        {
+          "expr": "max(periapsis_sla_event_ingress_queue_reclaimable_events)",
+          "legendFormat": "ingress reclaimable",
+          "refId": "D"
+        },
+        {
+          "expr": "max(periapsis_sla_event_ingress_queue_dead_lettered_events)",
+          "legendFormat": "ingress dead-lettered",
+          "refId": "E"
+        }
+      ],
+      "title": "SLA eligible queue depth",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "min(periapsis_worker_ticket_runtime_ready)",
+          "legendFormat": "ready",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(periapsis_ticket_bulk_worker_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "bulk failures/s",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(periapsis_ticket_export_worker_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "export failures/s",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(periapsis_ticket_export_reconcile_worker_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "cleanup failures/s",
+          "refId": "D"
+        }
+      ],
+      "title": "Ticket runtime health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(periapsis_ticket_export_reconcile_artifacts_total[10m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Ticket export artifact reconciliation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "max(periapsis_ticket_export_reconcile_queue_pending_eligible)",
+          "legendFormat": "eligible",
+          "refId": "A"
+        },
+        {
+          "expr": "max(periapsis_ticket_export_reconcile_queue_reclaimable)",
+          "legendFormat": "reclaimable",
+          "refId": "B"
+        },
+        {
+          "expr": "max(periapsis_ticket_export_reconcile_queue_dead_lettered)",
+          "legendFormat": "dead lettered",
+          "refId": "C"
+        }
+      ],
+      "title": "Ticket export reconciliation queue",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "min(periapsis_worker_oidc_maintenance_ready)",
+          "legendFormat": "ready",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(periapsis_worker_oidc_maintenance_runs_total{outcome=\"failure\"}[10m]))",
+          "legendFormat": "failures/s",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (outcome) (rate(periapsis_worker_oidc_maintenance_work_total[10m]))",
+          "legendFormat": "work {{outcome}}/s",
+          "refId": "C"
+        }
+      ],
+      "title": "OIDC maintenance health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "max by (kind) (periapsis_worker_oidc_maintenance_queue_due)",
+          "legendFormat": "due {{kind}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (kind) (periapsis_worker_oidc_maintenance_queue_reclaimable)",
+          "legendFormat": "reclaimable {{kind}}",
+          "refId": "B"
+        },
+        {
+          "expr": "max by (kind) (periapsis_worker_oidc_maintenance_queue_dead_lettered)",
+          "legendFormat": "dead lettered {{kind}}",
+          "refId": "C"
+        }
+      ],
+      "title": "OIDC maintenance queue",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["periapsis", "operations"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Periapsis operations",
+  "uid": "periapsis-operations",
+  "version": 3
+}

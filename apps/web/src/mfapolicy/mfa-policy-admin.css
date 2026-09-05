@@ -1,0 +1,234 @@
+.mfa-policy-workspace {
+  display: grid;
+  width: min(100%, 96rem);
+  gap: 1.25rem;
+  margin: 0 auto;
+  color: var(--periapsis-ink);
+}
+
+.mfa-policy-heading,
+.mfa-policy-card-heading,
+.mfa-policy-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mfa-policy-heading {
+  align-items: end;
+}
+
+.mfa-policy-heading h1 {
+  margin: 0.25rem 0 0;
+  color: var(--periapsis-navy);
+  font-size: clamp(2rem, 4vw, 3rem);
+  letter-spacing: -0.045em;
+}
+
+.mfa-policy-heading > div:first-child > p:last-child {
+  max-width: 57rem;
+  margin: 0.65rem 0 0;
+  color: var(--periapsis-muted);
+  line-height: 1.6;
+}
+
+.mfa-policy-authority {
+  display: grid;
+  min-width: 18rem;
+  grid-template-columns: auto 1fr;
+  gap: 0.12rem 0.65rem;
+  padding: 0.9rem 1rem;
+  color: #eff7f5;
+  background: #172b34;
+  border-left: 3px solid var(--periapsis-copper);
+  border-radius: 0.35rem 0.8rem 0.8rem 0.35rem;
+}
+
+.mfa-policy-authority > svg {
+  grid-row: 1 / span 3;
+  color: #d99554;
+}
+.mfa-policy-authority span {
+  color: #9eb4b6;
+  font:
+    0.65rem "IBM Plex Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mfa-policy-authority small {
+  color: #b9cbca;
+  line-height: 1.4;
+}
+
+.mfa-policy-grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.mfa-policy-editor,
+.mfa-policy-form,
+.mfa-policy-history__content,
+.mfa-policy-history__items,
+.mfa-policy-context,
+.mfa-policy-sources {
+  display: grid;
+  gap: 1rem;
+}
+
+.mfa-policy-history {
+  position: sticky;
+  top: 1rem;
+}
+.mfa-policy-history__items {
+  gap: 0.45rem;
+}
+.mfa-policy-history__items button {
+  display: flex;
+  width: 100%;
+  gap: 0.7rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem;
+  text-align: left;
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.65rem;
+  cursor: pointer;
+}
+.mfa-policy-history__items button.is-selected {
+  border-color: var(--periapsis-copper);
+  box-shadow: 0 0 0 2px rgb(183 111 52 / 13%);
+}
+.mfa-policy-history__items button span {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+.mfa-policy-history__items small {
+  overflow: hidden;
+  color: var(--periapsis-muted);
+  font:
+    0.7rem "IBM Plex Mono",
+    monospace;
+  text-overflow: ellipsis;
+}
+
+.mfa-policy-empty {
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+  padding: 1rem;
+  color: var(--periapsis-muted);
+  background: #f3f6f5;
+  border: 1px dashed var(--periapsis-line);
+  border-radius: 0.75rem;
+}
+.mfa-policy-empty p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.mfa-policy-form select {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  color: var(--periapsis-ink);
+  background: var(--periapsis-paper);
+  border: 1px solid var(--input);
+  border-radius: 0.4rem;
+}
+
+.mfa-policy-check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.88rem;
+}
+.mfa-policy-context {
+  padding: 1rem;
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.75rem;
+}
+.mfa-policy-context legend {
+  padding: 0 0.35rem;
+  color: var(--periapsis-navy);
+  font-weight: 700;
+}
+.mfa-policy-context > p {
+  margin: 0;
+  color: var(--periapsis-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.mfa-policy-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.mfa-policy-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+.mfa-policy-facts div {
+  padding: 0.75rem;
+  background: #f3f6f5;
+  border-radius: 0.6rem;
+}
+.mfa-policy-facts dt {
+  color: var(--periapsis-muted);
+  font-size: 0.72rem;
+}
+.mfa-policy-facts dd {
+  margin: 0.25rem 0 0;
+  color: var(--periapsis-navy);
+  font-weight: 700;
+}
+.mfa-policy-sources {
+  padding-left: 1.4rem;
+}
+.mfa-policy-sources li {
+  padding: 0.5rem 0.7rem;
+  border-left: 2px solid var(--periapsis-copper);
+}
+.mfa-policy-sources li > * {
+  display: block;
+}
+.mfa-policy-sources span,
+.mfa-policy-sources small,
+.mfa-policy-muted {
+  color: var(--periapsis-muted);
+  font-size: 0.78rem;
+}
+.mfa-policy-route-state {
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 1rem;
+}
+
+@media (max-width: 900px) {
+  .mfa-policy-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .mfa-policy-authority {
+    width: 100%;
+  }
+  .mfa-policy-grid {
+    grid-template-columns: 1fr;
+  }
+  .mfa-policy-history {
+    position: static;
+  }
+  .mfa-policy-facts {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,39 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: periapsis-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: periapsis-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: periapsis-worker
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: periapsis-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: periapsis-notifier
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: periapsis-notifier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: periapsis-web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: periapsis-web

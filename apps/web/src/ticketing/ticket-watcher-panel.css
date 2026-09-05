@@ -1,0 +1,176 @@
+.ticket-watchers {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #c7d6dc;
+  border-left: 4px solid #496f9d;
+  border-radius: 0.75rem;
+  box-shadow: 0 0.7rem 2.2rem rgb(40 55 70 / 5%);
+}
+
+.ticket-watchers__heading,
+.ticket-watchers__heading > span,
+.ticket-watchers__heading > span > span {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.ticket-watchers__heading {
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  background: linear-gradient(105deg, #f2f6fb, #fff 72%);
+  border-bottom: 1px solid #d8e2e6;
+}
+
+.ticket-watchers__heading svg {
+  width: 1rem;
+  color: #496f9d;
+}
+
+.ticket-watchers__heading h3,
+.ticket-watchers__heading small,
+.ticket-watchers__add small,
+.ticket-watchers__status p {
+  margin: 0;
+}
+
+.ticket-watchers__heading h3 {
+  color: var(--periapsis-ink);
+  font-size: 0.95rem;
+}
+
+.ticket-watchers__heading small,
+.ticket-watchers__add small,
+.ticket-watchers__status,
+.ticket-watchers__list small {
+  color: #677b85;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.ticket-watchers__snapshot {
+  padding: 0.35rem 0.55rem;
+  color: #4c6871;
+  font:
+    0.62rem/1.2 "IBM Plex Mono",
+    monospace;
+  background: #e6edf5;
+  border-radius: 999px;
+}
+
+.ticket-watchers__problem,
+.ticket-watchers__status,
+.ticket-watchers__reload {
+  margin: 0;
+  padding: 0.85rem 1.1rem;
+}
+
+.ticket-watchers__problem,
+.ticket-watchers__status--error {
+  color: #88462d;
+  font-size: 0.78rem;
+  background: #fff6f0;
+  border-bottom: 1px solid #efd8ca;
+}
+
+.ticket-watchers__status--error,
+.ticket-watchers__reload {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ticket-watchers__list {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.ticket-watchers__list li {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1.1rem;
+  border-bottom: 1px solid #e0e8eb;
+}
+
+.ticket-watchers__list li > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+
+.ticket-watchers__list code {
+  overflow: hidden;
+  color: #49616d;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+}
+
+.ticket-watchers__add {
+  display: grid;
+  grid-template-columns: minmax(11rem, 0.8fr) minmax(14rem, 1fr) auto;
+  gap: 0.45rem 1rem;
+  align-items: center;
+  padding: 1rem 1.1rem;
+  background: #f7f9fa;
+  border-top: 1px solid #d8e2e6;
+}
+
+.ticket-watchers__add > span:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.ticket-watchers__add-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ticket-watchers__hint,
+.ticket-watchers__field-error {
+  grid-column: 2 / -1;
+}
+
+.ticket-watchers__field-error {
+  color: #a14431 !important;
+}
+
+@media (max-width: 48rem) {
+  .ticket-watchers__heading,
+  .ticket-watchers__list li,
+  .ticket-watchers__status--error,
+  .ticket-watchers__reload {
+    align-items: flex-start;
+  }
+
+  .ticket-watchers__heading,
+  .ticket-watchers__list li,
+  .ticket-watchers__status--error,
+  .ticket-watchers__reload {
+    flex-direction: column;
+  }
+
+  .ticket-watchers__add {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-watchers__hint,
+  .ticket-watchers__field-error {
+    grid-column: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-watchers *,
+  .ticket-watchers *::before,
+  .ticket-watchers *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

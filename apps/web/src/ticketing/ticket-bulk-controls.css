@@ -1,0 +1,168 @@
+.ticket-bulk-console {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: calc(var(--radius) + 0.2rem);
+  background:
+    linear-gradient(
+      125deg,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 46%
+    ),
+    var(--card);
+}
+
+.ticket-bulk-console__heading {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.ticket-bulk-console__heading h3,
+.ticket-bulk-console__heading p {
+  margin: 0;
+}
+
+.ticket-bulk-console__icon {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.8rem;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 11%, var(--background));
+}
+
+.ticket-bulk-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(10rem, 1fr)) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.ticket-bulk-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ticket-bulk-form select {
+  min-height: 2.5rem;
+  padding: 0.45rem 2rem 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.ticket-bulk-console__warning,
+.ticket-bulk-console__error,
+.ticket-bulk-review {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  padding: 0.65rem 0.75rem;
+  margin: 0;
+  border-radius: var(--radius);
+  font-size: 0.84rem;
+}
+
+.ticket-bulk-console__warning,
+.ticket-bulk-review {
+  background: color-mix(in srgb, #d99316 10%, transparent);
+}
+
+.ticket-bulk-console__error {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+
+.ticket-bulk-console__warning svg,
+.ticket-bulk-console__error svg,
+.ticket-bulk-review svg {
+  width: 1rem;
+  flex: 0 0 auto;
+}
+
+.ticket-bulk-job {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(10rem, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+}
+
+.ticket-bulk-job > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.ticket-bulk-job small {
+  color: var(--muted-foreground);
+}
+
+.ticket-bulk-job__state,
+.ticket-bulk-job__actions {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.ticket-bulk-job__state svg {
+  width: 1rem;
+  color: var(--primary);
+}
+
+.ticket-bulk-job progress {
+  width: 100%;
+  accent-color: var(--primary);
+}
+
+.ticket-bulk-results {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.ticket-bulk-results ul {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.ticket-bulk-results li {
+  display: grid;
+  grid-template-columns: 3rem minmax(9rem, auto) 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 1100px) {
+  .ticket-bulk-form {
+    grid-template-columns: repeat(2, minmax(12rem, 1fr));
+  }
+
+  .ticket-bulk-job {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .ticket-bulk-form {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-bulk-job__actions {
+    flex-wrap: wrap;
+  }
+}

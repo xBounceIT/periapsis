@@ -1,0 +1,53 @@
+FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995 AS dependencies
+
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+WORKDIR /workspace
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/db/package.json packages/db/package.json
+COPY packages/tsconfig/package.json packages/tsconfig/package.json
+
+RUN corepack pnpm install --frozen-lockfile --filter @periapsis/db...
+
+COPY packages/db/ packages/db/
+COPY packages/tsconfig/ packages/tsconfig/
+COPY deploy/compose/database-task-config.mjs deploy/compose/database-task-config.mjs
+COPY deploy/compose/database-task.mjs deploy/compose/database-task.mjs
+
+RUN node --check deploy/compose/database-task-config.mjs \
+    && node --check deploy/compose/database-task.mjs
+
+FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
+
+ARG REVISION=unknown
+ARG VERSION=development
+
+LABEL org.opencontainers.image.description="Periapsis one-shot database migration and seed runner" \
+      org.opencontainers.image.licenses="UNLICENSED" \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/periapsis-im/periapsis" \
+      org.opencontainers.image.title="Periapsis Database Runner" \
+      org.opencontainers.image.version=$VERSION
+
+RUN addgroup -S -g 10001 periapsis \
+    && adduser -S -D -H -u 10001 -G periapsis periapsis \
+    && install -d -o 10001 -g 10001 -m 1770 /workspace /tmp
+
+COPY --from=dependencies --chown=10001:10001 /workspace /workspace
+
+RUN rm -rf /usr/local/lib/node_modules/corepack /usr/local/lib/node_modules/npm \
+      /etc/apk /var/cache/apk \
+    && rm -f /usr/local/bin/corepack /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+      /sbin/apk /usr/bin/apk
+
+ENV HOME=/tmp \
+    NODE_ENV=production \
+    TMPDIR=/tmp
+
+WORKDIR /workspace
+USER 10001:10001
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["node", "deploy/compose/database-task.mjs"]
+CMD ["migrate"]

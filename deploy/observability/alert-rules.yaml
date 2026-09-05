@@ -1,0 +1,305 @@
+groups:
+  - name: periapsis-availability
+    interval: 30s
+    rules:
+      - alert: PeriapsisTargetDown
+        expr: up{job=~"periapsis-(api|worker|notifier)"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} target is unavailable"
+          runbook: docs/operations/incident-response.md#target-down
+      - alert: PeriapsisMetricsMissing
+        expr: |
+          absent(up{job="periapsis-api"})
+          or absent(up{job="periapsis-worker"})
+          or absent(up{job="periapsis-notifier"})
+          or absent(periapsis_http_requests_total{service="api"})
+          or absent(periapsis_http_request_duration_seconds_bucket{service="api"})
+          or absent(periapsis_outbox_oldest_pending_seconds)
+          or absent(periapsis_notification_deliveries_total)
+          or absent(periapsis_sla_queue_oldest_pending_seconds)
+          or absent(periapsis_sla_queue_pending_jobs)
+          or absent(periapsis_worker_sla_ready)
+          or absent(periapsis_sla_worker_runs_total)
+          or absent(periapsis_sla_worker_jobs_total)
+          or absent(periapsis_sla_action_queue_oldest_pending_seconds)
+          or absent(periapsis_sla_action_queue_pending_actions)
+          or absent(periapsis_worker_sla_action_ready)
+          or absent(periapsis_sla_action_worker_runs_total)
+          or absent(periapsis_sla_action_worker_actions_total)
+          or absent(periapsis_worker_sla_event_ingress_ready)
+          or absent(periapsis_sla_event_ingress_worker_runs_total)
+          or absent(periapsis_sla_event_ingress_worker_events_total)
+          or absent(periapsis_sla_event_ingress_queue_pending_events)
+          or absent(periapsis_sla_event_ingress_queue_reclaimable_events)
+          or absent(periapsis_sla_event_ingress_queue_dead_lettered_events)
+          or absent(periapsis_sla_event_ingress_queue_oldest_pending_seconds)
+          or absent(periapsis_worker_ticket_runtime_ready)
+          or absent(periapsis_ticket_bulk_worker_runs_total)
+          or absent(periapsis_ticket_export_worker_runs_total)
+          or absent(periapsis_ticket_export_reconcile_worker_runs_total)
+          or absent(periapsis_ticket_export_reconcile_artifacts_total)
+          or absent(periapsis_ticket_export_reconcile_queue_pending_eligible)
+          or absent(periapsis_ticket_export_reconcile_queue_reclaimable)
+          or absent(periapsis_ticket_export_reconcile_queue_dead_lettered)
+          or absent(periapsis_ticket_export_reconcile_queue_oldest_pending_seconds)
+          or absent(periapsis_worker_oidc_maintenance_ready)
+          or absent(periapsis_worker_oidc_maintenance_runs_total)
+          or absent(periapsis_worker_oidc_maintenance_work_total)
+          or absent(periapsis_worker_oidc_maintenance_queue_due)
+          or absent(periapsis_worker_oidc_maintenance_queue_reclaimable)
+          or absent(periapsis_worker_oidc_maintenance_queue_dead_lettered)
+          or absent(periapsis_worker_oidc_maintenance_queue_oldest_due_seconds)
+          or absent(periapsis_authentication_attempt_total)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Required Periapsis scrape targets are absent
+          runbook: docs/operations/incident-response.md#metrics-missing
+
+  - name: periapsis-api
+    interval: 30s
+    rules:
+      - alert: PeriapsisAPIHighErrorRate
+        expr: |
+          sum(rate(periapsis_http_requests_total{service="api",status_class="5xx"}[5m]))
+          /
+          clamp_min(sum(rate(periapsis_http_requests_total{service="api"}[5m])), 0.000000001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: API 5xx rate exceeds five percent
+          runbook: docs/operations/incident-response.md#api-errors
+      - alert: PeriapsisAPIHighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(periapsis_http_request_duration_seconds_bucket{service="api"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: API p95 latency exceeds one second
+          runbook: docs/operations/incident-response.md#api-latency
+
+  - name: periapsis-jobs
+    interval: 30s
+    rules:
+      - alert: PeriapsisOutboxStalled
+        expr: periapsis_outbox_oldest_pending_seconds > 300
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Oldest outbox item is more than five minutes old
+          runbook: docs/operations/incident-response.md#outbox-stalled
+      - alert: PeriapsisNotificationFailureBurst
+        expr: sum(rate(periapsis_notification_deliveries_total{outcome=~"retried|dead_lettered|uncertain"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Notification failures are sustained
+          runbook: docs/operations/incident-response.md#notification-failures
+      - alert: PeriapsisSLAQueueLag
+        expr: max(periapsis_sla_queue_oldest_pending_seconds) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SLA materialization queue is delayed
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAWorkerUnready
+        expr: min(periapsis_worker_sla_ready) < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: At least one SLA worker loop is not healthy
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAWorkerFailureBurst
+        expr: sum(rate(periapsis_sla_worker_runs_total{outcome="failure"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SLA worker iterations are failing persistently
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLADeadLetterCreated
+        expr: sum(increase(periapsis_sla_worker_jobs_total{outcome="dead_lettered"}[15m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: An SLA evaluation job was dead-lettered
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAEventIngressQueueLag
+        expr: max(periapsis_sla_event_ingress_queue_oldest_pending_seconds) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Ordered SLA event ingress is delayed
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAEventIngressWorkerUnready
+        expr: min(periapsis_worker_sla_event_ingress_ready) < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: At least one SLA event ingress loop is not healthy
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAEventIngressFailureBurst
+        expr: sum(rate(periapsis_sla_event_ingress_worker_runs_total{outcome="failure"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SLA event ingress iterations are failing persistently
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAEventIngressDeadLetterPresent
+        expr: max(periapsis_sla_event_ingress_queue_dead_lettered_events) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: An ordered SLA event is blocked in the dead-letter queue
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAActionQueueLag
+        expr: max(periapsis_sla_action_queue_oldest_pending_seconds) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SLA trigger-action queue is delayed
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAActionWorkerUnready
+        expr: min(periapsis_worker_sla_action_ready) < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: At least one SLA trigger-action loop is not healthy
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAActionWorkerFailureBurst
+        expr: sum(rate(periapsis_sla_action_worker_runs_total{outcome="failure"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SLA trigger-action iterations are failing persistently
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisSLAActionDeadLetterCreated
+        expr: sum(increase(periapsis_sla_action_worker_actions_total{outcome="dead_lettered"}[15m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: An SLA trigger action was dead-lettered
+          runbook: docs/operations/incident-response.md#sla-queue
+      - alert: PeriapsisTicketRuntimeUnready
+        expr: min(periapsis_worker_ticket_runtime_ready) < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: At least one ticket bulk, export, or artifact-reconciliation loop is not healthy
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisTicketBulkFailureBurst
+        expr: sum(rate(periapsis_ticket_bulk_worker_runs_total{outcome="failure"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Ticket bulk mutations are failing persistently
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisTicketExportFailureBurst
+        expr: sum(rate(periapsis_ticket_export_worker_runs_total{outcome="failure"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Ticket exports are failing persistently
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisTicketExportReconciliationFailureBurst
+        expr: sum(rate(periapsis_ticket_export_reconcile_worker_runs_total{outcome="failure"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Ticket export artifact reconciliation is failing persistently
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisTicketExportReconciliationQueueLag
+        expr: max(periapsis_ticket_export_reconcile_queue_oldest_pending_seconds) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Ticket export artifact reconciliation is delayed
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisTicketExportReconciliationDeadLettersPresent
+        expr: max(periapsis_ticket_export_reconcile_queue_dead_lettered) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Ticket export artifact reconciliation has unresolved dead letters
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisTicketExportReconciliationDeadLetterCreated
+        expr: sum(increase(periapsis_ticket_export_reconcile_artifacts_total{outcome="dead_lettered"}[15m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A ticket export artifact cleanup was dead-lettered
+          runbook: docs/operations/incident-response.md#ticket-runtime
+      - alert: PeriapsisOIDCMaintenanceUnready
+        expr: min(periapsis_worker_oidc_maintenance_ready) < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: At least one OIDC maintenance loop or its authoritative queue snapshot is unhealthy
+          runbook: docs/operations/incident-response.md#oidc-maintenance
+      - alert: PeriapsisOIDCMaintenanceQueueLag
+        expr: max(periapsis_worker_oidc_maintenance_queue_oldest_due_seconds) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: OIDC refresh, logout retry, or scrub maintenance is delayed
+          runbook: docs/operations/incident-response.md#oidc-maintenance
+      - alert: PeriapsisOIDCMaintenanceReclaimableClaims
+        expr: max(periapsis_worker_oidc_maintenance_queue_reclaimable) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: An OIDC maintenance lease expired before fenced completion
+          runbook: docs/operations/incident-response.md#oidc-maintenance
+      - alert: PeriapsisOIDCLogoutDeadLettersPresent
+        expr: max(periapsis_worker_oidc_maintenance_queue_dead_lettered{kind="logout_retry"}) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: An OIDC upstream logout retry requires operator intervention
+          runbook: docs/operations/incident-response.md#oidc-maintenance
+
+  - name: periapsis-security
+    interval: 30s
+    rules:
+      - alert: PeriapsisAuthenticationFailureSpike
+        expr: sum(rate(periapsis_authentication_attempt_total{outcome="failed"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authentication failures exceed the review threshold
+          runbook: docs/operations/incident-response.md#authentication-failures

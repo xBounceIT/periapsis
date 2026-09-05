@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: periapsis-clamav
+data:
+  clamd.conf: |
+    LogTime yes
+    LogClean yes
+    PidFile /tmp/clamd.pid
+    DatabaseDirectory /var/lib/clamav
+    TemporaryDirectory /tmp
+    User clamav
+    TCPSocket 3310
+    TCPAddr 127.0.0.1
+    LocalSocket /tmp/clamd.sock
+    LocalSocketMode 0660
+    FixStaleSocket yes
+    MaxConnectionQueueLength 16
+    MaxThreads 4
+    MaxQueue 8
+    ReadTimeout 300
+    CommandReadTimeout 30
+    SendBufTimeout 300
+    IdleTimeout 60
+    StreamMaxLength 5000000000
+    MaxScanSize 5000000000
+    MaxFileSize 5000000000
+    MaxRecursion 16
+    MaxFiles 10000
+    FollowDirectorySymlinks no
+    FollowFileSymlinks no
+    ScanArchive yes
+    ScanPE yes
+    ScanELF yes
+    ScanOLE2 yes
+    ScanPDF yes
+    ScanSWF yes
+    ScanXMLDOCS yes
+    ScanHWP3 yes
+    AlertEncrypted yes
+    SelfCheck 600
+    FailIfCvdOlderThan 2
+  freshclam.conf: |
+    DatabaseDirectory /var/lib/clamav
+    DatabaseOwner clamav
+    DatabaseMirror database.clamav.net
+    Checks 12
+    TestDatabases yes
+    ScriptedUpdates yes
+    CompressLocalDatabase no
+    ConnectTimeout 30
+    ReceiveTimeout 120
+    NotifyClamd /etc/clamav/clamd.conf

@@ -1,0 +1,48 @@
+{
+  "name": "periapsis",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Periapsis Incident Management Platform monorepo",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=11.22.0 <12"
+  },
+  "scripts": {
+    "bootstrap": "corepack pnpm install --frozen-lockfile && corepack pnpm generate",
+    "generate": "corepack pnpm -r --if-present generate && node scripts/generate-schema-compatibility.mjs && corepack pnpm generate:permission-catalog && corepack pnpm generate:sla-fixture",
+    "generate:sla-fixture": "go run packages/db/seeds/sla-fixture.go --input packages/db/seeds/sla-fixture-input.json --output packages/db/seeds/sla-fixture.generated.json && go run packages/db/seeds/sla-fixture.go --input tests/performance/sla-fixture-input.json --output tests/performance/sla-fixture.generated.json && prettier --write packages/db/seeds/sla-fixture.generated.json tests/performance/sla-fixture.generated.json",
+    "generate:permission-catalog": "go run scripts/docs/permission-catalog.go --write",
+    "lint": "corepack pnpm -r --if-present lint",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "test": "corepack pnpm -r --if-present test",
+    "test:integration": "node scripts/run-integration.mjs",
+    "test:e2e": "corepack pnpm -r --if-present test:e2e",
+    "test:e2e:live:list": "corepack pnpm --filter @periapsis/web exec playwright test --config ../../tests/e2e/playwright.live.config.ts --list",
+    "test:security": "corepack pnpm -r --if-present test:security",
+    "test:performance-contract": "node --test tests/performance/*.test.mjs",
+    "test:operations": "node --test scripts/deploy/api-rate-limit-config.test.mjs scripts/deploy/validate-manifests.test.mjs scripts/operations/integration-runner.test.mjs scripts/operations/recovery-evidence.test.mjs scripts/operations/security-ci-wiring.test.mjs tests/e2e/live-acceptance-contract.test.mjs",
+    "build": "corepack pnpm -r --if-present build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "go:test": "go test ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...",
+    "go:test:race": "go test -race ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...",
+    "go:vet": "go vet ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...",
+    "verify:generated": "corepack pnpm --filter @periapsis/contracts verify:generated && corepack pnpm --filter @periapsis/db verify:generated",
+    "verify:go-generated": "node scripts/verify-go-generated.mjs",
+    "verify:sla-fixture": "go run packages/db/seeds/sla-fixture.go --input packages/db/seeds/sla-fixture-input.json --check packages/db/seeds/sla-fixture.generated.json && go run packages/db/seeds/sla-fixture.go --input tests/performance/sla-fixture-input.json --check tests/performance/sla-fixture.generated.json && go test packages/db/seeds/sla-fixture.go packages/db/seeds/sla-fixture_test.go && go vet packages/db/seeds/sla-fixture.go packages/db/seeds/sla-fixture_test.go",
+    "verify:permission-catalog": "go run scripts/docs/permission-catalog.go --check && go test scripts/docs/permission-catalog.go scripts/docs/permission-catalog_test.go && go vet scripts/docs/permission-catalog.go scripts/docs/permission-catalog_test.go",
+    "verify": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm test:operations && corepack pnpm verify:generated && corepack pnpm verify:permission-catalog && corepack pnpm verify:sla-fixture && corepack pnpm verify:go-generated && corepack pnpm build && corepack pnpm go:vet && corepack pnpm go:test",
+    "ci": "corepack pnpm verify"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@redocly/cli": "2.47.0",
+    "@types/node": "24.13.3",
+    "oxlint": "1.79.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "prettier": "3.9.6",
+    "typescript": "7.0.2"
+  }
+}

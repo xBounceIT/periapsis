@@ -1,0 +1,108 @@
+{
+  "identity": {
+    "tenant_id": "01993ea0-0000-7000-8000-000000000001",
+    "calendar_id": "01b00000-0000-7000-8000-000000000023",
+    "policy_id": "01b00000-0000-7000-8000-000000000020",
+    "metric_id": "01b00000-0000-7000-8000-000000000021",
+    "trigger_id": "01b00000-0000-7000-8000-000000000024",
+    "column_id": "01b00000-0000-7000-8000-000000000022",
+    "object_type": "alert",
+    "key_prefix": "performance",
+    "effective_from": "2026-01-02T12:00:00Z",
+    "duration_micros": 1000000,
+    "completion_event": "ticket.in_progress"
+  },
+  "calendar": {
+    "exceptions": [],
+    "key": "performance-support-hours",
+    "label": "Demo support hours",
+    "revision_digest": "3e9598f46a5f3f8d90a8c7f5abd3299ebced33ee78041e31850a3041bb61dfb3",
+    "timezone": "UTC",
+    "weekly_schedule": [
+      {
+        "intervals": [
+          {
+            "end_minute": 1440,
+            "start_minute": 0
+          }
+        ],
+        "weekday": 1
+      }
+    ]
+  },
+  "policy": {
+    "apply_to_sla_engine_source": false,
+    "description": "Synthetic Alert response policy.",
+    "effective_from": "2026-01-02T12:00:00Z",
+    "effective_until": null,
+    "enabled": true,
+    "key": "performance-alert-response",
+    "match_rule": {
+      "kind": "all"
+    },
+    "metrics": [
+      {
+        "api_visible": true,
+        "breach_grace_micros": 0,
+        "calendar_id": null,
+        "calendar_version": null,
+        "clock": "elapsed",
+        "completion_event": "ticket.in_progress",
+        "customer_visible": true,
+        "definition_digest": "d6d9efe18998debb6ed09558640eb040f9390a7257a4bd1d1889802dc2ebcd6e",
+        "description": "",
+        "display_format": "duration",
+        "duration_micros": 1000000,
+        "id": "01b00000-0000-7000-8000-000000000021",
+        "key": "response-time",
+        "label": "Response time",
+        "pause_event": null,
+        "position": 0,
+        "reset_event": null,
+        "reset_policy": "ignore",
+        "resume_event": null,
+        "start_event": "ticket.created",
+        "warning_consumed_percent": null,
+        "warning_kind": "none",
+        "warning_remaining_micros": null
+      }
+    ],
+    "name": "Demo alert response",
+    "object_types": ["alert"],
+    "priority": 0,
+    "revision_digest": "f9384fa86f4cdb9aafab11dae0f31f3bc8dd92d650c8fc627d4e88aa29c6e045",
+    "triggers": [
+      {
+        "action_configuration_id": null,
+        "action_kind": "add_tag",
+        "action_value": "sla-breached",
+        "allow_recursive_sla": false,
+        "consumed_percent": null,
+        "definition_digest": "5250ec67009cc5e2e533a6aae73db4e9a93eff9d945565d08cff5872f6df309e",
+        "id": "01b00000-0000-7000-8000-000000000024",
+        "key": "due-tag",
+        "kind": "due",
+        "metric_definition_id": "01b00000-0000-7000-8000-000000000021",
+        "offset_micros": null,
+        "position": 0,
+        "remaining_micros": null,
+        "repeat_interval_micros": null,
+        "target_state": null
+      }
+    ]
+  },
+  "column": {
+    "calculation": "due_at",
+    "customer_visible": false,
+    "filterable": true,
+    "format": "datetime",
+    "key": "performance-due-at",
+    "label": "Response due at",
+    "metric_definition_id": "01b00000-0000-7000-8000-000000000021",
+    "position": 0,
+    "revision_digest": "cc983319155cdfc6882f787aaaa42aee1eeea340cdf21034f8cc2ba9e3cd7dbe",
+    "sortable": true,
+    "style_rules": [],
+    "visible_role_keys": []
+  }
+}

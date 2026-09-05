@@ -1,0 +1,93 @@
+{
+  "identity": {
+    "tenant_id": "01993ea0-0000-7000-8000-000000000001",
+    "calendar_id": "01993ea0-0000-7000-8000-000000000901",
+    "policy_id": "01993ea0-0000-7000-8000-000000000902",
+    "metric_id": "01993ea0-0000-7000-8000-000000000903",
+    "trigger_id": "01993ea0-0000-7000-8000-000000000904",
+    "object_type": "case",
+    "key_prefix": "demo",
+    "effective_from": "2026-01-02T12:00:00Z",
+    "duration_micros": 14400000000,
+    "completion_event": "ticket.in_progress"
+  },
+  "calendar": {
+    "exceptions": [],
+    "key": "demo-support-hours",
+    "label": "Demo support hours",
+    "revision_digest": "e78031f067c47a75820beeb2aad3834e5c0b760f85771b354ad0c4707b786240",
+    "timezone": "UTC",
+    "weekly_schedule": [
+      {
+        "intervals": [
+          {
+            "end_minute": 1440,
+            "start_minute": 0
+          }
+        ],
+        "weekday": 1
+      }
+    ]
+  },
+  "policy": {
+    "apply_to_sla_engine_source": false,
+    "description": "Synthetic four-hour Case response policy.",
+    "effective_from": "2026-01-02T12:00:00Z",
+    "effective_until": null,
+    "enabled": true,
+    "key": "demo-case-response",
+    "match_rule": {
+      "kind": "all"
+    },
+    "metrics": [
+      {
+        "api_visible": true,
+        "breach_grace_micros": 0,
+        "calendar_id": null,
+        "calendar_version": null,
+        "clock": "elapsed",
+        "completion_event": "ticket.in_progress",
+        "customer_visible": true,
+        "definition_digest": "588c7a874a9efca45739806e4c6f1c97a3cf7fdcad430082a2c9dc1a27be66a6",
+        "description": "",
+        "display_format": "duration",
+        "duration_micros": 14400000000,
+        "id": "01993ea0-0000-7000-8000-000000000903",
+        "key": "response-time",
+        "label": "Response time",
+        "pause_event": null,
+        "position": 0,
+        "reset_event": null,
+        "reset_policy": "ignore",
+        "resume_event": null,
+        "start_event": "ticket.created",
+        "warning_consumed_percent": null,
+        "warning_kind": "none",
+        "warning_remaining_micros": null
+      }
+    ],
+    "name": "Demo case response",
+    "object_types": ["case"],
+    "priority": 0,
+    "revision_digest": "f5ac39356db0cb2167eaefc61902ccee537be30a1679525fd33205c870ab522d",
+    "triggers": [
+      {
+        "action_configuration_id": null,
+        "action_kind": "add_tag",
+        "action_value": "sla-breached",
+        "allow_recursive_sla": false,
+        "consumed_percent": null,
+        "definition_digest": "4819e8f6f89fcfa5c2f70750b53b397b431e6dd52878325141be8b4abae9c555",
+        "id": "01993ea0-0000-7000-8000-000000000904",
+        "key": "due-tag",
+        "kind": "due",
+        "metric_definition_id": "01993ea0-0000-7000-8000-000000000903",
+        "offset_micros": null,
+        "position": 0,
+        "remaining_micros": null,
+        "repeat_interval_micros": null,
+        "target_state": null
+      }
+    ]
+  }
+}

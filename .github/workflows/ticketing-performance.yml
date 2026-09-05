@@ -1,0 +1,48 @@
+name: PostgreSQL ticketing performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ticketing-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ticketing-hot-paths:
+    name: PostgreSQL 18.6 100k ticket gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Build the pinned disposable gate
+        run: >-
+          docker build
+          --file deploy/performance/Dockerfile
+          --build-arg REVISION=${GITHUB_SHA}
+          --tag periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          .
+
+      - name: Run hot paths against a fresh database
+        run: |
+          mkdir -p tmp/performance
+          docker run --rm --init --stop-timeout 120 \
+            --name periapsis-performance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT} \
+            --env PERIAPSIS_PERFORMANCE_CI_ACKNOWLEDGEMENT=disposable-container-postgres-18.6 \
+            --volume "${GITHUB_WORKSPACE}/tmp/performance:/workspace/tmp/performance" \
+            periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+
+      - name: Retain immutable performance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ticketing-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/performance/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,236 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: periapsis-worker
+  labels:
+    app.kubernetes.io/name: periapsis-worker
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: periapsis-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: periapsis-worker
+        app.kubernetes.io/component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8082"
+    spec:
+      serviceAccountName: periapsis-runtime
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: periapsis-worker
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: periapsis-worker
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: periapsis-worker
+      containers:
+        - name: worker
+          image: periapsis/worker:development
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: periapsis-runtime
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: periapsis-worker
+            - name: PERIAPSIS_DATABASE_URL_FILE
+              value: /run/secrets/worker-database-url
+            - name: PERIAPSIS_IDENTITY_KEYRING_FILE
+              value: /run/secrets/identity-keyring
+            - name: PERIAPSIS_S3_ACCESS_KEY_FILE
+              value: /run/secrets/s3-access-key
+            - name: PERIAPSIS_S3_SECRET_KEY_FILE
+              value: /run/secrets/s3-secret-key
+            - name: PERIAPSIS_S3_CA_BUNDLE_FILE
+              value: /run/secrets/s3-ca-bundle
+          ports:
+            - name: http
+              containerPort: 8082
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+              ephemeral-storage: 32Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+              ephemeral-storage: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: clamav-socket
+              mountPath: /run/clamav
+              readOnly: true
+            - name: runtime-secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+        - name: clamav
+          image: clamav/clamav-debian:1.5.4_base@sha256:bbefacdc028635d83f4e6c81abf94db4f1d859b6f6009d90c94ae3d22625b235
+          imagePullPolicy: IfNotPresent
+          command:
+            - /init-unprivileged
+          env:
+            - name: CLAMAV_NO_MILTERD
+              value: "true"
+            - name: FRESHCLAM_CHECKS
+              value: "12"
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - /usr/local/bin/clamdcheck.sh && test -n "$(find /var/lib/clamav -maxdepth 1 -type f \( -name 'daily.cvd' -o -name 'daily.cld' \) -mmin -1560 -print -quit)"
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 120
+          livenessProbe:
+            exec:
+              command:
+                - /usr/local/bin/clamdcheck.sh
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - /usr/local/bin/clamdcheck.sh && test -n "$(find /var/lib/clamav -maxdepth 1 -type f \( -name 'daily.cvd' -o -name 'daily.cld' \) -mmin -1560 -print -quit)"
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 7Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: clamav-config
+              mountPath: /etc/clamav/clamd.conf
+              subPath: clamd.conf
+              readOnly: true
+            - name: clamav-config
+              mountPath: /etc/clamav/freshclam.conf
+              subPath: freshclam.conf
+              readOnly: true
+            - name: clamav-signatures
+              mountPath: /var/lib/clamav
+            - name: clamav-socket
+              mountPath: /tmp
+            - name: clamav-logs
+              mountPath: /var/log/clamav
+      volumes:
+        - name: runtime-secrets
+          secret:
+            secretName: periapsis-runtime
+            defaultMode: 288
+            items:
+              - key: worker-database-url
+                path: worker-database-url
+              - key: identity-keyring
+                path: identity-keyring
+              - key: s3-access-key
+                path: s3-access-key
+              - key: s3-secret-key
+                path: s3-secret-key
+              - key: s3-ca-bundle
+                path: s3-ca-bundle
+              - key: federated-ca-bundle
+                path: federated-ca-bundle
+        - name: clamav-config
+          configMap:
+            name: periapsis-clamav
+            defaultMode: 292
+        - name: clamav-signatures
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: clamav-socket
+          emptyDir:
+            sizeLimit: 6Gi
+        - name: clamav-logs
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

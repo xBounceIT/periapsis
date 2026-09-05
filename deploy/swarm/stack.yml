@@ -1,0 +1,653 @@
+x-application-security: &application-security
+  user: "10001:10001"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001,mode=1770
+  stop_grace_period: 30s
+
+x-application-secret: &application-secret
+  uid: "10001"
+  gid: "10001"
+  mode: 0440
+
+x-runtime-deploy: &runtime-deploy
+  update_config:
+    parallelism: 1
+    delay: 10s
+    monitor: 30s
+    failure_action: rollback
+    order: start-first
+  rollback_config:
+    parallelism: 1
+    delay: 5s
+    monitor: 30s
+    failure_action: pause
+    order: stop-first
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+    max_attempts: 5
+    window: 2m
+  placement:
+    constraints:
+      - node.platform.os == linux
+      - ${PERIAPSIS_RUNTIME_PLACEMENT_CONSTRAINT:-node.labels.periapsis.runtime == true}
+
+services:
+  migration:
+    image: ${PERIAPSIS_DATABASE_TASK_IMAGE:?set immutable database-task image digest}
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+    command:
+      - migrate
+    environment:
+      PERIAPSIS_DATABASE_ADMIN_URL_FILE: /run/secrets/database_admin_url
+      PERIAPSIS_ENV: production
+    secrets:
+      - <<: *application-secret
+        source: database_admin_url
+        target: database_admin_url
+      - <<: *application-secret
+        source: api_database_password
+        target: api_database_password
+      - <<: *application-secret
+        source: worker_database_password
+        target: worker_database_password
+      - <<: *application-secret
+        source: notifier_database_password
+        target: notifier_database_password
+    networks:
+      - backend
+    deploy:
+      mode: replicated
+      replicas: 0
+      restart_policy:
+        condition: none
+      placement:
+        constraints:
+          - node.platform.os == linux
+          - node.role == manager
+          - ${PERIAPSIS_MIGRATION_PLACEMENT_CONSTRAINT:-node.labels.periapsis.migration == true}
+      resources:
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+        limits:
+          cpus: "1.00"
+          memory: 1G
+
+  api:
+    <<: *application-security
+    image: ${PERIAPSIS_API_IMAGE:?set immutable API image digest}
+    environment:
+      NOTIFICATION_KEYRING_FILE: /run/secrets/notification-keyring
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: periapsis-api
+      PERIAPSIS_API_ADDR: 0.0.0.0:8080
+      PERIAPSIS_API_CREDENTIAL_KEYRING_FILE: /run/secrets/api_credential_keyring
+      PERIAPSIS_API_RATE_LIMIT_CREDENTIAL_RPS: ${PERIAPSIS_API_RATE_LIMIT_CREDENTIAL_RPS:-60}
+      PERIAPSIS_API_RATE_LIMIT_NETWORK_RPS: ${PERIAPSIS_API_RATE_LIMIT_NETWORK_RPS:-100}
+      PERIAPSIS_API_RATE_LIMIT_TENANT_SUBJECT_RPS: ${PERIAPSIS_API_RATE_LIMIT_TENANT_SUBJECT_RPS:-40}
+      PERIAPSIS_AUTH_KDF_CONCURRENCY: ${PERIAPSIS_AUTH_KDF_CONCURRENCY:-2}
+      PERIAPSIS_BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
+      PERIAPSIS_DATABASE_URL_FILE: /run/secrets/api_database_url
+      PERIAPSIS_DFIR_MAX_OBJECT_BYTES: ${PERIAPSIS_DFIR_MAX_OBJECT_BYTES:-5000000000}
+      PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS:-}
+      PERIAPSIS_DFIR_SCANNER_CA_BUNDLE_FILE: /run/secrets/dfir_scanner_ca_bundle
+      PERIAPSIS_DFIR_SCANNER_ENDPOINT: ${PERIAPSIS_DFIR_SCANNER_ENDPOINT:?set TLS clamd gateway endpoint}
+      PERIAPSIS_DFIR_SCANNER_TIMEOUT: ${PERIAPSIS_DFIR_SCANNER_TIMEOUT:-5m}
+      PERIAPSIS_DOCS_ENABLED: "false"
+      PERIAPSIS_ENV: production
+      PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
+      PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/federated_ca_bundle
+      PERIAPSIS_FEDERATED_HTTPS_PORTS: ${PERIAPSIS_FEDERATED_HTTPS_PORTS:-443}
+      PERIAPSIS_FEDERATED_MAX_CONCURRENT: ${PERIAPSIS_FEDERATED_MAX_CONCURRENT:-16}
+      PERIAPSIS_FEDERATED_OIDC_CLOCK_SKEW: ${PERIAPSIS_FEDERATED_OIDC_CLOCK_SKEW:-1m}
+      PERIAPSIS_FEDERATED_OPERATION_TIMEOUT: ${PERIAPSIS_FEDERATED_OPERATION_TIMEOUT:-20s}
+      PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS:-}
+      PERIAPSIS_IDENTITY_KEYRING_FILE: /run/secrets/identity_keyring
+      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-636}
+      PERIAPSIS_LDAP_MAX_CONCURRENT: ${PERIAPSIS_LDAP_MAX_CONCURRENT:-8}
+      PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS:-}
+      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-389}
+      PERIAPSIS_MASTER_KEY_FILE: /run/secrets/master_key
+      PERIAPSIS_NOTIFIER_INTERNAL_URL: http://notifier-preview:8083
+      PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE: /run/secrets/notifier_preview_token
+      PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set canonical HTTPS origin}
+      PERIAPSIS_READINESS_TIMEOUT: ${PERIAPSIS_READINESS_TIMEOUT:-2s}
+      PERIAPSIS_RELEASE: ${PERIAPSIS_RELEASE:?set immutable release identifier}
+      PERIAPSIS_REQUEST_TIMEOUT: ${PERIAPSIS_REQUEST_TIMEOUT:-15s}
+      PERIAPSIS_S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+      PERIAPSIS_S3_BUCKET: ${PERIAPSIS_S3_BUCKET:?set external S3 bucket}
+      PERIAPSIS_S3_CA_BUNDLE_FILE: /run/secrets/s3_ca_bundle
+      PERIAPSIS_S3_ENDPOINT: ${PERIAPSIS_S3_ENDPOINT:?set external S3 endpoint}
+      PERIAPSIS_S3_MAX_CONCURRENT: ${PERIAPSIS_S3_MAX_CONCURRENT:-16}
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: ${PERIAPSIS_S3_PUBLIC_ENDPOINT:?set browser-reachable S3 endpoint}
+      PERIAPSIS_S3_REGION: ${PERIAPSIS_S3_REGION:?set external S3 region}
+      PERIAPSIS_S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
+      PERIAPSIS_SHUTDOWN_TIMEOUT: ${PERIAPSIS_SHUTDOWN_TIMEOUT:-10s}
+      PERIAPSIS_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_TRUSTED_PROXY_CIDRS:-}
+    secrets:
+      - <<: *application-secret
+        source: api_database_url
+        target: api_database_url
+      - <<: *application-secret
+        source: bootstrap_token
+        target: bootstrap_token
+      - <<: *application-secret
+        source: master_key
+        target: master_key
+      - <<: *application-secret
+        source: api_credential_keyring
+        target: api_credential_keyring
+      - <<: *application-secret
+        source: identity_keyring
+        target: identity_keyring
+      - <<: *application-secret
+        source: notification-keyring
+        target: notification-keyring
+      - <<: *application-secret
+        source: notifier_preview_token
+        target: notifier_preview_token
+      - <<: *application-secret
+        source: s3_access_key
+        target: s3_access_key
+      - <<: *application-secret
+        source: s3_secret_key
+        target: s3_secret_key
+      - <<: *application-secret
+        source: s3_ca_bundle
+        target: s3_ca_bundle
+      - <<: *application-secret
+        source: dfir_scanner_ca_bundle
+        target: dfir_scanner_ca_bundle
+      - <<: *application-secret
+        source: federated_ca_bundle
+        target: federated_ca_bundle
+    networks:
+      backend: {}
+      frontend: {}
+      notification-preview: {}
+    healthcheck:
+      test:
+        - CMD
+        - /healthcheck
+        - http://127.0.0.1:8080/health/ready
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      <<: *runtime-deploy
+      mode: replicated
+      replicas: ${PERIAPSIS_API_REPLICAS:-0}
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+        limits:
+          cpus: "2.00"
+          memory: 1G
+
+  worker:
+    <<: *application-security
+    image: ${PERIAPSIS_WORKER_IMAGE:?set immutable worker image digest}
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: periapsis-worker
+      PERIAPSIS_AUTH_CLEANUP_BATCH_SIZE: ${PERIAPSIS_AUTH_CLEANUP_BATCH_SIZE:-250}
+      PERIAPSIS_AUTH_CLEANUP_INTERVAL: ${PERIAPSIS_AUTH_CLEANUP_INTERVAL:-5m}
+      PERIAPSIS_DATABASE_TIMEOUT: ${PERIAPSIS_DATABASE_TIMEOUT:-5s}
+      PERIAPSIS_DATABASE_URL_FILE: /run/secrets/worker_database_url
+      PERIAPSIS_DFIR_CLEANUP_BATCH_SIZE: ${PERIAPSIS_DFIR_CLEANUP_BATCH_SIZE:-16}
+      PERIAPSIS_DFIR_CLEANUP_DELETE_TIMEOUT: ${PERIAPSIS_DFIR_CLEANUP_DELETE_TIMEOUT:-30s}
+      PERIAPSIS_DFIR_CLEANUP_LEASE_DURATION: ${PERIAPSIS_DFIR_CLEANUP_LEASE_DURATION:-2m}
+      PERIAPSIS_DFIR_CLEANUP_POLL_INTERVAL: ${PERIAPSIS_DFIR_CLEANUP_POLL_INTERVAL:-30s}
+      PERIAPSIS_DFIR_CLEANUP_RETRY_BASE_DELAY: ${PERIAPSIS_DFIR_CLEANUP_RETRY_BASE_DELAY:-10s}
+      PERIAPSIS_DFIR_MAX_OBJECT_BYTES: ${PERIAPSIS_DFIR_MAX_OBJECT_BYTES:-5000000000}
+      PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_DFIR_PRIVATE_EGRESS_CIDRS:-}
+      PERIAPSIS_DFIR_SCANNER_CA_BUNDLE_FILE: /run/secrets/dfir_scanner_ca_bundle
+      PERIAPSIS_DFIR_SCANNER_ENDPOINT: ${PERIAPSIS_DFIR_SCANNER_ENDPOINT:?set TLS clamd gateway endpoint}
+      PERIAPSIS_DFIR_SCANNER_TIMEOUT: ${PERIAPSIS_DFIR_SCANNER_TIMEOUT:-5m}
+      PERIAPSIS_DFIR_SCAN_BATCH_SIZE: ${PERIAPSIS_DFIR_SCAN_BATCH_SIZE:-4}
+      PERIAPSIS_DFIR_SCAN_LEASE_DURATION: ${PERIAPSIS_DFIR_SCAN_LEASE_DURATION:-10m}
+      PERIAPSIS_DFIR_SCAN_OPERATION_TIMEOUT: ${PERIAPSIS_DFIR_SCAN_OPERATION_TIMEOUT:-6m}
+      PERIAPSIS_DFIR_SCAN_POLL_INTERVAL: ${PERIAPSIS_DFIR_SCAN_POLL_INTERVAL:-2s}
+      PERIAPSIS_DFIR_SCAN_RETRY_BASE_DELAY: ${PERIAPSIS_DFIR_SCAN_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_DFIR_SCAN_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_DFIR_SCAN_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_DFIR_SCAN_UPLOAD_POLL_DELAY: ${PERIAPSIS_DFIR_SCAN_UPLOAD_POLL_DELAY:-5s}
+      PERIAPSIS_ENV: production
+      PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/federated_ca_bundle
+      PERIAPSIS_FEDERATED_HTTPS_PORTS: ${PERIAPSIS_FEDERATED_HTTPS_PORTS:-443}
+      PERIAPSIS_FEDERATED_MAX_CONCURRENT: ${PERIAPSIS_FEDERATED_MAX_CONCURRENT:-16}
+      PERIAPSIS_FEDERATED_OPERATION_TIMEOUT: ${PERIAPSIS_FEDERATED_OPERATION_TIMEOUT:-20s}
+      PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS:-}
+      PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
+      PERIAPSIS_IDENTITY_KEYRING_FILE: /run/secrets/identity_keyring
+      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-636}
+      PERIAPSIS_LDAP_MAX_CONCURRENT: ${PERIAPSIS_LDAP_MAX_CONCURRENT:-8}
+      PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS:-}
+      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-389}
+      PERIAPSIS_LDAP_SYNC_ABSENCE_BATCH_SIZE: ${PERIAPSIS_LDAP_SYNC_ABSENCE_BATCH_SIZE:-100}
+      PERIAPSIS_LDAP_SYNC_LEASE: ${PERIAPSIS_LDAP_SYNC_LEASE:-30s}
+      PERIAPSIS_LDAP_SYNC_MAX_BACKOFF: ${PERIAPSIS_LDAP_SYNC_MAX_BACKOFF:-30s}
+      PERIAPSIS_LDAP_SYNC_MIN_BACKOFF: ${PERIAPSIS_LDAP_SYNC_MIN_BACKOFF:-1s}
+      PERIAPSIS_LDAP_SYNC_OPERATION_TIMEOUT: ${PERIAPSIS_LDAP_SYNC_OPERATION_TIMEOUT:-30m}
+      PERIAPSIS_LDAP_SYNC_PARALLELISM: ${PERIAPSIS_LDAP_SYNC_PARALLELISM:-2}
+      PERIAPSIS_OIDC_MAINTENANCE_BATCH_SIZE: ${PERIAPSIS_OIDC_MAINTENANCE_BATCH_SIZE:-12}
+      PERIAPSIS_OIDC_MAINTENANCE_LEASE_SAFETY: ${PERIAPSIS_OIDC_MAINTENANCE_LEASE_SAFETY:-5s}
+      PERIAPSIS_OIDC_MAINTENANCE_POLL_INTERVAL: ${PERIAPSIS_OIDC_MAINTENANCE_POLL_INTERVAL:-2s}
+      PERIAPSIS_RELEASE: ${PERIAPSIS_RELEASE:?set immutable release identifier}
+      PERIAPSIS_SLA_BATCH_SIZE: ${PERIAPSIS_SLA_BATCH_SIZE:-10}
+      PERIAPSIS_SLA_LEASE_DURATION: ${PERIAPSIS_SLA_LEASE_DURATION:-2m}
+      PERIAPSIS_SLA_MAXIMUM_ATTEMPTS: ${PERIAPSIS_SLA_MAXIMUM_ATTEMPTS:-10}
+      PERIAPSIS_SLA_OPERATION_TIMEOUT: ${PERIAPSIS_SLA_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_SLA_POLL_INTERVAL: ${PERIAPSIS_SLA_POLL_INTERVAL:-2s}
+      PERIAPSIS_SLA_RETRY_BASE_DELAY: ${PERIAPSIS_SLA_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_SLA_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_SLA_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_SLA_RUN_TIMEOUT: ${PERIAPSIS_SLA_RUN_TIMEOUT:-2m}
+      PERIAPSIS_SLA_ACTION_BATCH_SIZE: ${PERIAPSIS_SLA_ACTION_BATCH_SIZE:-10}
+      PERIAPSIS_SLA_ACTION_LEASE_DURATION: ${PERIAPSIS_SLA_ACTION_LEASE_DURATION:-2m}
+      PERIAPSIS_SLA_ACTION_LEASE_SAFETY: ${PERIAPSIS_SLA_ACTION_LEASE_SAFETY:-15s}
+      PERIAPSIS_SLA_ACTION_OPERATION_TIMEOUT: ${PERIAPSIS_SLA_ACTION_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_SLA_ACTION_POLL_INTERVAL: ${PERIAPSIS_SLA_ACTION_POLL_INTERVAL:-2s}
+      PERIAPSIS_SLA_ACTION_QUEUE_LIMIT: ${PERIAPSIS_SLA_ACTION_QUEUE_LIMIT:-100}
+      PERIAPSIS_SLA_ACTION_RUN_TIMEOUT: ${PERIAPSIS_SLA_ACTION_RUN_TIMEOUT:-2m}
+      PERIAPSIS_SLA_EVENT_BATCH_SIZE: ${PERIAPSIS_SLA_EVENT_BATCH_SIZE:-10}
+      PERIAPSIS_SLA_EVENT_LEASE_DURATION: ${PERIAPSIS_SLA_EVENT_LEASE_DURATION:-2m}
+      PERIAPSIS_SLA_EVENT_MAXIMUM_ATTEMPTS: ${PERIAPSIS_SLA_EVENT_MAXIMUM_ATTEMPTS:-10}
+      PERIAPSIS_SLA_EVENT_OPERATION_TIMEOUT: ${PERIAPSIS_SLA_EVENT_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_SLA_EVENT_POLL_INTERVAL: ${PERIAPSIS_SLA_EVENT_POLL_INTERVAL:-2s}
+      PERIAPSIS_SLA_EVENT_RETRY_BASE_DELAY: ${PERIAPSIS_SLA_EVENT_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_SLA_EVENT_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_SLA_EVENT_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_SLA_EVENT_RUN_TIMEOUT: ${PERIAPSIS_SLA_EVENT_RUN_TIMEOUT:-2m}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_BATCH_SIZE: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_BATCH_SIZE:-25}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_DURATION: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_DURATION:-2m}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_SAFETY: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_LEASE_SAFETY:-15s}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_MAXIMUM_ATTEMPTS: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_MAXIMUM_ATTEMPTS:-10}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_OPERATION_TIMEOUT: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_OPERATION_TIMEOUT:-5s}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_BASE_DELAY: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_BASE_DELAY:-15s}
+      PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_MAXIMUM_DELAY: ${PERIAPSIS_TICKET_EXPORT_RECONCILE_RETRY_MAXIMUM_DELAY:-15m}
+      PERIAPSIS_S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+      PERIAPSIS_S3_BUCKET: ${PERIAPSIS_S3_BUCKET:?set external S3 bucket}
+      PERIAPSIS_S3_CA_BUNDLE_FILE: /run/secrets/s3_ca_bundle
+      PERIAPSIS_S3_ENDPOINT: ${PERIAPSIS_S3_ENDPOINT:?set external S3 endpoint}
+      PERIAPSIS_S3_MAX_CONCURRENT: ${PERIAPSIS_S3_MAX_CONCURRENT:-16}
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: ${PERIAPSIS_S3_PUBLIC_ENDPOINT:?set browser-reachable S3 endpoint}
+      PERIAPSIS_S3_REGION: ${PERIAPSIS_S3_REGION:?set external S3 region}
+      PERIAPSIS_S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
+      PERIAPSIS_WORKER_ADDR: 0.0.0.0:8082
+      PERIAPSIS_WORKER_POLL_INTERVAL: ${PERIAPSIS_WORKER_POLL_INTERVAL:-5s}
+    secrets:
+      - <<: *application-secret
+        source: worker_database_url
+        target: worker_database_url
+      - <<: *application-secret
+        source: identity_keyring
+        target: identity_keyring
+      - <<: *application-secret
+        source: s3_access_key
+        target: s3_access_key
+      - <<: *application-secret
+        source: s3_secret_key
+        target: s3_secret_key
+      - <<: *application-secret
+        source: s3_ca_bundle
+        target: s3_ca_bundle
+      - <<: *application-secret
+        source: dfir_scanner_ca_bundle
+        target: dfir_scanner_ca_bundle
+      - <<: *application-secret
+        source: federated_ca_bundle
+        target: federated_ca_bundle
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD
+        - /healthcheck
+        - http://127.0.0.1:8082/health/ready
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      <<: *runtime-deploy
+      mode: replicated
+      replicas: ${PERIAPSIS_WORKER_REPLICAS:-0}
+      update_config:
+        parallelism: 1
+        delay: 15s
+        monitor: 45s
+        failure_action: rollback
+        order: stop-first
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+        limits:
+          cpus: "2.00"
+          memory: 1G
+
+  notifier:
+    <<: *application-security
+    image: ${PERIAPSIS_NOTIFIER_IMAGE:?set immutable notifier image digest}
+    environment:
+      NOTIFICATION_KEYRING_FILE: /run/secrets/notification-keyring
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: periapsis-notifier
+      PERIAPSIS_DATABASE_URL_FILE: /run/secrets/notifier_database_url
+      PERIAPSIS_ENV: production
+      PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
+      PERIAPSIS_NOTIFIER_ADDR: 0.0.0.0:8083
+      PERIAPSIS_NOTIFIER_BATCH_SIZE: ${PERIAPSIS_NOTIFIER_BATCH_SIZE:-50}
+      PERIAPSIS_NOTIFIER_BUSY_POLL_MS: ${PERIAPSIS_NOTIFIER_BUSY_POLL_MS:-25}
+      PERIAPSIS_NOTIFIER_CONCURRENCY: ${PERIAPSIS_NOTIFIER_CONCURRENCY:-8}
+      PERIAPSIS_NOTIFIER_DELIVERY_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_DELIVERY_TIMEOUT_MS:-30000}
+      PERIAPSIS_NOTIFIER_FAILURE_POLL_MS: ${PERIAPSIS_NOTIFIER_FAILURE_POLL_MS:-5000}
+      PERIAPSIS_NOTIFIER_FANOUT_BATCH_SIZE: ${PERIAPSIS_NOTIFIER_FANOUT_BATCH_SIZE:-50}
+      PERIAPSIS_NOTIFIER_FANOUT_CONCURRENCY: ${PERIAPSIS_NOTIFIER_FANOUT_CONCURRENCY:-8}
+      PERIAPSIS_NOTIFIER_FANOUT_HEARTBEAT_MS: ${PERIAPSIS_NOTIFIER_FANOUT_HEARTBEAT_MS:-15000}
+      PERIAPSIS_NOTIFIER_FANOUT_INITIAL_RETRY_MS: ${PERIAPSIS_NOTIFIER_FANOUT_INITIAL_RETRY_MS:-1000}
+      PERIAPSIS_NOTIFIER_FANOUT_LEASE_MS: ${PERIAPSIS_NOTIFIER_FANOUT_LEASE_MS:-60000}
+      PERIAPSIS_NOTIFIER_FANOUT_MAX_RETRY_MS: ${PERIAPSIS_NOTIFIER_FANOUT_MAX_RETRY_MS:-60000}
+      PERIAPSIS_NOTIFIER_FANOUT_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_FANOUT_TIMEOUT_MS:-30000}
+      PERIAPSIS_NOTIFIER_FANOUT_WORKER_ID: "{{.Service.Name}}-fanout-{{.Task.ID}}"
+      PERIAPSIS_NOTIFIER_HEARTBEAT_MS: ${PERIAPSIS_NOTIFIER_HEARTBEAT_MS:-15000}
+      PERIAPSIS_NOTIFIER_IDLE_POLL_MS: ${PERIAPSIS_NOTIFIER_IDLE_POLL_MS:-1000}
+      PERIAPSIS_NOTIFIER_LEASE_MS: ${PERIAPSIS_NOTIFIER_LEASE_MS:-60000}
+      PERIAPSIS_NOTIFIER_MAX_OUTPUT_BYTES: ${PERIAPSIS_NOTIFIER_MAX_OUTPUT_BYTES:-262144}
+      PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE: /run/secrets/notifier_preview_token
+      PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS:-2000}
+      PERIAPSIS_NOTIFIER_RENDER_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_RENDER_TIMEOUT_MS:-100}
+      PERIAPSIS_NOTIFIER_WORKER_ID: "{{.Service.Name}}-delivery-{{.Task.ID}}"
+      PERIAPSIS_RELEASE: ${PERIAPSIS_RELEASE:?set immutable release identifier}
+      PERIAPSIS_SMTP_ALLOW_PLAIN_LOCAL: "false"
+      PERIAPSIS_WEBHOOK_ALLOW_PLAIN_LOCAL: "false"
+      PERIAPSIS_SMTP_ALLOWED_PORTS: ${PERIAPSIS_SMTP_ALLOWED_PORTS:-465,587}
+      PERIAPSIS_SMTP_ALLOWED_PRIVATE_HOSTS: ${PERIAPSIS_SMTP_ALLOWED_PRIVATE_HOSTS:-}
+    secrets:
+      - <<: *application-secret
+        source: notifier_database_url
+        target: notifier_database_url
+      - <<: *application-secret
+        source: notifier_preview_token
+        target: notifier_preview_token
+      - <<: *application-secret
+        source: notification-keyring
+        target: notification-keyring
+    networks:
+      backend: {}
+      notification-preview:
+        aliases:
+          - notifier-preview
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8083/health/ready',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      <<: *runtime-deploy
+      mode: replicated
+      replicas: ${PERIAPSIS_NOTIFIER_REPLICAS:-0}
+      update_config:
+        parallelism: 1
+        delay: 15s
+        monitor: 45s
+        failure_action: rollback
+        order: stop-first
+      resources:
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  web:
+    <<: *application-security
+    image: ${PERIAPSIS_WEB_IMAGE:?set immutable web image digest}
+    environment:
+      PERIAPSIS_API_URL: http://api:8080
+      PERIAPSIS_ENV: production
+      PERIAPSIS_RELEASE: ${PERIAPSIS_RELEASE:?set immutable release identifier}
+      PERIAPSIS_WEB_ADDR: 0.0.0.0:8081
+      PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS:-}
+    networks:
+      - frontend
+    ports:
+      - target: 8081
+        published: ${PERIAPSIS_WEB_PORT:-8081}
+        protocol: tcp
+        mode: ingress
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8081/health/ready',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      <<: *runtime-deploy
+      mode: replicated
+      replicas: ${PERIAPSIS_WEB_REPLICAS:-0}
+      resources:
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+    command:
+      - --config=/etc/otelcol-contrib/config.yaml
+    configs:
+      - source: otel_collector_config
+        target: /etc/otelcol-contrib/config.yaml
+        mode: 0444
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD
+        - /otelcol-contrib
+        - validate
+        - --config=/etc/otelcol-contrib/config.yaml
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      <<: *runtime-deploy
+      mode: replicated
+      replicas: ${PERIAPSIS_OTEL_REPLICAS:-0}
+      placement:
+        constraints:
+          - node.platform.os == linux
+          - ${PERIAPSIS_OBSERVABILITY_PLACEMENT_CONSTRAINT:-node.labels.periapsis.observability == true}
+      resources:
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    user: "65534:65534"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:uid=65534,gid=65534,mode=1770
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PERIAPSIS_PROMETHEUS_RETENTION:-15d}
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yaml
+        mode: 0444
+      - source: prometheus_alert_rules
+        target: /etc/prometheus/alert-rules.yaml
+        mode: 0444
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      test:
+        - CMD
+        - /bin/promtool
+        - check
+        - ready
+        - --url=http://127.0.0.1:9090
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      <<: *runtime-deploy
+      mode: replicated
+      replicas: ${PERIAPSIS_PROMETHEUS_REPLICAS:-0}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        monitor: 30s
+        failure_action: rollback
+        order: stop-first
+      placement:
+        constraints:
+          - node.platform.os == linux
+          - ${PERIAPSIS_OBSERVABILITY_PLACEMENT_CONSTRAINT:-node.labels.periapsis.observability == true}
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+        limits:
+          cpus: "2.00"
+          memory: 2G
+
+networks:
+  frontend:
+    driver: overlay
+    attachable: false
+    driver_opts:
+      encrypted: "true"
+  backend:
+    driver: overlay
+    attachable: false
+    driver_opts:
+      encrypted: "true"
+  notification-preview:
+    driver: overlay
+    attachable: false
+    internal: true
+    driver_opts:
+      encrypted: "true"
+
+volumes:
+  prometheus_data:
+    driver: ${PERIAPSIS_PROMETHEUS_VOLUME_DRIVER:-local}
+
+configs:
+  otel_collector_config:
+    file: ../observability/otel-collector.yaml
+  prometheus_config:
+    file: ../observability/prometheus.yaml
+  prometheus_alert_rules:
+    file: ../observability/alert-rules.yaml
+
+secrets:
+  database_admin_url:
+    external: true
+    name: ${PERIAPSIS_DATABASE_ADMIN_URL_SECRET:-periapsis_database_admin_url_v1}
+  api_database_password:
+    external: true
+    name: ${PERIAPSIS_API_DATABASE_PASSWORD_SECRET:-periapsis_api_database_password_v1}
+  worker_database_password:
+    external: true
+    name: ${PERIAPSIS_WORKER_DATABASE_PASSWORD_SECRET:-periapsis_worker_database_password_v1}
+  notifier_database_password:
+    external: true
+    name: ${PERIAPSIS_NOTIFIER_DATABASE_PASSWORD_SECRET:-periapsis_notifier_database_password_v1}
+  api_database_url:
+    external: true
+    name: ${PERIAPSIS_API_DATABASE_URL_SECRET:-periapsis_api_database_url_v1}
+  worker_database_url:
+    external: true
+    name: ${PERIAPSIS_WORKER_DATABASE_URL_SECRET:-periapsis_worker_database_url_v1}
+  notifier_database_url:
+    external: true
+    name: ${PERIAPSIS_NOTIFIER_DATABASE_URL_SECRET:-periapsis_notifier_database_url_v1}
+  notifier_preview_token:
+    external: true
+    name: ${PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_SECRET:-periapsis_notifier_preview_token_v1}
+  notification-keyring:
+    external: true
+    name: ${PERIAPSIS_NOTIFICATION_KEYRING_SECRET:-periapsis_notification_keyring_v1}
+  bootstrap_token:
+    external: true
+    name: ${PERIAPSIS_BOOTSTRAP_TOKEN_SECRET:-periapsis_bootstrap_token_v1}
+  master_key:
+    external: true
+    name: ${PERIAPSIS_MASTER_KEY_SECRET:-periapsis_master_key_v1}
+  api_credential_keyring:
+    external: true
+    name: ${PERIAPSIS_API_CREDENTIAL_KEYRING_SECRET:-periapsis_api_credential_keyring_v1}
+  identity_keyring:
+    external: true
+    name: ${PERIAPSIS_IDENTITY_KEYRING_SECRET:-periapsis_identity_keyring_v1}
+  s3_access_key:
+    external: true
+    name: ${PERIAPSIS_S3_ACCESS_KEY_SECRET:-periapsis_s3_access_key_v1}
+  s3_secret_key:
+    external: true
+    name: ${PERIAPSIS_S3_SECRET_KEY_SECRET:-periapsis_s3_secret_key_v1}
+  s3_ca_bundle:
+    external: true
+    name: ${PERIAPSIS_S3_CA_BUNDLE_SECRET:-periapsis_s3_ca_bundle_v1}
+  dfir_scanner_ca_bundle:
+    external: true
+    name: ${PERIAPSIS_DFIR_SCANNER_CA_BUNDLE_SECRET:-periapsis_dfir_scanner_ca_bundle_v1}
+  federated_ca_bundle:
+    external: true
+    name: ${PERIAPSIS_FEDERATED_CA_BUNDLE_SECRET:-periapsis_federated_ca_bundle_v1}

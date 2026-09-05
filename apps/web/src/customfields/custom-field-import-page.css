@@ -1,0 +1,620 @@
+.custom-field-import {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.custom-field-import__hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 2rem;
+  overflow: hidden;
+  padding: clamp(1.3rem, 3vw, 2.3rem);
+  color: #f5fffd;
+  background:
+    linear-gradient(90deg, rgb(6 24 39 / 96%), rgb(10 49 59 / 88%)),
+    repeating-linear-gradient(
+      120deg,
+      transparent 0,
+      transparent 17px,
+      rgb(255 255 255 / 5%) 18px,
+      transparent 19px
+    );
+  border-radius: 0.8rem;
+  box-shadow: 0 1.2rem 3rem rgb(8 26 43 / 14%);
+}
+
+.custom-field-import__hero::before {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 82% 10%,
+    rgb(70 226 194 / 26%),
+    transparent 22rem
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.custom-field-import__hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.custom-field-import__hero h1,
+.custom-field-import__hero p,
+.custom-field-import__editor h2,
+.custom-field-import__editor p,
+.custom-field-import__job h2,
+.custom-field-import__results h2,
+.custom-field-import__boundary h1,
+.custom-field-import__boundary p {
+  margin: 0;
+}
+
+.custom-field-import__hero h1 {
+  max-width: 19ch;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.custom-field-import__hero div > p:last-child {
+  max-width: 66ch;
+  margin-top: 0.8rem;
+  color: rgb(235 254 250 / 72%);
+}
+
+.custom-field-import__hero .section-label {
+  margin-bottom: 0.5rem;
+  color: #7ae2cf;
+}
+
+.custom-field-import__hero-mark {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.65rem;
+  min-width: 9.5rem;
+  padding: 0.85rem 1rem;
+  background: rgb(255 255 255 / 7%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 0.65rem;
+  backdrop-filter: blur(0.6rem);
+}
+
+.custom-field-import__hero-mark svg {
+  grid-row: 1 / span 2;
+  width: 1.8rem;
+  height: 1.8rem;
+  color: #7ae2cf;
+}
+
+.custom-field-import__hero-mark span {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.custom-field-import__hero-mark small {
+  color: rgb(235 254 250 / 62%);
+  font-size: 0.68rem;
+}
+
+.custom-field-import__trust-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--periapsis-line);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.58rem;
+}
+
+.custom-field-import__trust-strip span {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  color: var(--periapsis-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  background: var(--periapsis-paper);
+}
+
+.custom-field-import__trust-strip svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--periapsis-teal);
+}
+
+.custom-field-import__composer {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.32fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.custom-field-import__settings,
+.custom-field-import__editor,
+.custom-field-import__job,
+.custom-field-import__results {
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.65rem;
+  box-shadow: 0 0.6rem 1.5rem rgb(8 26 43 / 4%);
+}
+
+.custom-field-import__settings {
+  display: grid;
+  align-content: start;
+  gap: 1.2rem;
+  padding: 1rem;
+}
+
+.custom-field-import__settings fieldset,
+.custom-field-import__settings > label {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.custom-field-import__settings select {
+  min-height: 2.5rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  color: var(--periapsis-ink);
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.42rem;
+}
+
+.custom-field-import__segments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem;
+  margin-top: 0.5rem;
+  padding: 0.2rem;
+  background: color-mix(in srgb, var(--periapsis-navy) 6%, transparent);
+  border-radius: 0.48rem;
+}
+
+.custom-field-import__segments button {
+  min-height: 2.25rem;
+  color: var(--periapsis-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 680;
+  background: transparent;
+  border: 0;
+  border-radius: 0.36rem;
+  cursor: pointer;
+}
+
+.custom-field-import__segments button[aria-pressed="true"] {
+  color: var(--periapsis-navy);
+  background: var(--periapsis-paper);
+  box-shadow: 0 0.2rem 0.7rem rgb(8 26 43 / 9%);
+}
+
+.custom-field-import__segments button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.custom-field-import__segments button:focus-visible,
+.custom-field-import__mode:has(input:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--periapsis-teal) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.custom-field-import__mode {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem;
+  color: var(--periapsis-muted);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.48rem;
+  cursor: pointer;
+}
+
+.custom-field-import__mode[data-selected] {
+  color: var(--periapsis-navy);
+  background: color-mix(in srgb, var(--periapsis-teal) 7%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--periapsis-teal) 45%,
+    var(--periapsis-line)
+  );
+}
+
+.custom-field-import__mode > svg {
+  width: 1rem;
+  color: var(--periapsis-teal);
+}
+
+.custom-field-import__mode span {
+  display: grid;
+}
+
+.custom-field-import__mode strong {
+  font-size: 0.78rem;
+}
+
+.custom-field-import__mode small {
+  color: var(--periapsis-muted);
+  font-size: 0.66rem;
+}
+
+.custom-field-import__editor {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem;
+  border-top: 3px solid var(--periapsis-teal);
+}
+
+.custom-field-import__editor > header,
+.custom-field-import__job > header,
+.custom-field-import__job > footer,
+.custom-field-import__results > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.custom-field-import__editor h2,
+.custom-field-import__job h2,
+.custom-field-import__results h2 {
+  color: var(--periapsis-navy);
+  font-size: 1.05rem;
+}
+
+.custom-field-import__editor > p {
+  color: var(--periapsis-muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.custom-field-import code,
+.custom-field-import__textarea {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.custom-field-import__textarea {
+  min-height: 24rem;
+  resize: vertical;
+  color: #dff8f2;
+  font-size: 0.75rem;
+  line-height: 1.58;
+  tab-size: 2;
+  background: #0a1c2b;
+  border-color: #183d4d;
+}
+
+.custom-field-import__textarea:focus-visible {
+  border-color: #56d4bd;
+  box-shadow: 0 0 0 3px rgb(86 212 189 / 16%);
+}
+
+.custom-field-import__editor-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--periapsis-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+}
+
+.custom-field-import__editor > button {
+  justify-self: end;
+}
+
+.custom-field-import__summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.58rem;
+}
+
+.custom-field-import__summary[data-compact] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.custom-field-import__summary > div {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem;
+  border-right: 1px solid var(--periapsis-line);
+}
+
+.custom-field-import__summary > div:last-child {
+  border-right: 0;
+}
+
+.custom-field-import__summary strong {
+  color: var(--periapsis-navy);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.05rem;
+}
+
+.custom-field-import__summary span {
+  color: var(--periapsis-muted);
+  font-size: 0.65rem;
+}
+
+.custom-field-import__problem {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 0.9rem;
+  color: var(--periapsis-danger);
+  font-size: 0.78rem;
+  background: color-mix(in srgb, var(--periapsis-danger) 7%, transparent);
+  border-left: 3px solid var(--periapsis-danger);
+}
+
+.custom-field-import__problem svg {
+  flex: 0 0 auto;
+  width: 1rem;
+}
+
+.custom-field-import__review {
+  width: min(44rem, calc(100vw - 2rem));
+  max-width: 44rem;
+}
+
+.custom-field-import__presence-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: var(--periapsis-muted);
+  font-size: 0.7rem;
+}
+
+.custom-field-import__presence-key span {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.custom-field-import__presence-key i {
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--periapsis-muted);
+  border-radius: 50%;
+}
+
+.custom-field-import__presence-key i[data-kind="null"] {
+  background: var(--periapsis-danger);
+}
+
+.custom-field-import__presence-key i[data-kind="empty"] {
+  background: var(--periapsis-teal);
+}
+
+.custom-field-import__job {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.custom-field-import__job > header {
+  justify-content: start;
+}
+
+.custom-field-import__job > header > div {
+  margin-right: auto;
+}
+
+.custom-field-import__job small,
+.custom-field-import__job > footer > span {
+  color: var(--periapsis-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.66rem;
+}
+
+.custom-field-import__job-icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #b37612;
+  background: rgb(179 118 18 / 10%);
+  border-radius: 0.55rem;
+  place-items: center;
+}
+
+.custom-field-import__job-icon[data-terminal] {
+  color: var(--periapsis-teal);
+  background: color-mix(in srgb, var(--periapsis-teal) 10%, transparent);
+}
+
+.custom-field-import__job-icon svg {
+  width: 1.2rem;
+}
+
+.custom-field-import__progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--periapsis-muted);
+  font-size: 0.72rem;
+}
+
+.custom-field-import__progress-copy strong {
+  color: var(--periapsis-navy);
+}
+
+.custom-field-import__job progress {
+  overflow: hidden;
+  width: 100%;
+  height: 0.55rem;
+  appearance: none;
+  background: color-mix(in srgb, var(--periapsis-navy) 8%, transparent);
+  border: 0;
+  border-radius: 999px;
+}
+
+.custom-field-import__job progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--periapsis-navy) 8%, transparent);
+}
+
+.custom-field-import__job progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--periapsis-teal), #4bd6bb);
+}
+
+.custom-field-import__job progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--periapsis-teal), #4bd6bb);
+}
+
+.custom-field-import__outcomes {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.custom-field-import__outcomes > span {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem;
+  color: var(--periapsis-muted);
+  font-size: 0.61rem;
+  background: color-mix(in srgb, var(--periapsis-navy) 4%, transparent);
+  border-radius: 0.4rem;
+}
+
+.custom-field-import__outcomes strong {
+  color: var(--periapsis-navy);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+}
+
+.custom-field-import__outcomes > span[data-tone="success"] strong {
+  color: var(--periapsis-teal);
+}
+
+.custom-field-import__outcomes > span[data-tone="warning"] strong {
+  color: #a66b0e;
+}
+
+.custom-field-import__outcomes > span[data-tone="danger"] strong {
+  color: var(--periapsis-danger);
+}
+
+.custom-field-import__job > footer {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--periapsis-line);
+}
+
+.custom-field-import__job > footer > div {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.custom-field-import__results {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.custom-field-import__result-table-wrap {
+  overflow-x: auto;
+}
+
+.custom-field-import__results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.custom-field-import__results th,
+.custom-field-import__results td {
+  padding: 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--periapsis-line);
+}
+
+.custom-field-import__results th {
+  color: var(--periapsis-muted);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.custom-field-import__results td:first-child,
+.custom-field-import__results td:nth-child(2),
+.custom-field-import__results td:nth-child(4) {
+  font-family: "IBM Plex Mono", monospace;
+  white-space: nowrap;
+}
+
+.custom-field-import__results-empty {
+  margin: 0;
+  color: var(--periapsis-muted);
+  font-size: 0.75rem;
+}
+
+.custom-field-import__results > button {
+  justify-self: start;
+}
+
+.custom-field-import__boundary {
+  display: grid;
+  justify-items: center;
+  gap: 0.55rem;
+  padding: 3rem 1rem;
+  text-align: center;
+  border: 1px dashed var(--periapsis-line);
+  border-radius: 0.65rem;
+}
+
+.custom-field-import__boundary > svg {
+  width: 2rem;
+  height: 2rem;
+  color: var(--periapsis-teal);
+}
+
+@media (max-width: 900px) {
+  .custom-field-import__composer {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-field-import__outcomes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .custom-field-import__hero {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-field-import__hero-mark {
+    display: none;
+  }
+
+  .custom-field-import__trust-strip,
+  .custom-field-import__summary,
+  .custom-field-import__summary[data-compact] {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-field-import__outcomes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .custom-field-import__editor-foot,
+  .custom-field-import__job > footer {
+    align-items: start;
+    flex-direction: column;
+  }
+}

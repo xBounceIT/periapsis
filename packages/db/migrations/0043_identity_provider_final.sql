@@ -1,0 +1,1 @@
+ALTER TABLE "local_break_glass_credentials" ALTER COLUMN "login_identifier_id" SET NOT NULL;

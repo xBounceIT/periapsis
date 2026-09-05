@@ -1,0 +1,2 @@
+DROP INDEX "tenant_ldap_directory_runs_key_version_idx";--> statement-breakpoint
+CREATE INDEX "tenant_ldap_directory_runs_key_version_idx" ON "tenant_ldap_directory_operation_runs" USING btree ("tenant_id","bind_secret_key_version","status","expires_at");

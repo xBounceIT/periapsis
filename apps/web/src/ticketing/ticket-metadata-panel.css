@@ -1,0 +1,151 @@
+.ticket-metadata {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #c7d6dc;
+  border-left: 4px solid var(--periapsis-teal);
+  border-radius: 0.75rem;
+  box-shadow: 0 0.7rem 2.2rem rgb(40 55 70 / 5%);
+}
+
+.ticket-metadata__heading {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  background: linear-gradient(105deg, #f3f8f9, #fff 72%);
+  border-bottom: 1px solid #d8e2e6;
+}
+
+.ticket-metadata__heading > div,
+.ticket-metadata__heading > div > span,
+.ticket-metadata__controls {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.ticket-metadata__heading > div > svg {
+  width: 1rem;
+  color: #2d7480;
+}
+
+.ticket-metadata__heading h3,
+.ticket-metadata__heading small {
+  margin: 0;
+}
+
+.ticket-metadata__heading h3 {
+  color: var(--periapsis-ink);
+  font-size: 0.95rem;
+}
+
+.ticket-metadata__heading small,
+.ticket-metadata__hint,
+.ticket-metadata__visibility small {
+  color: #677b85;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.ticket-metadata__snapshot {
+  padding: 0.35rem 0.55rem;
+  color: #4c6871;
+  font:
+    0.62rem/1.2 "IBM Plex Mono",
+    monospace;
+  background: #e5f0f2;
+  border-radius: 999px;
+}
+
+.ticket-metadata__snapshot strong {
+  color: #245f69;
+}
+
+.ticket-metadata__hint,
+.ticket-metadata__problem {
+  margin: 0;
+  padding: 0.85rem 1.1rem;
+}
+
+.ticket-metadata__problem {
+  color: #88462d;
+  font-size: 0.78rem;
+  background: #fff6f0;
+  border-top: 1px solid #efd8ca;
+}
+
+.ticket-metadata__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1.1rem;
+}
+
+.ticket-metadata__form [data-slot="select-trigger"] {
+  width: 100%;
+}
+
+.ticket-metadata__wide-field,
+.ticket-metadata__visibility,
+.ticket-metadata__actions {
+  grid-column: 1 / -1;
+}
+
+.ticket-metadata__visibility {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.8rem;
+  background: #f2f6f7;
+  border: 1px solid #d6e0e4;
+  border-radius: 0.6rem;
+}
+
+.ticket-metadata__visibility > span {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.ticket-metadata__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+  padding-top: 0.2rem;
+}
+
+@media (max-width: 48rem) {
+  .ticket-metadata__heading,
+  .ticket-metadata__controls {
+    align-items: flex-start;
+  }
+
+  .ticket-metadata__heading {
+    flex-direction: column;
+  }
+
+  .ticket-metadata__controls {
+    flex-wrap: wrap;
+  }
+
+  .ticket-metadata__form {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-metadata__wide-field,
+  .ticket-metadata__visibility,
+  .ticket-metadata__actions {
+    grid-column: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-metadata *,
+  .ticket-metadata *::before,
+  .ticket-metadata *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

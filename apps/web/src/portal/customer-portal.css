@@ -1,0 +1,687 @@
+.customer-portal {
+  display: grid;
+  width: min(100%, 92rem);
+  gap: 1.2rem;
+  margin: 0 auto;
+  color: var(--periapsis-ink);
+}
+
+.customer-portal__heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.1rem;
+  align-items: center;
+  padding: 1.5rem;
+  color: #eaf3f5;
+  background:
+    radial-gradient(circle at 75% 0, rgb(98 182 194 / 22%), transparent 35%),
+    linear-gradient(145deg, #19313f, #294653);
+  border: 1px solid #3f5a67;
+  border-radius: 1.15rem;
+  box-shadow: 0 22px 52px rgb(16 38 49 / 15%);
+}
+
+.customer-portal__heading h1 {
+  margin: 0.22rem 0 0.4rem;
+  color: #fff;
+  font-size: clamp(1.65rem, 3vw, 2.5rem);
+  font-weight: 720;
+  letter-spacing: -0.035em;
+}
+
+.customer-portal__heading p:last-child {
+  max-width: 52rem;
+  margin: 0;
+  color: #bdcdd4;
+  line-height: 1.58;
+}
+
+.customer-portal__heading .section-label {
+  color: #82c7d1;
+}
+
+.customer-portal__mark {
+  position: relative;
+  display: grid;
+  width: 3.8rem;
+  height: 3.8rem;
+  place-items: center;
+  color: #f0a27f;
+  border: 1px solid rgb(130 199 209 / 46%);
+  border-radius: 50%;
+}
+
+.customer-portal__mark span {
+  position: absolute;
+  inset: 0.45rem;
+  border: 1px dashed rgb(240 162 127 / 45%);
+  border-radius: 50%;
+}
+
+.customer-portal__mark svg {
+  z-index: 1;
+  width: 1.4rem;
+}
+
+.customer-portal__identity {
+  display: flex;
+  min-width: 13rem;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.75rem 0.85rem;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 0.75rem;
+}
+
+.customer-portal__identity svg {
+  width: 1.25rem;
+  color: #82c7d1;
+}
+
+.customer-portal__identity small,
+.customer-portal__identity strong {
+  display: block;
+}
+
+.customer-portal__identity small {
+  color: #9eb3bd;
+  font:
+    0.61rem/1.3 "IBM Plex Mono",
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.customer-portal__identity strong {
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+}
+
+.customer-portal__view-switch,
+.portal-inventory__controls,
+.portal-kind-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.customer-portal__view-switch {
+  padding: 0.2rem 0;
+}
+
+.portal-inventory,
+.portal-detail,
+.portal-preferences {
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 1rem;
+  box-shadow: 0 14px 36px rgb(23 34 48 / 7%);
+}
+
+.portal-inventory__toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.portal-inventory__toolbar h2,
+.portal-preferences h2,
+.portal-detail__heading h2 {
+  margin: 0.2rem 0 0;
+  color: var(--periapsis-navy);
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.portal-search {
+  position: relative;
+  display: block;
+  min-width: min(20rem, 100%);
+}
+
+.portal-search > svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0.72rem;
+  width: 0.95rem;
+  transform: translateY(-50%);
+  color: var(--periapsis-muted);
+  pointer-events: none;
+}
+
+.portal-search input {
+  padding-left: 2.2rem;
+}
+
+.portal-ticket-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(23rem, 100%), 1fr));
+  gap: 0.8rem;
+}
+
+.portal-ticket-card {
+  display: grid;
+  gap: 0.55rem;
+  min-height: 12rem;
+  padding: 1rem;
+  color: var(--periapsis-ink);
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--periapsis-line);
+  border-left: 3px solid var(--periapsis-teal);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.portal-ticket-card:hover {
+  border-color: #83b8c1;
+  box-shadow: 0 12px 24px rgb(30 69 79 / 10%);
+  transform: translateY(-2px);
+}
+
+.portal-ticket-card:focus-visible {
+  outline: 3px solid rgb(85 160 174 / 40%);
+  outline-offset: 2px;
+}
+
+.portal-ticket-card__kind,
+.portal-ticket-card__meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.portal-ticket-card__kind {
+  color: var(--periapsis-muted);
+  font:
+    0.65rem/1.3 "IBM Plex Mono",
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.portal-ticket-card__kind svg {
+  width: 1rem;
+  margin-right: auto;
+  color: var(--periapsis-copper);
+}
+
+.portal-ticket-card > strong {
+  color: var(--periapsis-navy);
+  font-size: 1rem;
+}
+
+.portal-ticket-card > p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--periapsis-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.portal-ticket-card__meta {
+  align-self: end;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--periapsis-line);
+}
+
+.portal-ticket-card__meta small {
+  color: var(--periapsis-muted);
+  font-size: 0.65rem;
+}
+
+.portal-load-more {
+  margin-top: 1rem;
+}
+
+.portal-detail > [data-slot="button"]:first-child {
+  margin: -0.3rem 0 0.7rem -0.55rem;
+}
+
+.portal-detail__heading {
+  display: flex;
+  gap: 1.2rem;
+  align-items: start;
+  justify-content: space-between;
+  padding: 0.35rem 0 1.1rem;
+  border-bottom: 1px solid var(--periapsis-line);
+}
+
+.portal-detail__heading > div:first-child > p:last-child {
+  max-width: 48rem;
+  margin: 0.5rem 0 0;
+  color: var(--periapsis-muted);
+  line-height: 1.55;
+}
+
+.portal-detail__status {
+  display: grid;
+  min-width: 12rem;
+  gap: 0.35rem;
+  justify-items: end;
+  color: var(--periapsis-muted);
+  font-size: 0.7rem;
+}
+
+.portal-detail__status [data-slot="button"] {
+  margin-top: 0.25rem;
+}
+
+.portal-export-error {
+  max-width: 18rem;
+  color: var(--periapsis-danger, #a03d37);
+  text-align: right;
+}
+
+.portal-detail__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 0.68fr);
+  gap: 0.9rem;
+  align-items: start;
+  padding-top: 1rem;
+}
+
+.portal-detail__overview,
+.portal-detail__layout > .ticket-sla,
+.portal-attachments,
+.portal-comments {
+  grid-column: 1;
+}
+
+.portal-stream {
+  position: sticky;
+  top: 1rem;
+  grid-column: 2;
+  grid-row: 1 / span 4;
+}
+
+.portal-detail__overview,
+.portal-attachments,
+.portal-stream,
+.portal-comments {
+  box-shadow: none;
+}
+
+.portal-attachment-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0 0 0.9rem;
+  list-style: none;
+}
+
+.portal-attachment-list > li {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem;
+  background: var(--periapsis-paper);
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.7rem;
+}
+
+.portal-attachment-list__identity,
+.portal-attachment-list__actions {
+  display: flex;
+  min-width: 0;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.portal-attachment-list__identity > svg {
+  width: 1.05rem;
+  min-width: 1.05rem;
+  color: var(--periapsis-copper);
+}
+
+.portal-attachment-list__identity span,
+.portal-attachment-list__identity strong,
+.portal-attachment-list__identity time {
+  display: block;
+  min-width: 0;
+}
+
+.portal-attachment-list__identity strong {
+  overflow-wrap: anywhere;
+  color: var(--periapsis-navy);
+  font-size: 0.78rem;
+}
+
+.portal-attachment-list__identity time {
+  margin-top: 0.2rem;
+  color: var(--periapsis-muted);
+  font-size: 0.64rem;
+}
+
+.portal-attachment-download {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  color: var(--periapsis-navy);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-decoration: none;
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.5rem;
+}
+
+.portal-attachment-download:hover {
+  border-color: var(--periapsis-teal);
+}
+
+.portal-attachment-download:focus-visible {
+  outline: 3px solid rgb(85 160 174 / 40%);
+  outline-offset: 2px;
+}
+
+.portal-attachment-download svg {
+  width: 0.9rem;
+}
+
+.portal-timeline,
+.portal-comment-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0 0 0.9rem;
+  list-style: none;
+}
+
+.portal-timeline li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.65rem;
+}
+
+.portal-timeline li > span {
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-top: 0.25rem;
+  background: var(--periapsis-teal);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(83 155 168 / 28%);
+}
+
+.portal-timeline strong,
+.portal-timeline small {
+  display: block;
+}
+
+.portal-timeline strong {
+  color: var(--periapsis-navy);
+  font-size: 0.78rem;
+}
+
+.portal-timeline small {
+  margin-top: 0.2rem;
+  color: var(--periapsis-muted);
+  font-size: 0.64rem;
+}
+
+.portal-comment-list > li {
+  padding: 0.9rem;
+  background: #fff;
+  border: 1px solid var(--periapsis-line);
+  border-radius: 0.7rem;
+}
+
+.portal-comment-list header {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  margin-bottom: 0.55rem;
+}
+
+.portal-comment-list header strong {
+  color: var(--periapsis-navy);
+  font-size: 0.8rem;
+}
+
+.portal-comment-list time {
+  margin-left: auto;
+  color: var(--periapsis-muted);
+  font-size: 0.64rem;
+}
+
+.portal-comment-form {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--periapsis-line);
+}
+
+.portal-comment-form > div {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.portal-comment-form small {
+  color: var(--periapsis-muted);
+  font-size: 0.66rem;
+}
+
+.portal-preferences {
+  display: grid;
+  grid-template-columns: minmax(17rem, 0.65fr) minmax(25rem, 1.35fr);
+  gap: 1.25rem;
+}
+
+.portal-preferences__identity {
+  padding: 1.2rem;
+  color: #eaf3f5;
+  background: var(--periapsis-navy);
+  border-radius: 0.85rem;
+}
+
+.portal-preferences__identity h2 {
+  color: #fff;
+}
+
+.portal-preferences__identity dl {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.1rem;
+}
+
+.portal-preferences__identity dl > div {
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.portal-preferences__identity dt {
+  color: #8fa5b2;
+  font:
+    0.61rem/1.3 "IBM Plex Mono",
+    monospace;
+  text-transform: uppercase;
+}
+
+.portal-preferences__identity dd {
+  margin: 0.18rem 0 0;
+  font-size: 0.82rem;
+}
+
+.portal-preferences__form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.portal-preferences__form h3 {
+  margin: 0.2rem 0 0.4rem;
+  color: var(--periapsis-navy);
+}
+
+.portal-preferences__form p {
+  margin: 0;
+  color: var(--periapsis-muted);
+  line-height: 1.55;
+}
+
+.portal-preferences__form > label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--periapsis-muted);
+  font-size: 0.72rem;
+}
+
+.portal-preferences__check {
+  display: flex !important;
+  flex-direction: row;
+  align-items: center;
+}
+
+.portal-preferences__check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--periapsis-teal);
+}
+
+.portal-preferences__form > [data-slot="button"] {
+  justify-self: end;
+}
+
+.portal-loading,
+.portal-empty,
+.portal-boundary {
+  display: grid;
+  place-items: center;
+  padding: 2.4rem 1rem;
+  color: var(--periapsis-muted);
+  text-align: center;
+}
+
+.portal-loading {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.portal-loading svg,
+.portal-empty > svg,
+.portal-boundary > svg {
+  width: 1.25rem;
+  color: var(--periapsis-teal);
+}
+
+.portal-empty strong {
+  margin-top: 0.55rem;
+  color: var(--periapsis-navy);
+}
+
+.portal-empty p,
+.portal-boundary p {
+  max-width: 35rem;
+  margin: 0.3rem 0 0;
+  line-height: 1.55;
+}
+
+.portal-boundary h1 {
+  margin: 0.45rem 0 0.25rem;
+  color: var(--periapsis-navy);
+}
+
+@media (max-width: 72rem) {
+  .customer-portal__heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .customer-portal__identity {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .portal-inventory__toolbar {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .portal-inventory__controls {
+    width: 100%;
+  }
+}
+
+@media (max-width: 54rem) {
+  .portal-detail__layout,
+  .portal-preferences {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-detail__overview,
+  .portal-detail__layout > .ticket-sla,
+  .portal-attachments,
+  .portal-comments,
+  .portal-stream {
+    position: static;
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .portal-detail__heading {
+    flex-direction: column;
+  }
+
+  .portal-detail__status {
+    justify-items: start;
+  }
+
+  .portal-export-error {
+    text-align: left;
+  }
+}
+
+@media (max-width: 40rem) {
+  .customer-portal__heading {
+    grid-template-columns: 1fr;
+    padding: 1.1rem;
+  }
+
+  .portal-inventory__controls,
+  .portal-inventory__controls > *,
+  .customer-portal__view-switch,
+  .customer-portal__view-switch [data-slot="button"],
+  .portal-kind-switch,
+  .portal-kind-switch [data-slot="button"] {
+    width: 100%;
+  }
+
+  .portal-comment-form > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portal-attachment-list > li,
+  .portal-attachment-list__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portal-attachment-list__actions,
+  .portal-attachment-list__actions > *,
+  .portal-attachment-download {
+    width: 100%;
+  }
+
+  .portal-attachment-download {
+    justify-content: center;
+  }
+}

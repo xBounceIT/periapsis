@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: periapsis
+  namespace: periapsis
+  labels:
+    app.kubernetes.io/part-of: periapsis
+spec:
+  namespaceSelector:
+    matchNames:
+      - periapsis
+  selector:
+    matchLabels:
+      observability.periapsis.io/scrape: "true"
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http

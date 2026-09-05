@@ -1,0 +1,214 @@
+.saved-view-bar {
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.7fr) minmax(16rem, 1fr) auto;
+  gap: 0.9rem 1rem;
+  align-items: end;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: calc(var(--radius) + 0.2rem);
+  background:
+    linear-gradient(
+      125deg,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 42%
+    ),
+    var(--card);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.saved-view-bar__identity {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.saved-view-bar__identity h2,
+.saved-view-bar__identity p {
+  margin: 0;
+}
+
+.saved-view-bar__icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 0.75rem;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, var(--background));
+}
+
+.saved-view-bar__icon svg {
+  width: 1.15rem;
+}
+
+.saved-view-selector,
+.saved-view-dialog__field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.saved-view-selector select {
+  min-height: 2.45rem;
+  max-width: 32rem;
+  padding: 0.45rem 2.2rem 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.saved-view-selector select[aria-invalid="true"] {
+  border-color: var(--destructive);
+}
+
+.saved-view-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.saved-view-status {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+}
+
+.saved-view-status svg {
+  width: 1rem;
+  flex: 0 0 auto;
+}
+
+.saved-view-status--warning,
+.saved-view-status--error {
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+}
+
+.saved-view-status--warning {
+  color: color-mix(in srgb, var(--foreground) 78%, #a56b00);
+  background: color-mix(in srgb, #d99316 11%, transparent);
+}
+
+.saved-view-status--error {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+
+.saved-view-status--error span {
+  flex: 1;
+}
+
+.saved-view-definition {
+  grid-column: 1 / -1;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.saved-view-definition summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.saved-view-definition dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0 0;
+}
+
+.saved-view-definition dl div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.saved-view-definition dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.saved-view-definition dd {
+  margin: 0;
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.saved-view-definition ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  list-style: none;
+}
+
+.saved-view-definition li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.saved-view-dialog form {
+  display: grid;
+  gap: 1rem;
+}
+
+.ticket-dynamic-value {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.ticket-dynamic-value small {
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 900px) {
+  .saved-view-bar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .saved-view-selector select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .saved-view-bar__actions {
+    justify-content: flex-start;
+  }
+
+  .saved-view-status,
+  .saved-view-definition {
+    grid-column: 1;
+  }
+
+  .saved-view-definition dl {
+    grid-template-columns: repeat(2, minmax(8rem, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .saved-view-bar__actions > * {
+    flex: 1 1 auto;
+  }
+
+  .saved-view-definition dl {
+    grid-template-columns: 1fr;
+  }
+}

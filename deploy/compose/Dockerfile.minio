@@ -1,0 +1,13 @@
+ARG MINIO_IMAGE=minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+
+FROM ${MINIO_IMAGE}
+
+LABEL org.opencontainers.image.description="Non-root local S3 compatibility target for Periapsis" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.title="Periapsis MinIO test target" \
+      org.opencontainers.image.version="RELEASE.2025-09-07T16-13-09Z"
+
+USER 0
+RUN install -d -o 1000 -g 1000 -m 0750 /data
+
+USER 1000:1000
