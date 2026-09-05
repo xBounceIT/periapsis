@@ -8,8 +8,6 @@ asynchronous exports, audit operations, and hardened Compose, Swarm, and Kuberne
 deployment definitions. Candidate acceptance still depends on the final database-runtime
 gate and the retained external evidence described below.
 
-The project does not copy IRIS DFIR code, interface, text, branding, assets, or proprietary structure.
-
 ## Current delivery state
 
 Implemented identity paths include local break-glass recovery, tenant and platform LDAP,
