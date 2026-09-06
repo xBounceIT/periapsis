@@ -320,20 +320,20 @@ function proxyToApi(
   apiBaseUrl: URL,
   trustedProxies: TrustedProxySet,
 ): void {
-  const target = new URL(
-    `${requestUrl.pathname}${requestUrl.search}`,
-    apiBaseUrl,
-  );
   const headers = buildProxyHeaders(
     incoming.headers,
     incoming.socket.remoteAddress,
     trustedProxies,
   );
 
-  const transport = target.protocol === "https:" ? httpsRequest : httpRequest;
+  // The configured URL alone selects the network endpoint. Request data may
+  // supply the already-routed path/query, never an outgoing URL authority.
+  const transport =
+    apiBaseUrl.protocol === "https:" ? httpsRequest : httpRequest;
   const upstream = transport(
-    target,
+    apiBaseUrl,
     {
+      path: `${requestUrl.pathname}${requestUrl.search}`,
       method: incoming.method,
       headers,
       timeout: 30_000,

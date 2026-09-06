@@ -39,13 +39,13 @@ func commandBinding(operation, key string, payload any) (CommandBinding, error) 
 	if err != nil {
 		return CommandBinding{}, ErrInvalidInput
 	}
-	prefixed := make([]byte, 0, len(operation)+1+len(canonical))
-	prefixed = append(prefixed, operation...)
-	prefixed = append(prefixed, 0)
-	prefixed = append(prefixed, canonical...)
+	digest := sha256.New()
+	_, _ = digest.Write([]byte(operation))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write(canonical)
 	return CommandBinding{
 		Operation: operation, KeyDigest: sha256.Sum256([]byte(key)),
-		RequestDigest: sha256.Sum256(prefixed),
+		RequestDigest: [sha256.Size]byte(digest.Sum(nil)),
 	}, nil
 }
 

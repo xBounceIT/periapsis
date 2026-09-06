@@ -926,6 +926,12 @@ func TestPlanAndApplyRejectsMismatchedEvidenceAndApplyAuthority(t *testing.T) {
 		"unsafe return path": func(value *AuthenticationProjection) {
 			value.OIDCCompletion.ReturnPath = "//attacker.example"
 		},
+		"decoded backslash return path": func(value *AuthenticationProjection) {
+			value.OIDCCompletion.ReturnPath = "/%5Cattacker.example"
+		},
+		"decoded control return path": func(value *AuthenticationProjection) {
+			value.OIDCCompletion.ReturnPath = "/%0Aattacker.example"
+		},
 		"platform provider before platform federation": func(value *AuthenticationProjection) {
 			platform := value.Subject.Provider
 			platform.Scope = identity.PlatformProviderScope

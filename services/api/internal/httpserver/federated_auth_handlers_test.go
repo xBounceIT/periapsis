@@ -478,6 +478,18 @@ func TestFederatedSessionCallbackRejectsCredentialAndRevalidationDrift(t *testin
 		name   string
 		mutate func(*federatedSessionFixture, *transportAuthStub)
 	}{
+		{name: "scheme relative return path", mutate: func(fixture *federatedSessionFixture, _ *transportAuthStub) {
+			fixture.result.ReturnPath = "//evil.example"
+		}},
+		{name: "backslash return path", mutate: func(fixture *federatedSessionFixture, _ *transportAuthStub) {
+			fixture.result.ReturnPath = `/\evil.example`
+		}},
+		{name: "decoded backslash return path", mutate: func(fixture *federatedSessionFixture, _ *transportAuthStub) {
+			fixture.result.ReturnPath = "/%5Cevil.example"
+		}},
+		{name: "decoded control return path", mutate: func(fixture *federatedSessionFixture, _ *transportAuthStub) {
+			fixture.result.ReturnPath = "/%0Aevil.example"
+		}},
 		{name: "result session id", mutate: func(fixture *federatedSessionFixture, _ *transportAuthStub) {
 			fixture.result.SessionID = identity.EntityID(uuid.Must(uuid.NewV7()))
 		}},

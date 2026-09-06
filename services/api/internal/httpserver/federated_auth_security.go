@@ -5,11 +5,9 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -18,6 +16,7 @@ import (
 	"github.com/periapsis-im/periapsis/services/api/internal/authentication"
 	"github.com/periapsis-im/periapsis/services/api/internal/origin"
 	"github.com/periapsis-im/periapsis/services/api/internal/platformsamladapter"
+	"github.com/periapsis-im/periapsis/services/api/internal/returnpath"
 )
 
 type federatedProtocol string
@@ -43,12 +42,11 @@ const (
 	// transports that must emit the exact post-primary continuation redirect.
 	// The handler keeps the private alias so existing route code cannot drift
 	// from the exported composition contract.
-	FederatedContinuationPath       = "/?auth=federated-mfa"
-	federatedContinuationPath       = FederatedContinuationPath
-	maximumFederatedReturnPathBytes = 2 * 1024
-	maximumOIDCRedirectBytes        = 16 * 1024
-	maximumSAMLRedirectBytes        = 64 * 1024
-	maximumFederatedTransactionTTL  = 15 * time.Minute
+	FederatedContinuationPath      = "/?auth=federated-mfa"
+	federatedContinuationPath      = FederatedContinuationPath
+	maximumOIDCRedirectBytes       = 16 * 1024
+	maximumSAMLRedirectBytes       = 64 * 1024
+	maximumFederatedTransactionTTL = 15 * time.Minute
 )
 
 type federatedTransactionCookiePolicy struct {
@@ -192,20 +190,5 @@ func validFederatedIdPRedirect(raw string, maximum int) bool {
 }
 
 func validFederatedReturnPath(value string) bool {
-	if value == "" || len(value) > maximumFederatedReturnPathBytes || !utf8.ValidString(value) ||
-		!strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.ContainsRune(value, '\\') {
-		return false
-	}
-	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Fragment != "" || parsed.RawPath != "" ||
-		parsed.Path == "" || strings.Contains(parsed.Path, "//") || path.Clean(parsed.Path) != parsed.Path ||
-		parsed.String() != value {
-		return false
-	}
-	for _, character := range value {
-		if unicode.IsControl(character) {
-			return false
-		}
-	}
-	return true
+	return returnpath.Valid(value)
 }

@@ -268,6 +268,11 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if apiNetworkRPS < 1 || apiNetworkRPS > int(apiratelimit.MaximumRequestsPerSecond) ||
+		apiCredentialRPS < 1 || apiCredentialRPS > int(apiratelimit.MaximumRequestsPerSecond) ||
+		apiTenantSubjectRPS < 1 || apiTenantSubjectRPS > int(apiratelimit.MaximumRequestsPerSecond) {
+		return Config{}, errors.New("PERIAPSIS_API_RATE_LIMIT_*_RPS values must be between 1 and 100")
+	}
 	cfg := Config{
 		Address: valueOrDefault("PERIAPSIS_API_ADDR", defaultAddress),
 		APIRateLimitPolicy: apiratelimit.Policy{
@@ -335,11 +340,6 @@ func Load() (Config, error) {
 	}
 	if cfg.AuthKDFConcurrency < 1 || cfg.AuthKDFConcurrency > 16 {
 		return Config{}, errors.New("PERIAPSIS_AUTH_KDF_CONCURRENCY must be between 1 and 16")
-	}
-	if apiNetworkRPS < 1 || apiNetworkRPS > int(apiratelimit.MaximumRequestsPerSecond) ||
-		apiCredentialRPS < 1 || apiCredentialRPS > int(apiratelimit.MaximumRequestsPerSecond) ||
-		apiTenantSubjectRPS < 1 || apiTenantSubjectRPS > int(apiratelimit.MaximumRequestsPerSecond) {
-		return Config{}, errors.New("PERIAPSIS_API_RATE_LIMIT_*_RPS values must be between 1 and 100")
 	}
 	if cfg.LDAPMaxConcurrent < 1 || cfg.LDAPMaxConcurrent > 256 {
 		return Config{}, errors.New("PERIAPSIS_LDAP_MAX_CONCURRENT must be between 1 and 256")

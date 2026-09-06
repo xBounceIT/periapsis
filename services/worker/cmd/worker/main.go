@@ -64,8 +64,23 @@ func parseLogLevel(value string) (slog.Level, error) {
 	}
 }
 
+func runtimeMaximumAttempts(cfg config.Config) (uint16, uint16, error) {
+	slaAttempts, eventAttempts := cfg.SLAMaximumAttempts, cfg.SLAEventMaximumAttempts
+	if slaAttempts < 1 || slaAttempts > 100 {
+		return 0, 0, errors.New("PERIAPSIS_SLA_MAXIMUM_ATTEMPTS must be between 1 and 100")
+	}
+	if eventAttempts < 1 || eventAttempts > 12 {
+		return 0, 0, errors.New("PERIAPSIS_SLA_EVENT_MAXIMUM_ATTEMPTS must be between 1 and 12")
+	}
+	return uint16(slaAttempts), uint16(eventAttempts), nil
+}
+
 func run(logger *slog.Logger) (runErr error) {
 	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	slaMaximumAttempts, slaEventMaximumAttempts, err := runtimeMaximumAttempts(cfg)
 	if err != nil {
 		return err
 	}
@@ -183,7 +198,7 @@ func run(logger *slog.Logger) (runErr error) {
 				LeaseDuration:     cfg.SLALeaseDuration,
 				OperationTimeout:  cfg.SLAOperationTimeout,
 				RunTimeout:        cfg.SLARunTimeout,
-				MaximumAttempts:   uint16(cfg.SLAMaximumAttempts),
+				MaximumAttempts:   slaMaximumAttempts,
 				RetryBaseDelay:    cfg.SLARetryBaseDelay,
 				RetryMaximumDelay: cfg.SLARetryMaximumDelay,
 			},
@@ -205,7 +220,7 @@ func run(logger *slog.Logger) (runErr error) {
 				LeaseDuration:     cfg.SLAEventLeaseDuration,
 				OperationTimeout:  cfg.SLAEventOperationTimeout,
 				RunTimeout:        cfg.SLAEventRunTimeout,
-				MaximumAttempts:   uint16(cfg.SLAEventMaximumAttempts),
+				MaximumAttempts:   slaEventMaximumAttempts,
 				RetryBaseDelay:    cfg.SLAEventRetryBaseDelay,
 				RetryMaximumDelay: cfg.SLAEventRetryMaximumDelay,
 			},

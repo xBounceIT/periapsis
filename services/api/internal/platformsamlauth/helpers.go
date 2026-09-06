@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"hash"
 	"net/url"
-	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -19,13 +18,13 @@ import (
 	identity "github.com/periapsis-im/periapsis/modules/identity"
 	"github.com/periapsis-im/periapsis/modules/identity/federatedsaml"
 	"github.com/periapsis-im/periapsis/modules/identity/mfa"
+	"github.com/periapsis-im/periapsis/services/api/internal/returnpath"
 )
 
 const (
 	maximumExactRevision       = uint64(9_007_199_254_740_991)
 	maximumUUIDMilliseconds    = uint64(253_402_300_799_999)
 	maximumAuditUserAgentBytes = 512
-	maximumReturnPathBytes     = 2_048
 	maximumPublicTextBytes     = 4 * 1_024
 	maximumSubjectBytes        = 16 * 1_024
 	maximumSessionFieldBytes   = 16 * 1_024
@@ -76,22 +75,7 @@ func validAuditContext(audit AuditContext) bool {
 }
 
 func validReturnPath(value string) bool {
-	if value == "" || len(value) > maximumReturnPathBytes || !utf8.ValidString(value) ||
-		!strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.ContainsRune(value, '\\') {
-		return false
-	}
-	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil || parsed.Fragment != "" ||
-		parsed.RawPath != "" || parsed.Path == "" || strings.Contains(parsed.Path, "//") ||
-		path.Clean(parsed.Path) != parsed.Path || parsed.String() != value {
-		return false
-	}
-	for _, character := range value {
-		if unicode.IsControl(character) {
-			return false
-		}
-	}
-	return true
+	return returnpath.Valid(value)
 }
 
 func validStartLookup(lookup StartLookup) bool {

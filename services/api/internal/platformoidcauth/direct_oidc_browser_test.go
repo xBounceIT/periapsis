@@ -485,8 +485,11 @@ func TestDirectOIDCBrowserStartBindsExactDirectAuthority(t *testing.T) {
 		"authenticated session": {
 			Lookup: fixture.lookup, ReturnPath: "/", HasAuthenticatedSession: true, Audit: fixture.audit,
 		},
-		"absolute return":  {Lookup: fixture.lookup, ReturnPath: "https://evil.example/", Audit: fixture.audit},
-		"ambiguous return": {Lookup: fixture.lookup, ReturnPath: "//evil.example/", Audit: fixture.audit},
+		"absolute return":          {Lookup: fixture.lookup, ReturnPath: "https://evil.example/", Audit: fixture.audit},
+		"ambiguous return":         {Lookup: fixture.lookup, ReturnPath: "//evil.example/", Audit: fixture.audit},
+		"backslash return":         {Lookup: fixture.lookup, ReturnPath: `/\evil.example/`, Audit: fixture.audit},
+		"decoded backslash return": {Lookup: fixture.lookup, ReturnPath: "/%5Cevil.example/", Audit: fixture.audit},
+		"decoded control return":   {Lookup: fixture.lookup, ReturnPath: "/%0Aevil.example/", Audit: fixture.audit},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := fixture.application.Start(context.Background(), rejected); !errors.Is(err, ErrDirectAuthenticationDenied) {

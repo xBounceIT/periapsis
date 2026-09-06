@@ -491,7 +491,7 @@ func TestApplicationCancellationAndReturnPathValidationFailClosed(t *testing.T) 
 
 	invalidPaths := []string{
 		`/\evil.example`, `//evil.example`, `/a//b`, `/a/../b`, `/a/%2e%2e/b`, `/a#fragment`,
-		"/a\r\nb", "https://evil.example/a", "/a%2Fb",
+		"/a\r\nb", "https://evil.example/a", "/a%2Fb", "/%5Cevil.example", "/%0Aevil.example",
 	}
 	for _, value := range invalidPaths {
 		if validReturnPath(value) {

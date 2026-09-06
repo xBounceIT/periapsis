@@ -4,18 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"net/url"
-	"path"
 	"slices"
-	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	identity "github.com/periapsis-im/periapsis/modules/identity"
 	"github.com/periapsis-im/periapsis/modules/identity/federatedoidc"
 	"github.com/periapsis-im/periapsis/modules/identity/mfa"
 	"github.com/periapsis-im/periapsis/services/api/internal/federatedauth"
+	"github.com/periapsis-im/periapsis/services/api/internal/returnpath"
 )
 
 const (
@@ -1209,20 +1205,5 @@ func equalDirectSelectedAssurance(left, right DirectSelectedAssurance) bool {
 }
 
 func validDirectReturnPath(value string) bool {
-	if value == "" || len(value) > 2_048 || !utf8.ValidString(value) || !strings.HasPrefix(value, "/") ||
-		strings.HasPrefix(value, "//") || strings.ContainsRune(value, '\\') {
-		return false
-	}
-	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Fragment != "" || parsed.RawPath != "" ||
-		parsed.Path == "" || strings.Contains(parsed.Path, "//") || path.Clean(parsed.Path) != parsed.Path ||
-		parsed.String() != value {
-		return false
-	}
-	for _, character := range value {
-		if unicode.IsControl(character) {
-			return false
-		}
-	}
-	return true
+	return returnpath.Valid(value)
 }

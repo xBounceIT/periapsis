@@ -684,7 +684,7 @@ function sanitizeCss(input: string): string {
   const withoutBlocks = stripped
     .replaceAll(/\x7b[^\x7b\x7d]*\x7d/gu, "")
     .trim();
-  if (withoutBlocks !== "" && !/^(?:[^\x7b\x7d]+\s*)+$/u.test(withoutBlocks)) {
+  if (/[{}]/u.test(withoutBlocks)) {
     throw new NotificationValidationError("template.css is malformed");
   }
   return stripped.trim();
@@ -727,21 +727,37 @@ function htmlToPlainText(input: string): string {
       "\n",
     )
     .replaceAll(/<\/\s*(?:td|th)\s*>/giu, "\t");
-  return sanitizeHtml(withBoundaries, {
-    allowedTags: [],
-    allowedAttributes: {},
-    textFilter: (text) => text,
-  })
-    .replaceAll(/&nbsp;/gu, " ")
-    .replaceAll(/&amp;/gu, "&")
-    .replaceAll(/&lt;/gu, "<")
-    .replaceAll(/&gt;/gu, ">")
-    .replaceAll(/&quot;/gu, '"')
-    .replaceAll(/&#39;/gu, "'")
-    .replaceAll(/[ \t]+\n/gu, "\n")
-    .replaceAll(/\n[ \t]+/gu, "\n")
-    .replaceAll(/\n{3,}/gu, "\n\n")
-    .trim();
+  return (
+    sanitizeHtml(withBoundaries, {
+      allowedTags: [],
+      allowedAttributes: {},
+      textFilter: (text) => text,
+    })
+      // Decode one sanitizer-escaped layer in a single pass: replacing &amp;
+      // first would incorrectly decode literal text such as "&amp;lt;" twice.
+      .replaceAll(/&(?:nbsp|amp|lt|gt|quot|#39);/gu, (entity) => {
+        switch (entity) {
+          case "&nbsp;":
+            return " ";
+          case "&amp;":
+            return "&";
+          case "&lt;":
+            return "<";
+          case "&gt;":
+            return ">";
+          case "&quot;":
+            return '"';
+          case "&#39;":
+            return "'";
+          default:
+            return entity;
+        }
+      })
+      .replaceAll(/[ \t]+\n/gu, "\n")
+      .replaceAll(/\n[ \t]+/gu, "\n")
+      .replaceAll(/\n{3,}/gu, "\n\n")
+      .trim()
+  );
 }
 
 function escapeHtml(input: string): string {

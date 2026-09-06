@@ -11,6 +11,24 @@ candidate state and the requirement-to-test map are in
 [`docs/release-acceptance.md`](docs/release-acceptance.md), including the completed
 final-journal database gates and the remaining release boundaries.
 
+## GitHub CodeQL remediation slice (2026-09-06)
+
+- [x] Triage all 25 open alerts against actual code/data flows. Implement CSS and
+      plaintext-entity fixes, explicit fixed-origin web requests, reproducible generated
+      parameter hardening, checked numeric/allocation operations, and shared canonical
+      redirect validation with decoded-path checks. Add focused regressions without
+      altering migration/seal bytes, authentication protocols or dependency versions.
+      Details: [`docs/security/code-scanning-remediation.md`](docs/security/code-scanning-remediation.md).
+- [x] Prove and document the context of seven false positives (#3, #4, #15, #22–25)
+      with source inspection, response-boundary tests and encrypted-receipt checks.
+      The user authorized explained per-alert dismissals; never disable whole rules.
+- [x] Pass root `pnpm verify`: formatting, lint, type checking, tests (web 2214,
+      notifier 180 plus one conditional skip, DB 663, UI 2, contracts 45), operations
+      checks, generated-artifact drift, builds, Go vet and Go tests. This does not
+      substitute for PostgreSQL/container deployment gates.
+- [ ] Publish the remediation to `main`, apply the seven documented dispositions,
+      and confirm the remaining alerts against fresh CodeQL.
+
 ## Remote reverse-proxy deployment slice (2026-09-06)
 
 - [x] Add an opt-in certificate-free HTTP application origin for a trusted TLS proxy on

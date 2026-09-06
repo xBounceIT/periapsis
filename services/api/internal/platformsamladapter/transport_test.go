@@ -311,6 +311,14 @@ func TestBrowserTransportCompensatesEveryPostCommitDeliveryFailure(t *testing.T)
 			outcome.ReturnPath = `/\\evil.example`
 			return context.Background()
 		},
+		"decoded backslash outcome": func(outcome *platformsamlauth.Outcome, _ *testBrowserCredential, _ *testDeliverySink, _ *testDeliveryFinalizer) context.Context {
+			outcome.ReturnPath = "/%5Cevil.example"
+			return context.Background()
+		},
+		"decoded control outcome": func(outcome *platformsamlauth.Outcome, _ *testBrowserCredential, _ *testDeliverySink, _ *testDeliveryFinalizer) context.Context {
+			outcome.ReturnPath = "/%0Aevil.example"
+			return context.Background()
+		},
 		"canceled context": func(_ *platformsamlauth.Outcome, _ *testBrowserCredential, _ *testDeliverySink, _ *testDeliveryFinalizer) context.Context {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()

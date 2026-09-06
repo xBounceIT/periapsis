@@ -244,10 +244,12 @@ func TestSAMLLoginRejectsMalformedLookupsAndApplicationProjection(t *testing.T) 
 		t.Fatalf("malformed application success error=%v", err)
 	}
 	resolveCalls, validateCalls := len(source.resolveCalls), flow.validateCalls
-	if _, err := login.Start(context.Background(), StartTenantSAMLLoginRequest{
-		Lookup: valid, ReturnPath: "//attacker.example", PreviousBrowserHandle: validSAMLBrowserHandleFixture(3),
-	}); !errors.Is(err, ErrAuthentication) || len(source.beginCalls) != 0 || flow.startCalls != 0 {
-		t.Fatalf("unsafe return path error=%v begin=%d flow=%d", err, len(source.beginCalls), flow.startCalls)
+	for _, returnPath := range []string{"//attacker.example", `/\attacker.example`, "/%5Cattacker.example", "/%0Aattacker.example"} {
+		if _, err := login.Start(context.Background(), StartTenantSAMLLoginRequest{
+			Lookup: valid, ReturnPath: returnPath, PreviousBrowserHandle: validSAMLBrowserHandleFixture(3),
+		}); !errors.Is(err, ErrAuthentication) || len(source.beginCalls) != 0 || flow.startCalls != 0 {
+			t.Fatalf("unsafe return path error=%v begin=%d flow=%d", err, len(source.beginCalls), flow.startCalls)
+		}
 	}
 	if _, err := login.Start(context.Background(), StartTenantSAMLLoginRequest{
 		Lookup: valid, ReturnPath: "/cases", PreviousBrowserHandle: []byte("malformed"),

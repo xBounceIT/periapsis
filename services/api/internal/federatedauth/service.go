@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"net/url"
-	"path"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +15,7 @@ import (
 	"github.com/periapsis-im/periapsis/modules/identity/federatedsaml"
 	"github.com/periapsis-im/periapsis/modules/identity/mfa"
 	"github.com/periapsis-im/periapsis/modules/identity/webauthn"
+	"github.com/periapsis-im/periapsis/services/api/internal/returnpath"
 )
 
 const (
@@ -788,22 +787,7 @@ func validPublicText(value string, maximum int) bool {
 }
 
 func validReturnPath(value string) bool {
-	if value == "" || len(value) > 2048 || !utf8.ValidString(value) || !strings.HasPrefix(value, "/") ||
-		strings.HasPrefix(value, "//") || strings.ContainsRune(value, '\\') {
-		return false
-	}
-	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Fragment != "" || parsed.RawPath != "" ||
-		parsed.Path == "" || strings.Contains(parsed.Path, "//") || path.Clean(parsed.Path) != parsed.Path ||
-		parsed.String() != value {
-		return false
-	}
-	for _, character := range value {
-		if unicode.IsControl(character) {
-			return false
-		}
-	}
-	return true
+	return returnpath.Valid(value)
 }
 
 func cloneProjection(value AuthenticationProjection) AuthenticationProjection {

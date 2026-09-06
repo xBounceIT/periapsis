@@ -177,6 +177,14 @@ func TestDirectOIDCConfigurationRepositoryFailsClosedBeforeQuery(t *testing.T) {
 		grant != (platformoidcauth.DirectOIDCStartGrant{}) || called {
 		t.Fatalf("BeginDirectOIDCLogin() = %s, %v, called=%t", grant, err, called)
 	}
+	for _, returnPath := range []string{"//evil.example", `/\evil.example`, "/%5Cevil.example", "/%0Aevil.example"} {
+		authority := platformOIDCDirectStartAuthorityFixture()
+		authority.ReturnPath = returnPath
+		if grant, err := repository.BeginDirectOIDCLogin(context.Background(), authority); err == nil ||
+			grant != (platformoidcauth.DirectOIDCStartGrant{}) || called {
+			t.Fatalf("unsafe return path BeginDirectOIDCLogin() = %s, %v, called=%t", grant, err, called)
+		}
+	}
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()

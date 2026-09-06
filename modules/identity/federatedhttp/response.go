@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"strconv"
@@ -297,12 +298,12 @@ func parseCacheControl(values []string, maximum time.Duration) (cacheControlDire
 
 func parseCanonicalSeconds(value string, maximum time.Duration) (time.Duration, error) {
 	seconds, err := strconv.ParseUint(value, 10, 64)
-	if err != nil || strconv.FormatUint(seconds, 10) != value {
+	if err != nil || strconv.FormatUint(seconds, 10) != value || maximum < 0 {
 		return 0, errors.New("invalid cache duration")
 	}
 	maximumSeconds := uint64(maximum / time.Second)
-	if seconds > maximumSeconds {
-		seconds = maximumSeconds
+	if seconds > uint64(math.MaxInt64/int64(time.Second)) || seconds > maximumSeconds {
+		return maximum.Truncate(time.Second), nil
 	}
 	return time.Duration(seconds) * time.Second, nil
 }

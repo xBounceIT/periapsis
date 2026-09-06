@@ -1,3 +1,5 @@
+import { runInNewContext } from "node:vm";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -160,6 +162,42 @@ describe("sandboxed notification templates", () => {
     expect(rendered.plainText).toBe(
       "Critical\nFirst line\nSecond line\nOne\nTwo",
     );
+  });
+
+  it.each([
+    "&lt;script&gt;literal&lt;/script&gt;",
+    "&amp;lt;img src=x&amp;gt;",
+    "&quot;literal quotes&#39; &nbsp; space",
+    "<tag> & \"quoted\" and 'apostrophe'",
+  ])(
+    "decodes one HTML escape layer without reinterpreting literal entities: %s",
+    (title) => {
+      const input = templateInput();
+      input.html = "<p>{{alert.title}}</p>";
+      const rendered = renderNotificationTemplate(
+        createNotificationTemplate(input),
+        { alert: { title } },
+        { audience: "operator" },
+      );
+      expect(rendered.plainText).toBe(title);
+    },
+  );
+
+  it("rejects unmatched CSS braces at the maximum input length", () => {
+    const input = templateInput();
+    for (const brace of ["{", "}"]) {
+      input.css = "z".repeat(32 * 1_024 - 1) + brace;
+      // A synchronous ReDoS regression would block Vitest's own timer. V8's
+      // execution deadline interrupts the actual call, including regex work.
+      // Only this fixed test program is executed; input is data, never code.
+      expect(() =>
+        runInNewContext(
+          "validate(input)",
+          { validate: createNotificationTemplate, input },
+          { timeout: 1_000 },
+        ),
+      ).toThrow(NotificationValidationError);
+    }
   });
 
   it("never evaluates context accessors during rendering", () => {

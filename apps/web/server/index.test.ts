@@ -32,6 +32,60 @@ afterEach(async () => {
 });
 
 describe("web server trust boundary", () => {
+  it("pins outbound authority while preserving routed paths and never follows API redirects", async () => {
+    let alternateRequests = 0;
+    const alternate = createServer((_request, response) => {
+      alternateRequests++;
+      response.end("unexpected target");
+    });
+    servers.add(alternate);
+    await listenOnLoopback(alternate);
+    const alternateOrigin = `http://127.0.0.1:${listenerPort(alternate)}`;
+    const received: { target: string | undefined; host: string | undefined }[] =
+      [];
+    const api = createServer((request, response) => {
+      received.push({ target: request.url, host: request.headers.host });
+      if (request.url === "/api/redirect") {
+        response.writeHead(302, { Location: `${alternateOrigin}/api/capture` });
+      }
+      response.end("configured API");
+    });
+    servers.add(api);
+    await listenOnLoopback(api);
+    const apiOrigin = `http://127.0.0.1:${listenerPort(api)}`;
+    const web = createWebServer({
+      apiBaseUrl: new URL(`${apiOrigin}/ignored-base`),
+    });
+    servers.add(web);
+    await listenOnLoopback(web);
+    const paths = [
+      `${alternateOrigin}/api/capture?next=${alternateOrigin}`,
+      `//127.0.0.1:${listenerPort(alternate)}/api/capture`,
+      "/api/%2F%2F127.0.0.1/capture?encoded=%23%2F%26",
+      "/api/../api/capture?keep=a+b&keep=%20",
+      "/api/redirect",
+    ];
+    const statuses = await Promise.all(
+      paths.map((path) => getStatus(listenerPort(web), path)),
+    );
+    expect(statuses).toEqual([200, 200, 200, 200, 302]);
+    expect(
+      received.map((request) => request.target ?? "").toSorted(compareTargets),
+    ).toEqual(
+      [
+        `/api/capture?next=${alternateOrigin}`,
+        "/api/capture",
+        "/api/%2F%2F127.0.0.1/capture?encoded=%23%2F%26",
+        "/api/capture?keep=a+b&keep=%20",
+        "/api/redirect",
+      ].toSorted(compareTargets),
+    );
+    expect(
+      received.every((request) => request.host === new URL(apiOrigin).host),
+    ).toBe(true);
+    expect(alternateRequests).toBe(0);
+  });
+
   it("drops client-supplied forwarding metadata", () => {
     const headers = buildProxyHeaders(
       {
@@ -349,6 +403,10 @@ describe("web server trust boundary", () => {
   });
 });
 
+function compareTargets(left: string, right: string): number {
+  return left.localeCompare(right, "en");
+}
+
 function listenOnLoopback(
   server: ReturnType<typeof createWebServer>,
 ): Promise<void> {
@@ -356,6 +414,13 @@ function listenOnLoopback(
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
+}
+
+function listenerPort(server: ReturnType<typeof createWebServer>): number {
+  const address = server.address();
+  if (address === null || typeof address === "string")
+    throw new Error("Expected a TCP listener");
+  return address.port;
 }
 
 function sendRawRequest(port: number, payload: string): Promise<string> {
