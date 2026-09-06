@@ -203,10 +203,11 @@ The Keycloak import creates only public OIDC/SAML client metadata, never users o
 passwords. Its strict public hostname is `https://idp.localhost:PERIAPSIS_IDP_PORT`, it
 trusts forwarded headers only from the fixed edge address, and its imported OIDC/SAML
 callbacks resolve `PERIAPSIS_WEB_PORT` to the HTTPS web origin. Create disposable
-identities through its admin console after startup. OpenLDAP
-uses the admin password supplied through the Compose secret and overrides the upstream
-sample-entry LDIF with a credential-free file. Create disposable directory identities
-explicitly after startup; no known user password is inherited. Mailpit is allowlisted only
+identities through its admin console after startup. The repository-owned OpenLDAP test
+adapter reuses binaries and schemas from the pinned image, but not its root-only bootstrap
+or sample directory. It imports only the fixed organization entry; create disposable
+directory identities explicitly after startup. No known user password is inherited.
+Mailpit is allowlisted only
 for local administration validation and notifier delivery on port 1025. Both the API and
 notifier opt into that mode only in Compose; plaintext SMTP remains rejected in
 production.
@@ -234,6 +235,30 @@ one of those encrypted transports; the profile does not expose an LDAP port to t
 Copy only the public `/run/secrets/ldap/ca.crt` to an operator-owned temporary path and
 submit it as the LDAP provider `customCaPem`. Removing `openldap_tls` rotates the CA, so
 update the provider pin before retrying connectivity.
+
+The adapter is intentionally limited to this test directory, not general-purpose LDAP
+hosting, replication, or migration of existing upstream configurations. Image construction
+sets UID/GID `10001:10001`; runtime has no capabilities, a read-only root, only the declared
+private temporary mounts, and the `openldap_data` volume at `/var/lib/periapsis-ldap`.
+Inherited upstream anonymous-volume declarations are removed. STARTTLS uses internal port
+`1389` and LDAPS `1636`; neither needs privileged-port capabilities. API/worker local egress
+allowlists, health probes and acceptance fixtures use those exact ports. Use
+`deploy/compose/.env.example`, not the general repository-root production defaults, and
+update an existing Compose `.env` to those two port values when upgrading this fixture.
+
+The first bootstrap hashes the administrator password directly from its mounted file with
+the pinned OpenLDAP tool and retains the initial hash. The prepared password file must be
+nonempty and contain no NUL, CR or LF. Changing the mount does **not** rotate existing LDAP
+credentials: the real TLS/admin-bind healthcheck then fails and Compose remains unhealthy.
+There is no custom password verifier. Fresh bootstrap imports `cn=config` and the empty
+account tree offline as UID 10001, then starts slapd directly without root administration.
+
+An incompatible, foreign-owned or partially initialized volume is rejected without any
+deletion or reseeding. Existing `openldap_config` volumes are no longer mounted and are not
+migrated or removed automatically. Back up any needed disposable directory entries before
+explicitly replacing only the old LDAP test volumes; never delete PostgreSQL, MinIO or
+other application volumes as part of this fixture reset. Bootstrap diagnostics emit fixed
+stage codes only, without directory content, credentials or raw slapd output.
 
 ### Composed LDAP acceptance
 

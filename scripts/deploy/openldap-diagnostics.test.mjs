@@ -144,6 +144,28 @@ test("LDAP malformed state is withheld without preventing independent redacted l
       return calls === 2 ? success(invalid) : success("private-canary");
     });
     assert.equal(result.state, "unavailable");
-    assert.deepEqual(result.logs, { filesystemErrors: [], redactedLines: 1 });
+    assert.deepEqual(result.logs, {
+      filesystemErrors: [],
+      bootstrapErrors: [],
+      redactedLines: 1,
+    });
   }
+});
+
+test("owned LDAP bootstrap diagnostics accept only exact fixed stage codes", () => {
+  const result = redactStartupLogs(
+    [
+      "PERIAPSIS_OPENLDAP_ERROR stage=config_import",
+      "PERIAPSIS_OPENLDAP_ERROR stage=private-value",
+      "PERIAPSIS_OPENLDAP_ERROR stage=tls private-value",
+      "private-value PERIAPSIS_OPENLDAP_ERROR stage=storage",
+      "PERIAPSIS_OPENLDAP_ERROR stage=existing_state",
+    ].join("\n"),
+  );
+  assert.deepEqual(result.bootstrapErrors, [
+    { tailLine: 1, stage: "config_import" },
+    { tailLine: 5, stage: "existing_state" },
+  ]);
+  assert.equal(result.redactedLines, 3);
+  assert.doesNotMatch(JSON.stringify(result), /private-value/u);
 });

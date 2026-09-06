@@ -95,6 +95,7 @@ jobs:
           node --test scripts/deploy/validate-manifests.test.mjs
           node --test scripts/deploy/prepare-compose-secrets.test.mjs
           node --test scripts/deploy/openldap-diagnostics.test.mjs
+          node --test scripts/deploy/openldap-test-image.test.mjs
           node --test scripts/operations/recovery-evidence.test.mjs
           node scripts/deploy/validate-manifests.mjs
       - name: Install pinned manifest validators
@@ -132,14 +133,20 @@ jobs:
           set -euo pipefail
           compose=(docker compose --file deploy/compose/compose.yaml --profile auth-test)
           "${compose[@]}" up --build --wait openldap identity-provider
+          ldap_image="$("${compose[@]}" images --quiet openldap)"
+          test "$(docker image inspect --format '{{.Config.User}}' "${ldap_image}")" = 10001:10001
+          test "$(docker image inspect --format '{{json .Config.Volumes}}' "${ldap_image}")" = null
+          test "$("${compose[@]}" exec -T openldap id -u)" = 10001
+          test "$("${compose[@]}" exec -T openldap id -g)" = 10001
+          "${compose[@]}" exec -T openldap sh -ceu 'test ! -w /etc/ldap; test -w /var/lib/periapsis-ldap; test -w /run/periapsis-ldap'
           common=(-LLL -x -D "uid=admin,DC=periapsis,DC=test" -y /run/secrets/ldap-admin-password -b "DC=periapsis,DC=test")
-          "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -ZZ -H ldap://openldap:389 -s base namingContexts >/dev/null
-          "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldaps://openldap:636 -s base namingContexts >/dev/null
-          if "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldap://openldap:389 -s base namingContexts >/dev/null 2>&1; then
+          "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -ZZ -H ldap://openldap:1389 -s base namingContexts >/dev/null
+          "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldaps://openldap:1636 -s base namingContexts >/dev/null
+          if "${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldap://openldap:1389 -s base namingContexts >/dev/null 2>&1; then
             echo "OpenLDAP accepted a clear-text authenticated operation" >&2
             exit 1
           fi
-          seeded="$("${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldaps://openldap:636 '(|(uid=employee1)(uid=guest1)(uid=machine1))' dn)"
+          seeded="$("${compose[@]}" exec -T openldap ldapsearch "${common[@]}" -H ldaps://openldap:1636 '(|(uid=employee1)(uid=guest1)(uid=machine1))' dn)"
           test -z "${seeded}"
           probe_identity_provider() {
             local path="$1"

@@ -297,7 +297,7 @@ const providerEndpoints = [
   {
     priority: 1,
     host: "openldap",
-    port: 636,
+    port: 1636,
     transport: "ldaps",
     tlsServerName: "openldap",
     referralAllowed: false,

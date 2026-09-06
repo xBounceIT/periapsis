@@ -33,9 +33,18 @@ const reasons = [
 export function redactStartupLogs(source) {
   const lines = source.slice(-65_536).trimEnd().split(/\r?\n/u).slice(-100);
   const errors = [];
+  const bootstrapErrors = [];
   let redactedLines = 0;
   for (const [index, line] of lines.entries()) {
     if (!line) continue;
+    const bootstrapStage =
+      /^PERIAPSIS_OPENLDAP_ERROR stage=(identity|storage|password_file|tls|existing_state|password_hash|config_import|tree_import|config_validation|settings)$/u.exec(
+        line,
+      )?.[1];
+    if (bootstrapStage) {
+      bootstrapErrors.push({ tailLine: index + 1, stage: bootstrapStage });
+      continue;
+    }
     const operation = /\b(chown|chmod|mkdir|touch|cp|mv|rm):/u.exec(line)?.[1];
     const reason = reasons.find((candidate) => line.includes(candidate));
     if (!operation || !reason) {
@@ -53,7 +62,7 @@ export function redactStartupLogs(source) {
       reason,
     });
   }
-  return { filesystemErrors: errors, redactedLines };
+  return { filesystemErrors: errors, bootstrapErrors, redactedLines };
 }
 
 function docker(args, execute) {

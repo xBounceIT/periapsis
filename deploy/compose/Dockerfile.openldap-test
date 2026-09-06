@@ -1,0 +1,32 @@
+ARG OPENLDAP_IMAGE=vegardit/openldap:2.6.10@sha256:8161e8fa74c518697776fff27b403cc4c273aede07b6d87f473a45201050d0de
+
+FROM ${OPENLDAP_IMAGE} AS prepared
+
+# The pinned image supplies binaries and schemas, not its root-only lifecycle.
+USER 0
+RUN groupadd --gid 10001 periapsis \
+    && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin periapsis \
+    && install -d -o 10001 -g 10001 -m 0700 /var/lib/periapsis-ldap /run/periapsis-ldap \
+    && test -x /usr/sbin/slapd \
+    && test -x /usr/sbin/slapadd \
+    && test -x /usr/sbin/slappasswd \
+    && test -f /etc/ldap/schema/core.ldif \
+    && test -f /etc/ldap/schema/cosine.ldif \
+    && test -f /etc/ldap/schema/inetorgperson.ldif
+
+COPY --chown=0:0 deploy/compose/auth/openldap-bootstrap.sh /usr/local/lib/periapsis/openldap-bootstrap.sh
+COPY --chown=0:0 deploy/compose/auth/openldap-config.ldif deploy/compose/auth/openldap-database.ldif deploy/compose/auth/openldap-tree.ldif /usr/local/share/periapsis-ldap/
+
+# Do not inherit upstream VOLUME declarations: they create anonymous writable
+# mounts even with --read-only. Preserve its pinned filesystem, not that metadata.
+FROM scratch
+COPY --from=prepared / /
+
+LABEL org.opencontainers.image.title="Periapsis isolated OpenLDAP test provider" \
+      org.opencontainers.image.description="Fixed test directory without the upstream root bootstrap" \
+      org.opencontainers.image.licenses="UNLICENSED"
+
+ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin
+USER 10001:10001
+EXPOSE 1389 1636
+ENTRYPOINT ["/usr/bin/env", "-u", "BASH_ENV", "-u", "ENV", "/usr/bin/tini", "--", "/bin/bash", "--noprofile", "--norc", "/usr/local/lib/periapsis/openldap-bootstrap.sh"]

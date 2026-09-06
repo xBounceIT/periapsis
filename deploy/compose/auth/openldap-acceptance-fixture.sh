@@ -2,7 +2,7 @@
 
 set -eu
 
-readonly directory_uri="ldaps://openldap:636"
+readonly directory_uri="ldaps://openldap:1636"
 readonly directory_root="DC=periapsis,DC=test"
 readonly administrator_dn="uid=admin,${directory_root}"
 readonly administrator_password_file="/run/secrets/ldap-admin-password"

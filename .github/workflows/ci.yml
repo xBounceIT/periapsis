@@ -52,6 +52,7 @@ jobs:
           node --check tests/integration/auth-smoke.mjs
           node --check tests/integration/ldap-auth-acceptance.mjs
           sh -n deploy/compose/auth/openldap-acceptance-fixture.sh
+          bash -n deploy/compose/auth/openldap-bootstrap.sh
       - name: Transpile and enumerate the live browser acceptance
         run: pnpm test:e2e:live:list
       - name: Typecheck
@@ -59,7 +60,7 @@ jobs:
       - name: Test
         run: pnpm test
       - name: Validate deployment source security contracts
-        run: node --test scripts/deploy/validate-manifests.test.mjs scripts/deploy/compose-startup-diagnostics.test.mjs
+        run: node --test scripts/deploy/validate-manifests.test.mjs scripts/deploy/compose-startup-diagnostics.test.mjs scripts/deploy/openldap-test-image.test.mjs
       - name: Install Playwright Chromium
         run: pnpm --filter @periapsis/web exec playwright install --with-deps chromium
       - name: Exercise the browser acceptance flow
@@ -332,7 +333,7 @@ jobs:
         run: docker compose --file deploy/compose/compose.yaml --profile minimal config --quiet
       - name: Build application and database images
         run: |
-          docker compose --file deploy/compose/compose.yaml --profile auth-test build api worker web migration ldap-tls identity-provider minio minio-provision
+          docker compose --file deploy/compose/compose.yaml --profile auth-test build api worker web migration ldap-tls openldap identity-provider minio minio-provision
           docker build \
             --file deploy/images/Dockerfile.notifier \
             --build-arg REVISION="${PERIAPSIS_IMAGE_REVISION}" \

@@ -180,7 +180,7 @@ test("required live acceptance drives isolation, service accounts, customer priv
   assert.match(workflow, /--profile full up --detach --no-build --wait/u);
   assert.match(
     workflow,
-    /build api worker web migration ldap-tls identity-provider minio minio-provision/u,
+    /build api worker web migration ldap-tls openldap identity-provider minio minio-provision/u,
   );
   assert.match(
     workflow,

@@ -1,0 +1,25 @@
+dn: cn=config
+objectClass: olcGlobal
+cn: config
+olcPidFile: /run/periapsis-ldap/slapd.pid
+olcArgsFile: /run/periapsis-ldap/slapd.args
+olcLogLevel: 0
+olcIdleTimeout: 30
+olcSecurity: ssf=128 simple_bind=128
+olcDisallows: bind_anon
+olcTLSCACertificateFile: /run/secrets/ldap/ca.crt
+olcTLSCertificateFile: /run/secrets/ldap/server.crt
+olcTLSCertificateKeyFile: /run/secrets/ldap/server.key
+olcTLSProtocolMin: 3.3
+olcTLSVerifyClient: never
+
+dn: cn=module{0},cn=config
+objectClass: olcModuleList
+cn: module{0}
+olcModulePath: /usr/lib/ldap
+olcModuleLoad: back_mdb
+
+dn: cn=schema,cn=config
+objectClass: olcSchemaConfig
+cn: schema
+

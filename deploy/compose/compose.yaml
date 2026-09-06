@@ -155,10 +155,10 @@ services:
       PERIAPSIS_FEDERATED_OPERATION_TIMEOUT: ${PERIAPSIS_FEDERATED_OPERATION_TIMEOUT:-20s}
       PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
       PERIAPSIS_IDENTITY_KEYRING_FILE: /run/secrets/periapsis_identity_keyring
-      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-636}
+      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-1636}
       PERIAPSIS_LDAP_MAX_CONCURRENT: ${PERIAPSIS_LDAP_MAX_CONCURRENT:-8}
       PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
-      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-389}
+      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-1389}
       PERIAPSIS_MASTER_KEY_FILE: /run/secrets/periapsis_master_key
       NOTIFICATION_KEYRING_FILE: /run/secrets/notification-keyring
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
@@ -265,10 +265,10 @@ services:
       PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
       PERIAPSIS_LOG_LEVEL: ${PERIAPSIS_LOG_LEVEL:-info}
       PERIAPSIS_IDENTITY_KEYRING_FILE: /run/secrets/periapsis_identity_keyring
-      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-636}
+      PERIAPSIS_LDAP_LDAPS_PORTS: ${PERIAPSIS_LDAP_LDAPS_PORTS:-1636}
       PERIAPSIS_LDAP_MAX_CONCURRENT: ${PERIAPSIS_LDAP_MAX_CONCURRENT:-8}
       PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS: ${PERIAPSIS_LDAP_PRIVATE_EGRESS_CIDRS:-172.30.241.0/28}
-      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-389}
+      PERIAPSIS_LDAP_STARTTLS_PORTS: ${PERIAPSIS_LDAP_STARTTLS_PORTS:-1389}
       PERIAPSIS_LDAP_SYNC_ABSENCE_BATCH_SIZE: ${PERIAPSIS_LDAP_SYNC_ABSENCE_BATCH_SIZE:-100}
       PERIAPSIS_LDAP_SYNC_LEASE: ${PERIAPSIS_LDAP_SYNC_LEASE:-30s}
       PERIAPSIS_LDAP_SYNC_MAX_BACKOFF: ${PERIAPSIS_LDAP_SYNC_MAX_BACKOFF:-30s}
@@ -469,7 +469,11 @@ services:
     profiles:
       - auth-test
       - full
-    image: vegardit/openldap:2.6.10@sha256:8161e8fa74c518697776fff27b403cc4c273aede07b6d87f473a45201050d0de
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.openldap-test
+    image: periapsis/openldap-test:${PERIAPSIS_IMAGE_TAG:-development}
+    user: "10001:10001"
     read_only: true
     cap_drop:
       - ALL
@@ -478,28 +482,20 @@ services:
     environment:
       LDAPTLS_CACERT: /run/secrets/ldap/ca.crt
       LDAPTLS_REQCERT: demand
-      LDAP_INIT_ALLOW_ANONYMOUS_ROOT_DSE: "false"
-      LDAP_INIT_ORG_DN: DC=periapsis,DC=test
-      LDAP_INIT_ORG_NAME: Periapsis Test Directory
       LDAP_INIT_ROOT_USER_PW_FILE: /run/secrets/ldap-admin-password
-      LDAP_INIT_ROOT_USER_DN: uid=admin,DC=periapsis,DC=test
-      LDAP_LOG_LEVELS: Stats
       LDAP_LDAPS_ENABLED: "true"
       LDAP_TLS_ENABLED: "true"
       LDAP_TLS_SSF: "128"
-      LDAP_TLS_VERIFY_CLIENT: never
     secrets:
       - source: ldap_admin_password
         target: ldap-admin-password
     volumes:
-      - ./auth/openldap-empty-entries.ldif:/opt/ldifs/init_org_entries.ldif:ro
       - ./auth/openldap-acceptance-fixture.sh:/opt/ldifs/periapsis-acceptance-fixture.sh:ro
-      - openldap_data:/var/lib/ldap
-      - openldap_config:/etc/ldap/slapd.d
+      - openldap_data:/var/lib/periapsis-ldap
       - openldap_tls:/run/secrets/ldap:ro
     tmpfs:
-      - /tmp
-      - /run
+      - /tmp:uid=10001,gid=10001,mode=1770
+      - /run/periapsis-ldap:uid=10001,gid=10001,mode=0700
     healthcheck:
       test:
         - CMD
@@ -507,7 +503,7 @@ services:
         - -x
         - -ZZ
         - -H
-        - ldap://openldap:389
+        - ldap://openldap:1389
         - -D
         - uid=admin,DC=periapsis,DC=test
         - -y
@@ -868,7 +864,6 @@ volumes:
   clamav_signatures:
   keycloak_data:
   minio_data:
-  openldap_config:
   openldap_data:
   openldap_tls:
   postgres_data:
