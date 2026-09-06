@@ -20,8 +20,18 @@ after publication, not inferred from passing unit tests.
 
 ## Verification boundary
 
+The first post-publication scan of `00a73a0` resolved 17 findings; only #6 remained
+open after the seven authorized false-positive dismissals. Its remaining path
+treated a computed slot read as potentially selecting `Object.prototype`, despite
+the runtime slot allowlist. The follow-up makes all four slot reads/replacements
+explicit literal property accesses, preserves copy-on-write and key validation,
+and adds caller-ownership, property-descriptor and non-coercion regressions. No additional bypass was
+reproduced and the alert is not dismissed or suppressed.
+
 Focused Go package tests/vet, web HTTP tests, template tests and generated-client
-runtime/reproducibility checks and root `pnpm verify` pass locally. Publication and
-fresh GitHub CodeQL verification remain tracked in the dated `TASKS.md` entry. No database,
-production network, container deployment or end-to-end browser rollout was run for
-this security-remediation slice.
+runtime/reproducibility checks pass locally. Root `pnpm verify` exited successfully,
+but included cached Go packages: fresh CI exposes an existing Compose-contract
+failure and a separate Mailpit connection failure, both also present on baseline
+`ff5b800`. The dated `TASKS.md` entry tracks those explicitly, separately from
+CodeQL. No local PostgreSQL runtime, production-network, container-deployment or
+end-to-end browser rollout was run for this security-remediation slice.

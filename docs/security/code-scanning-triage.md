@@ -4,9 +4,10 @@ Reviewed 2026-09-06. This report covers exactly **seven** alerts in
 `xBounceIT/periapsis`: **#3, #4, #15, #22, #23, #24 and #25**. Their retrieved
 instances refer to commit `068a44d385d11f890aa1f4faab000fad67655da3`.
 The conclusions below are scoped to those reported flows, not a general security
-certification. The alerts remain open; this change neither dismisses them nor
-suppresses CodeQL rules. Production algorithms, schema/receipt ABIs and response
-bytes are unchanged.
+certification. Following explicit user approval, all seven alerts were dismissed
+as false positives on 2026-09-06, each with a scoped explanation linking to this
+report at remediation commit `00a73a0`. No CodeQL rule was suppressed. Production
+algorithms, schema/receipt ABIs and response bytes for these seven flows are unchanged.
 
 ## Findings and recommendations
 
@@ -106,6 +107,6 @@ corepack pnpm --filter @periapsis/db exec vitest run tests/schema-compatibility-
 
 The unchanged V51 manifest passed all 16 tests. The three new Go test files cover
 four top-level tests. A fresh CodeQL analysis may continue to report these
-contextual false positives; only a separately authorized, per-alert disposition
-should change their GitHub state. No rule disablement, filename exclusion, API
+contextual false positives; their GitHub state was changed only by the separately
+authorized, explained per-alert dispositions above. No rule disablement, filename exclusion, API
 renaming to evade analysis, or cryptographic substitution was introduced.

@@ -19,6 +19,8 @@ The repository postprocessor validates actual slot names and rejects `__proto__`
 `constructor`, and `prototype` as per-field destinations. On the first field write,
 caller records are copied into owned null-prototype dictionaries. A subsequent
 rejection therefore cannot leave earlier field writes on a shared caller object.
+Slot selection uses an explicit four-case switch for both reads and replacements;
+untrusted selectors never index the outer parameter object or its prototype.
 
 Whole bodies (including scalar, array, FormData and ordinary JSON bodies) remain
 unchanged when no per-field write is requested. Literal property names inside such

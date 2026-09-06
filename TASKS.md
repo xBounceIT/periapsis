@@ -25,9 +25,24 @@ final-journal database gates and the remaining release boundaries.
 - [x] Pass root `pnpm verify`: formatting, lint, type checking, tests (web 2214,
       notifier 180 plus one conditional skip, DB 663, UI 2, contracts 45), operations
       checks, generated-artifact drift, builds, Go vet and Go tests. This does not
-      substitute for PostgreSQL/container deployment gates.
-- [ ] Publish the remediation to `main`, apply the seven documented dispositions,
-      and confirm the remaining alerts against fresh CodeQL.
+      substitute for PostgreSQL/container deployment gates; Go used cached package
+      results, including the deployment-contract failure subsequently seen in CI below.
+- [x] Publish remediation commit `00a73a0` to `main` and dismiss exactly #3, #4,
+      #15, #22–25 as false positives with explained, user-authorized dispositions
+      linking to the committed triage evidence.
+- [x] Confirm the first fresh CodeQL analyses of `00a73a0` (run `34050762175`):
+      Go `1732426930`, JavaScript/TypeScript `1732423388`, Actions `1732418382`,
+      all without analysis errors. Seventeen alerts are fixed; the seven approved
+      false positives remain dismissed. Only generated-helper alert #6 remains.
+- [ ] Verify the generated-helper follow-up against a fresh CodeQL analysis.
+- [ ] Separate pre-existing CI follow-up: adapt
+      `TestOIDCMaintenanceConfigurationIsWiredAcrossDeployments` to the Compose
+      include/base/TLS layout (`service worker is missing`, line 47), and diagnose
+      the Mailpit acceptance connection failure (`healthy=false`, `connect=failed`,
+      `errorClass=connectivity`, before template rendering). Both exact signatures
+      occur in baseline `ff5b800` run `34049766601` and remediation `00a73a0` run
+      `34050762310`; neither is caused by this CodeQL slice. Local cached Go results
+      are not evidence that the deployment-contract check passes on fresh execution.
 
 ## Remote reverse-proxy deployment slice (2026-09-06)
 

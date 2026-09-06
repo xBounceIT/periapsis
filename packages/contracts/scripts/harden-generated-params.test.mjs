@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
+import ts from "typescript";
+
 import { hardenGeneratedParams } from "./harden-generated-params.mjs";
 
 const upstream =
@@ -199,6 +201,84 @@ test("actual slot names are checked before aggregate and field writes", () => {
     /Invalid client parameter slot/,
   );
   assert.deepEqual(caller, { keep: "original" });
+});
+
+test("slot selectors never perform computed reads or writes on the outer params object", () => {
+  const source = ts.createSourceFile(
+    "params.gen.ts",
+    generated,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const computedAccesses = [];
+  function visit(node) {
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "params" &&
+      !ts.isDeleteExpression(node.parent)
+    ) {
+      computedAccesses.push(node.getStart(source));
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  // stripEmptySlots may delete an enumerated own property; library selectors
+  // must only reach the explicit literal read/replacement switches.
+  assert.deepEqual(computedAccesses, []);
+});
+
+test("literal slot access preserves outer descriptors and repeated aggregate ownership", () => {
+  for (const slot of slots) {
+    const first = { first: "original" };
+    const second = { second: "original" };
+    const result = buildClientParams(
+      [
+        { payload: first, [`$${slot}_extra`]: "discarded" },
+        { payload: second, [`$${slot}_extra`]: "kept" },
+      ],
+      [{ args: [{ key: "payload", map: slot }] }],
+    );
+    assert.equal(Object.getPrototypeOf(result), Object.prototype);
+    assert.deepEqual(Object.keys(result), [slot]);
+    const descriptor = Object.getOwnPropertyDescriptor(result, slot);
+    assert.equal(descriptor.enumerable, true);
+    assert.equal(descriptor.writable, true);
+    assert.equal(descriptor.configurable, true);
+    assert.equal(descriptor.value, result[slot]);
+    assert.equal(Object.getPrototypeOf(result[slot]), null);
+    assert.deepEqual(Object.entries(result[slot]), [
+      ["second", "original"],
+      ["extra", "kept"],
+    ]);
+    assert.deepEqual(first, { first: "original" });
+    assert.deepEqual(second, { second: "original" });
+  }
+});
+
+test("runtime slot validation never coerces a non-string selector", () => {
+  let coercions = 0;
+  const invalidSlot = {
+    [Symbol.toPrimitive]() {
+      coercions += 1;
+      return "body";
+    },
+  };
+  const caller = { safe: "original" };
+  assert.throws(
+    () =>
+      buildClientParams(
+        [{ payload: caller }],
+        [{ args: [{ key: "payload", map: invalidSlot }] }],
+      ),
+    /Invalid client parameter slot/,
+  );
+  assert.throws(
+    () => buildClientParams(["value"], [{ in: invalidSlot, key: "safe" }]),
+    /Invalid client parameter slot/,
+  );
+  assert.equal(coercions, 0);
+  assert.deepEqual(caller, { safe: "original" });
 });
 
 test("whole-body values remain untouched without per-field writes", () => {
