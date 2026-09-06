@@ -20,6 +20,13 @@ after publication, not inferred from passing unit tests.
 
 ## Verification boundary
 
+Final CodeQL analyses of implementation commit `de3b093` in
+[run 34051313196](https://github.com/xBounceIT/periapsis/actions/runs/34051313196)
+completed without analysis errors for Go, JavaScript/TypeScript and Actions.
+GitHub reports **0 open alerts, 18 fixed and 7 dismissed as documented false
+positives**. The following documentation-only checkpoint records those results;
+it does not change the analyzed application or generated code.
+
 The first post-publication scan of `00a73a0` resolved 17 findings; only #6 remained
 open after the seven authorized false-positive dismissals. Its remaining path
 treated a computed slot read as potentially selecting `Object.prototype`, despite

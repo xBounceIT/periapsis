@@ -34,7 +34,17 @@ final-journal database gates and the remaining release boundaries.
       Go `1732426930`, JavaScript/TypeScript `1732423388`, Actions `1732418382`,
       all without analysis errors. Seventeen alerts are fixed; the seven approved
       false positives remain dismissed. Only generated-helper alert #6 remains.
-- [ ] Verify the generated-helper follow-up against a fresh CodeQL analysis.
+- [x] Verify the generated-helper follow-up against fresh CodeQL analyses.
+      Follow-up `de3b093` uses literal reads/replacements for the four allowed slots;
+      contracts pretests (48/48), typecheck, lint, focused runtime tests (19/19),
+      reproducible generation and independent review passed before publication.
+      Repeated root `pnpm verify` also exited successfully after publication
+      (web 2214, notifier 180 plus one conditional skip, DB 663, UI 2; same Go-cache
+      caveat as above). JavaScript analysis `1732444198` closed #6 without dismissal.
+      Final analyses of `de3b093` in run `34051313196`: JavaScript/TypeScript
+      `1732444198`, Go `1732447231`, Actions `1732439090`, all with empty errors.
+      GitHub reports zero open alerts, 18 fixed and seven explained false-positive
+      dismissals. CodeQL rules and default setup remain enabled and unchanged.
 - [ ] Separate pre-existing CI follow-up: adapt
       `TestOIDCMaintenanceConfigurationIsWiredAcrossDeployments` to the Compose
       include/base/TLS layout (`service worker is missing`, line 47), and diagnose
@@ -42,7 +52,9 @@ final-journal database gates and the remaining release boundaries.
       `errorClass=connectivity`, before template rendering). Both exact signatures
       occur in baseline `ff5b800` run `34049766601` and remediation `00a73a0` run
       `34050762310`; neither is caused by this CodeQL slice. Local cached Go results
-      are not evidence that the deployment-contract check passes on fresh execution.
+      are not evidence that the deployment-contract check passes on fresh execution:
+      `go test ./internal/config -run TestOIDCMaintenanceConfigurationIsWiredAcrossDeployments -count=1`
+      from `services/worker` reproduced the same failure locally on `de3b093`.
 
 ## Remote reverse-proxy deployment slice (2026-09-06)
 
