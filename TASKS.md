@@ -61,7 +61,7 @@ final-journal database gates and the remaining release boundaries.
       `1732444198`, Go `1732447231`, Actions `1732439090`, all with empty errors.
       GitHub reports zero open alerts, 18 fixed and seven explained false-positive
       dismissals. CodeQL rules and default setup remain enabled and unchanged.
-- [ ] Separate pre-existing CI follow-up: adapt
+- [x] Separate pre-existing CI follow-up (resolved by the slice below): adapt
       `TestOIDCMaintenanceConfigurationIsWiredAcrossDeployments` to the Compose
       include/base/TLS layout (`service worker is missing`, line 47), and diagnose
       the Mailpit acceptance connection failure (`healthy=false`, `connect=failed`,
@@ -98,8 +98,21 @@ final-journal database gates and the remaining release boundaries.
       2214, notifier 180 plus its conditional skip, DB 663, UI 2, contracts 48,
       operations 191, generated drift, build and Go vet/tests. Separate real native
       Mailpit acceptance passes without skips. Log: `.tmp/verify-ci-followup-20260906.log`.
-- [ ] Publish to `main` and confirm the repaired Go/race and real Compose/Mailpit
-      CI jobs on the new commit.
+- [x] Publish `2da01ba` to `main` and confirm both repaired jobs in run
+      `34052447684`: Go vet/race job `101538397690` and Mailpit job `101538984702`
+      pass, including real Docker loopback publication, unchanged SMTP acceptance
+      and teardown. CodeQL run `34052447026` passes all three analyses of this same
+      commit (`1732486372`, `1732482606`, `1732477657`) with no errors and zero open
+      alerts. The later test-pruning commit `ab94a84` cancelled the remaining jobs;
+      these results are scoped to `2da01ba`, not a claim that the entire CI is green.
+- [ ] Separate remaining container-startup diagnosis: job `101538397554` in run
+      `34052447684` failed at `Start hardened minimal stack` with Docker
+      `failed to set up container networking: Address already in use`. The daemon
+      did not identify the container or address. Migration and MinIO provisioning
+      had exited successfully; PostgreSQL and MinIO were healthy. Mailpit is not
+      started in the minimal profile, whose service networks/runtime were unchanged
+      by this repair. Do not infer the occupied address or a Mailpit causal link
+      without fresh network evidence.
 
 ## Remote reverse-proxy deployment slice (2026-09-06)
 
