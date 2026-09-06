@@ -234,6 +234,18 @@ final-journal database gates and the remaining release boundaries.
       its migration-only template lacks periapsis_api_login (42704), a harness setup
       omission. Preserve that failed proof; repeat with normal role provisioning in a
       separate owned cluster, without changing the runtime test or template SQL.
+      Focused current-journal upgrades now pass, with source stability and each owned
+      cluster stopped: V49 proof `schema-upgrade-V49-559f4a53609e481eabcf72d4d2afcf47`,
+      V50-path proof `schema-upgrade-V50-86997ecfba514532bdd44d59778b84ab`, and V51-path
+      proof `schema-upgrade-V51-771777d0793248dc9b2d1f3df0bc69c3` (all under `.tmp`,
+      `-proof.json`). V51 includes the ordinary three-origin SAML suite after upgrade.
+      The V50-path repeat corrects its stale expected V51 digest; a new unit contract
+      ties all three current-catalog runtime/upgrade pins to the same sealed digest.
+      The provisioned catalog-only repeat now also passes all current V51 tamper and
+      retired-root checks, with exact template and four runtime-login pins unchanged,
+      stable sources, stopped owned cluster and removed temporary admin-password file:
+      `C:\Users\dange\AppData\Local\Temp\periapsis-v51-aggregate-owned-3ac573356ec64606a5e8c16ed80fb1de\proof.json`.
+      This is one catalog suite, not the full 58-suite aggregate or container acceptance.
 - [x] Repeat the complete `pnpm verify` command after the final frontend/SR-18 changes.
       V50 verification passed with exit 0: web 155 files/2,152 tests, DB 73 files/627
       tests, notifier 175 with conditional Mailpit skipped, operations 52, generated
@@ -255,6 +267,11 @@ final-journal database gates and the remaining release boundaries.
       (conditional Mailpit skipped), all 143 operations tests with real Gitleaks and no
       operations skips, generated drift, builds, Go vet/tests and E2E type checking.
       Evidence: `.tmp/verify-v51-saml-complete-20260906.log`.
+      Final publish verification after the cross-upgrade digest regression and its lint
+      correction passes exit 0 with 644 DB tests, the same 2,152 web/175 notifier and
+      143 operations totals, all generated/build/Go gates:
+      `.tmp/verify-v51-publish-20260906.log`. Temporary PostgreSQL instances are stopped;
+      their proof files and data directories are retained for inspection.
 
 ## GitHub CI repair evidence
 
@@ -374,6 +391,17 @@ final-journal database gates and the remaining release boundaries.
       then migration, and skips the later full profile. No inner provisioning error
       was retained; permission assumptions do not prove the cause. Repeat affected
       image/Compose/acceptance gates on the next candidate; local Docker is unavailable.
+      A bounded native health-cost diagnostic confirms eight full dependency-hash calls
+      per API health query (about 2.8s total hash self time, not per call) and five per
+      worker query (about 1.8s total). API and worker separately return ready within the
+      unchanged 10s statement bound. The worker's normal keyring bootstrap is rolled
+      back and its empty keyring snapshot remains exact. The initial read-only worker
+      probe was a harness restriction (25006), not a product defect; it did not exercise
+      expensive concurrent API/worker work. Proofs:
+      `.tmp/v51-health-a4f1db6b33204edbb9cda463424f63c9-proof.json` and
+      `.tmp/v51-worker-health-30ae47cd35d74776b8ee4afeed829b05-proof.json`.
+      This identifies repeated work, not the complete cause or resolution of the CI
+      timeout. Do not remove integrity checks or relax budgets on this evidence alone.
 
 ## Release evidence to obtain
 

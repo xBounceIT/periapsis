@@ -394,6 +394,30 @@ describe("schema compatibility V51 manifest", () => {
     );
   });
 
+  it("pins the same current catalog in both upgrade paths and the runtime suite", () => {
+    const catalogDigest =
+      /private_release_runtime_dependency_surface_hash_v51\(\)<>\s*'([a-f0-9]{64})'/u.exec(
+        migration(sealTag),
+      )?.[1];
+    assert(catalogDigest !== undefined);
+    expect(catalogDigest).not.toBe("0".repeat(64));
+    for (const name of [
+      "schema-compatibility-v50-upgrade.ts",
+      "schema-compatibility-v51-upgrade.ts",
+      "schema-compatibility-v51-runtime.ts",
+    ]) {
+      const runtimeSource = readFileSync(
+        resolve(repositoryRoot, "packages/db/tests/security", name),
+        "utf8",
+      );
+      const pinned =
+        /assert\.equal\(\s*(?:v51CatalogDigest|expectedCatalogDigest),\s*"([a-f0-9]{64})",\s*\)/u.exec(
+          runtimeSource,
+        )?.[1];
+      expect(pinned, name).toBe(catalogDigest);
+    }
+  });
+
   it("keeps both custom migration snapshots structurally identical to V50", () => {
     const snapshots = ["0231", "0232", "0233"].map((version) => {
       const value: unknown = JSON.parse(

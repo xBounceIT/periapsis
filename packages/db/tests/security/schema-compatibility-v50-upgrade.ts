@@ -164,7 +164,7 @@ assert.notEqual(
 );
 assert.equal(
   v51CatalogDigest,
-  "238c2d0416b15975e25f13eae0f3ca0aa829e93be6bff19dab2097e9a15e0c40",
+  "2b1f33e2a513a16dff5f5b6b20ab6bf654cc4c081bd010864db96e09dbf8b51c",
 );
 const unsupported: CompatibilityRow = {
   applied_count: "0",
