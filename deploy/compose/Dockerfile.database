@@ -1,6 +1,6 @@
 ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca
 
-FROM ${NODE_IMAGE} AS build
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
 
 RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
 
@@ -17,9 +17,11 @@ COPY packages/db/ packages/db/
 COPY packages/tsconfig/ packages/tsconfig/
 COPY deploy/compose/database-task-config.mjs deploy/compose/database-task-config.mjs
 COPY deploy/compose/database-task.mjs deploy/compose/database-task.mjs
+COPY deploy/compose/portable-database-artifact.mjs deploy/compose/portable-database-artifact.mjs
 
 RUN corepack pnpm --filter @periapsis/db build:runtime \
     && corepack pnpm --filter @periapsis/db deploy --legacy --prod --config.hoist-workspace-packages=false /out \
+    && node deploy/compose/portable-database-artifact.mjs /out/node_modules packages/db/dist \
     && test -f packages/db/dist/src/admin/migrate.js \
     && test -f packages/db/dist/seeds/seed.js \
     && node --check deploy/compose/database-task-config.mjs \

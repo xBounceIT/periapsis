@@ -29,7 +29,7 @@ const (
 	)`
 	applyPlatformLocalAccountTransitionSQL         = `select app.apply_platform_local_account_transition_v1($1::jsonb)`
 	recordPlatformLocalAccountEnrollmentFailureSQL = `select app.record_platform_local_account_enrollment_failure_v1($1::jsonb)`
-	platformLocalAccountReadinessSQL               = `select app.platform_local_account_runtime_schema_readiness_v50()`
+	platformLocalAccountReadinessSQL               = `select app.platform_local_account_runtime_schema_readiness_v51()`
 
 	maximumPlatformLocalAccountDocumentBytes = 32 * 1024
 	maximumPlatformLocalAccountCommandBytes  = 128 * 1024

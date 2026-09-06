@@ -697,8 +697,8 @@ try {
         latest_hash: string;
         migration_fingerprint: string;
       }[]
-    >`SELECT * FROM app.schema_compatibility_v50()`;
-    assert(result, "schema_compatibility_v50 returned no row");
+    >`SELECT * FROM app.schema_compatibility_v51()`;
+    assert(result, "schema_compatibility_v51 returned no row");
     return result;
   });
   assert.deepEqual(
@@ -714,7 +714,7 @@ try {
       latest_hash: expectedMigrationHash,
       migration_fingerprint: expectedMigrationFingerprint,
     },
-    "the API runtime must observe the exact sealed V50 manifest",
+    "the API runtime must observe the exact sealed V51 manifest",
   );
 
   await assert.rejects(

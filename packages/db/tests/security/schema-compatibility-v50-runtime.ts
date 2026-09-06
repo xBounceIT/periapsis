@@ -5,10 +5,7 @@ import { resolve } from "node:path";
 import postgres, { type Sql } from "postgres";
 
 import {
-  expectedMigrationCount,
-  expectedMigrationCreatedAt,
-  expectedMigrationFingerprint,
-  expectedMigrationHash,
+  expectedMigrations,
   expectedNotificationDispatchReadinessV50SourceHash,
   expectedPrivateReleaseRuntimeDependencySurfaceHashV50SourceHash,
   expectedPrivateReleaseRuntimeReadinessV50SourceHash,
@@ -90,6 +87,23 @@ const runtimeRoles = [
 ] as const;
 
 const migrationsRoot = resolve(import.meta.dirname, "../../migrations");
+// This remains an executable historical proof of the exact 232-migration V50
+// database, independently of the current generated journal's later suffix.
+const expectedMigrationCount = 232;
+const historicalManifest = expectedMigrations.slice(0, expectedMigrationCount);
+assert.equal(historicalManifest.length, expectedMigrationCount);
+const historicalLatest = historicalManifest.at(-1);
+assert(historicalLatest);
+assert.deepEqual(historicalLatest, {
+  tag: "0231_v50_compatibility",
+  createdAt: 1_788_650_095_675,
+  hash: "807fc8896bfde860a40b9d7782288f49f0a72ab34ce1634c22d886fba4cdc0a2",
+});
+const expectedMigrationCreatedAt = historicalLatest.createdAt;
+const expectedMigrationHash = historicalLatest.hash;
+const expectedMigrationFingerprint = historicalManifest
+  .map((entry) => `${entry.createdAt}@${entry.hash}`)
+  .join(":");
 const v50Migration = await readFile(
   resolve(migrationsRoot, "0231_v50_compatibility.sql"),
   "utf8",

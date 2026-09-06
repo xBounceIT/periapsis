@@ -124,23 +124,25 @@ function quiescenceConditions(sql: string): string[] {
 }
 
 describe("schema compatibility V50 manifest", () => {
-  it("pins the exact complete 0000-0231 inventory and every packaged SQL hash", () => {
-    const journal = readJournal();
+  it("pins the immutable complete 0000-0231 prefix and every historical SQL hash", () => {
+    const journal = readJournal().slice(0, expectedCount);
+    const prefix = manifest.expectedMigrations.slice(0, expectedCount);
     const files = readdirSync(migrationsRoot)
       .filter((name) => name.endsWith(".sql"))
-      .toSorted();
-    expect(manifest.expectedMigrationCount).toBe(expectedCount);
-    expect(manifest.expectedMigrations).toHaveLength(expectedCount);
-    expect(journal).toHaveLength(expectedCount);
-    expect(files).toEqual(
-      manifest.expectedMigrations.map((entry) => `${entry.tag}.sql`),
+      .toSorted()
+      .slice(0, expectedCount);
+    expect(manifest.expectedMigrationCount).toBeGreaterThanOrEqual(
+      expectedCount,
     );
+    expect(prefix).toHaveLength(expectedCount);
+    expect(journal).toHaveLength(expectedCount);
+    expect(files).toEqual(prefix.map((entry) => `${entry.tag}.sql`));
     expect(journal.slice(-2).map(({ idx, tag }) => ({ idx, tag }))).toEqual([
       { idx: 230, tag: repairTag },
       { idx: 231, tag: sealTag },
     ]);
     expect(journal.map(({ idx, when, tag }) => ({ idx, when, tag }))).toEqual(
-      manifest.expectedMigrations.map((entry, idx) => ({
+      prefix.map((entry, idx) => ({
         idx,
         when: entry.createdAt,
         tag: entry.tag,
@@ -153,7 +155,7 @@ describe("schema compatibility V50 manifest", () => {
           (index === 0 || entry.when > journal[index - 1]!.when),
       ),
     ).toBe(true);
-    for (const entry of manifest.expectedMigrations) {
+    for (const entry of prefix) {
       expect(
         createHash("sha256")
           .update(readFileSync(resolve(migrationsRoot, `${entry.tag}.sql`)))
@@ -161,17 +163,17 @@ describe("schema compatibility V50 manifest", () => {
         entry.tag,
       ).toBe(entry.hash);
     }
-    const latest = manifest.expectedMigrations.at(-1);
-    expect(latest?.tag).toBe(sealTag);
-    expect(manifest.expectedMigrationCreatedAt).toBe(latest?.createdAt);
-    expect(manifest.expectedMigrationHash).toBe(latest?.hash);
-    expect(manifest.expectedMigrationFingerprint).toBe(
-      manifest.expectedMigrations
-        .map((entry) => `${entry.createdAt}@${entry.hash}`)
-        .join(":"),
-    );
-    expect(manifest.expectedMigrationFingerprint.split(":")).toHaveLength(
-      expectedCount,
+    expect(prefix.at(-1)).toEqual({
+      tag: sealTag,
+      createdAt: 1_788_650_095_675,
+      hash: "807fc8896bfde860a40b9d7782288f49f0a72ab34ce1634c22d886fba4cdc0a2",
+    });
+    const fingerprint = prefix
+      .map((entry) => `${entry.createdAt}@${entry.hash}`)
+      .join(":");
+    expect(fingerprint.split(":")).toHaveLength(expectedCount);
+    expect(createHash("sha256").update(fingerprint).digest("hex")).toBe(
+      "2582058c69473465ab50b0c8e4aa8e447a841f7dea3bce94446c5563fe47902b",
     );
   });
 
@@ -271,7 +273,7 @@ describe("schema compatibility V50 manifest", () => {
     );
   });
 
-  it("defines current V50 roots, retains V49 history, and source-attests the new sealer", () => {
+  it("retains historical V50 roots, V49 retirement, and source-attested V50 sealer", () => {
     const seal = migration(sealTag);
     for (const name of [
       ...publicV50Roots,
@@ -302,101 +304,6 @@ describe("schema compatibility V50 manifest", () => {
       expect(manifest).toHaveProperty(
         `expected${constant}SourceHash`,
         expect.stringMatching(/^[0-9a-f]{64}$/u),
-      );
-    }
-  });
-
-  it("wires the serving API, worker, notifier and canonical migration runner to V50", () => {
-    for (const path of [
-      "services/api/internal/postgres/health.go",
-      "services/worker/internal/postgres/health.go",
-    ]) {
-      const serving = source(path);
-      expect(serving, path).toContain("from app.schema_compatibility_v50()");
-      expect(serving, path).toContain(
-        "expectedSchemaCompatibilityV50SourceHash",
-      );
-      expect(serving, path).not.toContain(
-        "from app.schema_compatibility_v49()",
-      );
-    }
-    const notifier = source("services/notifier/src/postgres-repository.ts");
-    expect(notifier).toContain(
-      "FROM app.notification_dispatch_readiness_v50() AS readiness",
-    );
-    expect(notifier).toContain("expectedSchemaCompatibilityV50SourceHash");
-    expect(notifier).not.toContain(
-      "FROM app.notification_dispatch_readiness_v49() AS readiness",
-    );
-    const runner = source("packages/db/src/admin/schema-migration.ts");
-    expect(runner).toContain(
-      "expectedSealSchemaCompatibilityManifestV50SourceHash",
-    );
-    expect(runner).not.toContain(
-      "expectedSealSchemaCompatibilityManifestV49SourceHash",
-    );
-  });
-
-  it("keeps the selected non-upgrade runtime proofs anchored to the current V50 root", () => {
-    const databasePackage: unknown = JSON.parse(
-      source("packages/db/package.json"),
-    );
-    if (!isRecord(databasePackage) || !isRecord(databasePackage.scripts)) {
-      throw new Error("Database package scripts are malformed");
-    }
-    const scripts = databasePackage.scripts;
-    const aggregate = scripts["test:security"];
-    if (typeof aggregate !== "string") {
-      throw new Error("Database security aggregate is missing");
-    }
-    const selectedScripts = aggregate.split(/\s*&&\s*/u).map((command) => {
-      const match = /^corepack pnpm run (test:security:[a-z0-9-]+)$/u.exec(
-        command,
-      );
-      if (match?.[1] === undefined) {
-        throw new Error(
-          "Database security aggregate has an unrecognized command",
-        );
-      }
-      return match[1];
-    });
-    expect(selectedScripts).toContain("test:security:schema-compatibility-v50");
-    expect(selectedScripts).not.toContain(
-      "test:security:schema-compatibility-v49",
-    );
-    const files = selectedScripts
-      .map((script) => {
-        const command = scripts[script];
-        if (typeof command !== "string") {
-          throw new Error(
-            `Selected database security script is missing: ${script}`,
-          );
-        }
-        const match = /^tsx (tests\/security\/[a-z0-9-]+\.ts)$/u.exec(command);
-        if (match?.[1] === undefined) {
-          throw new Error(
-            `Selected database security source is unrecognized: ${script}`,
-          );
-        }
-        return match[1];
-      })
-      .filter((name) => !name.endsWith("-upgrade.ts"))
-      .toSorted();
-    expect(files).toContain(
-      "tests/security/schema-compatibility-v50-runtime.ts",
-    );
-    for (const file of files) {
-      const runtime = source(`packages/db/${file}`);
-      const historicalCalls = [
-        ...runtime.matchAll(/app\.schema_compatibility_v([0-9]+)\(\)/gu),
-      ].filter((match) => Number(match[1]) < 50);
-      if (historicalCalls.length === 0) continue;
-      expect(runtime, file).toContain("app.schema_compatibility_v50()");
-      expect(runtime, file).not.toMatch(
-        /FROM\s+app\.schema_compatibility_v(?:[0-3]?[0-9]|4[0-9])\(\)\s+AS\s+current(?:_projection)?\b/iu,
-      );
-      expect(runtime, file).not.toMatch(
-        /SELECT\s+applied_count[\s\S]{0,160}?FROM\s+app\.schema_compatibility_v(?:[0-3]?[0-9]|4[0-9])\(\)/iu,
       );
     }
   });

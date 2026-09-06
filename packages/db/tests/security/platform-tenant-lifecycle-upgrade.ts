@@ -107,7 +107,7 @@ assert.equal(
   predecessor.hash,
   "0f5a388806ac70eb58aa11782575b57ff66bc650df981b36fd3a065dfa713c6a",
 );
-assert.equal(expectedMigrationCount, 232);
+assert.equal(expectedMigrationCount, 234);
 assert.equal(expectedMigrationCreatedAt, 1788650095675);
 const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-tenant-lifecycle-rolling-0149-"),
@@ -263,7 +263,7 @@ try {
       predecessorFingerprint: string;
       retiredCount: number;
       releaseReady: boolean;
-      federationV50Ready: boolean;
+      federationV51Ready: boolean;
       lifecycleReady: boolean;
       federationReady: boolean;
       savedViewsReady: boolean;
@@ -279,16 +279,16 @@ try {
            predecessor_projection.latest_hash AS "predecessorHash",
            predecessor_projection.migration_fingerprint AS "predecessorFingerprint",
            retired_projection.applied_count::integer AS "retiredCount",
-           app.release_runtime_schema_readiness_v50() AS "releaseReady",
-           app.federated_authentication_schema_readiness_v50()
-             AS "federationV50Ready",
+           app.release_runtime_schema_readiness_v51() AS "releaseReady",
+           app.federated_authentication_schema_readiness_v51()
+             AS "federationV51Ready",
            app.platform_tenant_lifecycle_schema_readiness_v1()
              AS "lifecycleReady",
            app.federated_authentication_schema_readiness_v1()
              AS "federationReady",
            app.ticket_saved_views_schema_readiness_v1() AS "savedViewsReady",
            app.ticket_query_projections_readiness_v1() AS "projectionsReady"
-    FROM app.schema_compatibility_v50() AS current_projection
+    FROM app.schema_compatibility_v51() AS current_projection
     CROSS JOIN app.schema_compatibility_v32() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v31() AS retired_projection
   `;
@@ -303,7 +303,7 @@ try {
     predecessorFingerprint: "UNSUPPORTED",
     retiredCount: 0,
     releaseReady: true,
-    federationV50Ready: true,
+    federationV51Ready: true,
     lifecycleReady: false,
     federationReady: false,
     savedViewsReady: false,

@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import type { DfirAlertWorkspace } from "../../packages/contracts/generated/typescript/types.gen";
+
 const tenantId = "0198c97d-cf4f-7000-8000-000000000010";
 const alertId = "0198c97d-cf4f-7000-8000-000000000011";
 const caseId = "0198c97d-cf4f-7000-8000-000000000012";
@@ -34,10 +36,11 @@ test("Alert to claim to idempotent escalation to a separate Case", async ({
           evidence: [],
           indicators: [],
           relationships: [],
+          sharedResources: [],
           tasks: [],
           tenantId,
           timeline: [],
-        });
+        } satisfies DfirAlertWorkspace);
         return true;
       }
       if (

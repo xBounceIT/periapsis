@@ -330,7 +330,7 @@ async function main(): Promise<void> {
   await setup();
 
   const [readiness] = await primary<[{ ready: boolean }]>`
-    SELECT app.ticket_metadata_runtime_schema_readiness_v50() AS ready
+    SELECT app.ticket_metadata_runtime_schema_readiness_v51() AS ready
   `;
   assert.equal(readiness?.ready, true);
 

@@ -2957,6 +2957,98 @@ if (migrationFiles.includes("0231_v50_compatibility.sql")) {
   );
 }
 
+if (migrationFiles.includes("0233_v51_compatibility.sql")) {
+  functionSourceDefinitions.push(
+    {
+      constant: "SchemaCompatibilityV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "schema_compatibility_v51",
+    },
+    {
+      constant: "RetiredSchemaCompatibilityV50",
+      name: "schema_compatibility_v50",
+      sourceConstant: "SchemaCompatibilityV50",
+    },
+    {
+      constant: "PrivateSchemaCompatibilityJournalV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "private_schema_compatibility_journal_v51",
+    },
+    {
+      constant: "PrivateReleaseRuntimeDependencySurfaceHashV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "private_release_runtime_dependency_surface_hash_v51",
+    },
+    {
+      constant: "PrivateReleaseRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "private_release_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "ReleaseRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "release_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "FederatedAuthenticationReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "federated_authentication_schema_readiness_v51",
+    },
+    {
+      constant: "PlatformOIDCDirectRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "platform_oidc_direct_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "PlatformSAMLDirectRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "platform_saml_direct_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "PlatformLocalAccountRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "platform_local_account_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "SLATriggerActionRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "sla_trigger_action_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "SLAObjectEventIngressReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "sla_object_event_ingress_schema_readiness_v51",
+    },
+    {
+      constant: "TicketBulkRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "ticket_bulk_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "TicketExportRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "ticket_export_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "TicketMetadataRuntimeReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "ticket_metadata_runtime_schema_readiness_v51",
+    },
+    {
+      constant: "NotificationDispatchReadinessV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "notification_dispatch_readiness_v51",
+    },
+    {
+      constant: "SealSchemaCompatibilityManifestV51",
+      migration: "0233_v51_compatibility.sql",
+      name: "seal_schema_compatibility_manifest",
+      hasArguments: true,
+      runtime: false,
+    },
+  );
+}
+
 if (
   new Set(functionSourceDefinitions.map(({ constant }) => constant)).size !==
   functionSourceDefinitions.length
@@ -3076,17 +3168,17 @@ writeFileSync(
 );
 
 const notifierSourceConstants = new Set([
-  "SchemaCompatibilityV50",
-  "PrivateReleaseRuntimeDependencySurfaceHashV50",
-  "PrivateReleaseRuntimeReadinessV50",
-  "ReleaseRuntimeReadinessV50",
-  "NotificationDispatchReadinessV50",
+  "SchemaCompatibilityV51",
+  "PrivateReleaseRuntimeDependencySurfaceHashV51",
+  "PrivateReleaseRuntimeReadinessV51",
+  "ReleaseRuntimeReadinessV51",
+  "NotificationDispatchReadinessV51",
 ]);
 const notifierFunctionSourceHashes = functionSourceHashes.filter(
   ({ constant }) => notifierSourceConstants.has(constant),
 );
 if (notifierFunctionSourceHashes.length !== notifierSourceConstants.size) {
-  throw new Error("Missing a trusted V50 notifier function source");
+  throw new Error("Missing a trusted V51 notifier function source");
 }
 const notifierTypescriptTarget = resolve(
   repositoryRoot,

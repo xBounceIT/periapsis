@@ -36,7 +36,7 @@ with expected_trusted_function(
   expected_config, expected_result, expected_acl_roles
 ) as (
   values
-    (1, 'compatibility', 'app.schema_compatibility_v50()', 'plpgsql', array[
+    (1, 'compatibility', 'app.schema_compatibility_v51()', 'plpgsql', array[
        'search_path=pg_catalog',
        'app.schema_compatibility_fingerprint=' || $4::text
      ]::text[],
@@ -52,37 +52,43 @@ with expected_trusted_function(
      'app.private_v47_migration_convergence_schema_readiness_v1()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedOwnerACL + `),
-    (4, 'journal', 'app.private_schema_compatibility_journal_v50()',
+    (4, 'journal', 'app.private_schema_compatibility_journal_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'TABLE(applied_count bigint, latest_created_at bigint, latest_rows bigint, latest_hash text, migration_fingerprint text)',
      ` + trustedOwnerACL + `),
     (5, 'dependency',
-     'app.private_release_runtime_dependency_surface_hash_v50()',
+     'app.private_release_runtime_dependency_surface_hash_v51()',
      'sql', ` + trustedRuntimeConfig + `, 'text', ` + trustedOwnerACL + `),
     (6, 'private_release',
-     'app.private_release_runtime_schema_readiness_v50()',
+     'app.private_release_runtime_schema_readiness_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedOwnerACL + `),
-    (7, 'release', 'app.release_runtime_schema_readiness_v50()',
+    (7, 'release', 'app.release_runtime_schema_readiness_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedReleaseACL + `),
     (8, 'sla_trigger_action',
-     'app.sla_trigger_action_runtime_schema_readiness_v50()',
+     'app.sla_trigger_action_runtime_schema_readiness_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedWorkerACL + `),
     (9, 'sla_object_event_ingress',
-     'app.sla_object_event_ingress_schema_readiness_v50()',
+     'app.sla_object_event_ingress_schema_readiness_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedWorkerACL + `),
-    (10, 'ticket_bulk', 'app.ticket_bulk_runtime_schema_readiness_v50()',
+    (10, 'ticket_bulk', 'app.ticket_bulk_runtime_schema_readiness_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedRuntimeACL + `),
-    (11, 'ticket_export', 'app.ticket_export_runtime_schema_readiness_v50()',
+    (11, 'ticket_export', 'app.ticket_export_runtime_schema_readiness_v51()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedRuntimeACL + `),
     (12, 'sla_rotation', 'app.private_rotate_sla_readiness_v48()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
-     'void', ` + trustedSLARotationACL + `)
+     'void', ` + trustedSLARotationACL + `),
+    (13, 'retired_v50', 'app.schema_compatibility_v50()', 'plpgsql', array[
+       'search_path=pg_catalog',
+       'app.schema_compatibility_fingerprint=RETIRED'
+     ]::text[],
+     'TABLE(applied_count bigint, latest_created_at bigint, latest_hash text, migration_fingerprint text)',
+     ` + trustedOwnerACL + `)
 ),
 actual_trusted_function as (
   select expected.ordinal, expected.function_key,
@@ -110,7 +116,7 @@ actual_trusted_function as (
            and function.provariadic = 0
            and function.prosupport = 0
            and function.proretset = (expected.function_key in (
-             'compatibility', 'retired', 'journal'
+             'compatibility', 'retired', 'retired_v50', 'journal'
            ))
            and function.procost = 100::real
            and function.prorows = case when function.proretset
@@ -185,38 +191,39 @@ actual_trusted_function as (
 ),
 trusted_function_state as (
   select array_agg(source_hash order by ordinal) as source_hashes,
-         count(*) = 12 and coalesce(bool_and(catalog_ready), false)
+         count(*) = 13 and coalesce(bool_and(catalog_ready), false)
            as catalog_ready
   from actual_trusted_function
 )
 select applied_count, latest_created_at, latest_hash, migration_fingerprint,
        app.verify_identity_keyring_v3($1::integer[], $2::bytea[], $3::integer),
        ARRAY[
-         app.release_runtime_schema_readiness_v50(),
-         app.sla_trigger_action_runtime_schema_readiness_v50(),
-         app.sla_object_event_ingress_schema_readiness_v50(),
-         app.ticket_bulk_runtime_schema_readiness_v50(),
-         app.ticket_export_runtime_schema_readiness_v50()
+         app.release_runtime_schema_readiness_v51(),
+         app.sla_trigger_action_runtime_schema_readiness_v51(),
+         app.sla_object_event_ingress_schema_readiness_v51(),
+         app.ticket_bulk_runtime_schema_readiness_v51(),
+         app.ticket_export_runtime_schema_readiness_v51()
        ]::boolean[],
        trusted.source_hashes,
        trusted.catalog_ready
-from app.schema_compatibility_v50()
+from app.schema_compatibility_v51()
 cross join trusted_function_state as trusted
 `
 
 var expectedTrustedFunctionSourceHashes = [...]string{
-	expectedSchemaCompatibilityV50SourceHash,
+	expectedSchemaCompatibilityV51SourceHash,
 	expectedRetiredSchemaCompatibilityV49SourceHash,
 	expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash,
-	expectedPrivateSchemaCompatibilityJournalV50SourceHash,
-	expectedPrivateReleaseRuntimeDependencySurfaceHashV50SourceHash,
-	expectedPrivateReleaseRuntimeReadinessV50SourceHash,
-	expectedReleaseRuntimeReadinessV50SourceHash,
-	expectedSLATriggerActionRuntimeReadinessV50SourceHash,
-	expectedSLAObjectEventIngressReadinessV50SourceHash,
-	expectedTicketBulkRuntimeReadinessV50SourceHash,
-	expectedTicketExportRuntimeReadinessV50SourceHash,
+	expectedPrivateSchemaCompatibilityJournalV51SourceHash,
+	expectedPrivateReleaseRuntimeDependencySurfaceHashV51SourceHash,
+	expectedPrivateReleaseRuntimeReadinessV51SourceHash,
+	expectedReleaseRuntimeReadinessV51SourceHash,
+	expectedSLATriggerActionRuntimeReadinessV51SourceHash,
+	expectedSLAObjectEventIngressReadinessV51SourceHash,
+	expectedTicketBulkRuntimeReadinessV51SourceHash,
+	expectedTicketExportRuntimeReadinessV51SourceHash,
 	expectedPrivateRotateSLAReadinessV48SourceHash,
+	expectedRetiredSchemaCompatibilityV50SourceHash,
 }
 
 // SchemaQuerier is implemented by pgxpool.Pool and keeps readiness checks testable.

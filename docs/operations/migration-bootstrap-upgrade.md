@@ -96,6 +96,15 @@ application roles must not call them unless the migration explicitly publishes o
 immediate-predecessor edge.
 
 Treat an unadvertised or incompatible handoff as a quiesced cutover, not a rolling migration.
+The V51 candidate is such a cutover: migrations `0232`/`0233` preserve the published
+0000–0231 bytes, repair SAML admission and typed tenant-platform provenance, and seal
+the complete 234-entry journal. V50 public runtime roots become retired evidence;
+do not pair V50 application images with the V51 database. The repair preserves the
+historical variable-conflict, identity-observation, and logout-snapshot amendments,
+and rejects a drifted source, owner, signature, search path or execute ACL before
+replacing a function. A successful install is not a substitute for the release
+acceptance, cross-tenant security and backup/restore gates.
+
 Before starting the migration task, remove traffic, scale web/API/worker/notifier to zero,
 and wait for graceful shutdown. Using the administrator connection, close the supported
 runtime login gate before checking for residual sessions:

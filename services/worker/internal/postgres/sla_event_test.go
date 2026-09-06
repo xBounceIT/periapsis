@@ -357,7 +357,7 @@ func TestSLAEventRepositoryFailureReadinessAndQueueMetrics(t *testing.T) {
 	retryAt := now.Add(10 * time.Second)
 	querier := &slaWorkerQuerierFake{queryRow: func(_ context.Context, query string, arguments ...any) pgx.Row {
 		switch {
-		case strings.Contains(query, "sla_object_event_ingress_schema_readiness_v50"):
+		case strings.Contains(query, "sla_object_event_ingress_schema_readiness_v51"):
 			if len(arguments) != 0 {
 				t.Fatalf("readiness arguments=%#v", arguments)
 			}

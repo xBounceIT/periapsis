@@ -153,25 +153,25 @@ describe("platform identity-provider database contract", () => {
         /pg_catalog\.encode\(\s*pg_catalog\.sha256\(pg_catalog\.convert_to\(function\.prosrc, 'UTF8'\)\),\s*'hex'\s*\)/u,
       );
       for (const currentRoot of [
-        "app.schema_compatibility_v50()",
+        "app.schema_compatibility_v51()",
         "app.schema_compatibility_v49()",
         "app.private_v47_migration_convergence_schema_readiness_v1()",
-        "app.private_schema_compatibility_journal_v50()",
-        "app.private_release_runtime_dependency_surface_hash_v50()",
-        "app.private_release_runtime_schema_readiness_v50()",
-        "app.release_runtime_schema_readiness_v50()",
+        "app.private_schema_compatibility_journal_v51()",
+        "app.private_release_runtime_dependency_surface_hash_v51()",
+        "app.private_release_runtime_schema_readiness_v51()",
+        "app.release_runtime_schema_readiness_v51()",
         "app.private_rotate_sla_readiness_v48()",
       ]) {
         expect(healthSource).toContain(currentRoot);
       }
       for (const currentSourceHash of [
-        "expectedSchemaCompatibilityV50SourceHash",
+        "expectedSchemaCompatibilityV51SourceHash",
         "expectedRetiredSchemaCompatibilityV49SourceHash",
         "expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash",
-        "expectedPrivateSchemaCompatibilityJournalV50SourceHash",
-        "expectedPrivateReleaseRuntimeDependencySurfaceHashV50SourceHash",
-        "expectedPrivateReleaseRuntimeReadinessV50SourceHash",
-        "expectedReleaseRuntimeReadinessV50SourceHash",
+        "expectedPrivateSchemaCompatibilityJournalV51SourceHash",
+        "expectedPrivateReleaseRuntimeDependencySurfaceHashV51SourceHash",
+        "expectedPrivateReleaseRuntimeReadinessV51SourceHash",
+        "expectedReleaseRuntimeReadinessV51SourceHash",
         "expectedPrivateRotateSLAReadinessV48SourceHash",
       ]) {
         expect(healthSource).toContain(currentSourceHash);

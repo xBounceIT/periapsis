@@ -185,8 +185,38 @@ final-journal database gates and the remaining release boundaries.
       forward migration and seal. The three shared revalidation helpers are already
       protocol-aware in 0228; do not replace them from stale 0165 definitions.
       Current RED: `.tmp/v50-saml-76269d139e524a06bc161d64a4c558c7.log` and proof JSON.
-      Both clones were dropped, sources/template pins unchanged; local lint/typecheck
-      pass. Direct apply, real switch and third-origin logout remain unexecuted.
+      Both V50 clones were dropped, sources/template pins unchanged; local lint/typecheck
+      pass. The V51 progress below supersedes this diagnostic without rewriting the
+      historical evidence.
+- [ ] Finish the ordinary SAML flow on the unpublished V51 successor. Generated forward
+      migrations 0232/0233 preserve all 232 published SQL files, attest the effective
+      predecessor bodies (including 0188 and 0228 amendments), and retire the V50 serving
+      roots without discarding their source attestations. The typed provenance repair
+      preserves the LDAP/OIDC branches and the already protocol-aware shared helpers.
+      Real PostgreSQL clones now pass planning with subject-alias key 2 and ciphertext
+      key 1, direct apply, a new alias created at transaction time, unchanged retained
+      alias 2, and exact replay without additional sessions, receipts or audit rows.
+      This exposed and repaired two later loader defects: ambiguous session_id (42702)
+      and 116 arguments to jsonb_build_object (54023). The latter is split into 84/32
+      arguments with all 58 unique key/value expressions preserved. Historical REDs:
+      `.tmp/v51-saml-4b773c3cc935460596d55fcd0533d0c8.log`,
+      `.tmp/v51-saml-295e2fadbff54762a17ce1d18a68d0e2.log`, and
+      `.tmp/v51-saml-20b2780a6e4142a5bd72dc2308c8fa9c.log`.
+      The last two stopped in the real tenant-switch loader. The corrected ordinary
+      flow now passes all three origins, real switch, first revalidation, logout,
+      exact immutable configuration after metadata mutation, three-way claim race and
+      replay: `.tmp/v51-saml-24756756baa14213adb4f819cedcebd9-proof.json`.
+      Its expected configuration is independently built from the real begin, admitted
+      request pins and apply statement time; the earlier fixture compared the obsolete
+      administrative projection. The clone is dropped and sources/template stay stable.
+      No template was hotpatched: each successor has a separate raw catalog derivation
+      and fresh normal migration/restart proof. Current 234-migration digest is
+      `2b1f33e2a513a16dff5f5b6b20ab6bf654cc4c081bd010864db96e09dbf8b51c`;
+      the owned fresh install passes the normal runner twice, exact fingerprint and
+      retired runtime ACL checks. DB unit tests now pass 643/643. Elevated trusted MFA,
+      localRequired/freshness, rotate/step_up and
+      historical revocation-drift cases also remain required; primary-only success is
+      insufficient. Independent review: `.tmp/saml-v51-provenance-independent-review.md`.
 - [ ] Rebuild the final compatibility seal on the stable journal, then run the fresh full
       PostgreSQL 18.6 `test:security` aggregate and complete upgrade/compatibility matrix,
       replacing all pre-seal database evidence.
@@ -196,8 +226,14 @@ final-journal database gates and the remaining release boundaries.
       These are native PostgreSQL 18.6 Windows/loopback `trust` results, not Docker or SCRAM
       authentication evidence. Exact source hashes and proof locations are recorded in
       `docs/release-acceptance.md`; these results do not cover current V50. Repeat the
-      current 58-suite aggregate, RLS, seed/audit and 20-entry upgrade matrix after the
-      SAML provenance correction; isolated V49/V50 upgrade proofs already pass.
+      current 58-suite aggregate, RLS, seed/audit and 21-entry upgrade matrix after the
+      SAML provenance correction; earlier isolated V49/V50 upgrade proofs do not cover
+      the new V51 journal. The old aggregate/upgrade scratch runners have stale counts
+      and must not be reused without exact current inventory and owned-cluster guards.
+      A first V51 catalog-only clone reaches login-attribute tampering but stops because
+      its migration-only template lacks periapsis_api_login (42704), a harness setup
+      omission. Preserve that failed proof; repeat with normal role provisioning in a
+      separate owned cluster, without changing the runtime test or template SQL.
 - [x] Repeat the complete `pnpm verify` command after the final frontend/SR-18 changes.
       V50 verification passed with exit 0: web 155 files/2,152 tests, DB 73 files/627
       tests, notifier 175 with conditional Mailpit skipped, operations 52, generated
@@ -209,6 +245,16 @@ final-journal database gates and the remaining release boundaries.
       `.tmp/mfa35-scram-79787bed140846c4aeab45db07cf642b-proof.json`.
       The earlier performance and V49 gates are retained as historical evidence.
       Further source edits still require affected gates; this is not release acceptance.
+      The subsequent V51 working-tree verification also passes exit 0, including 642 DB,
+      2,152 web, 175 notifier tests (conditional Mailpit skipped), actual Gitleaks controls,
+      generated artifacts, E2E type checking, builds, and Go vet/tests:
+      `.tmp/verify-saml-v51-20260906.log`. This run precedes the final JSON-arity repair
+      and does not substitute for actual PostgreSQL runtime or deployment acceptance.
+      The final repeat after that repair, the admitted-configuration fixture correction
+      and minimal-Compose diagnostics also passes exit 0: 643 DB, 2,152 web, 175 notifier
+      (conditional Mailpit skipped), all 143 operations tests with real Gitleaks and no
+      operations skips, generated drift, builds, Go vet/tests and E2E type checking.
+      Evidence: `.tmp/verify-v51-saml-complete-20260906.log`.
 
 ## GitHub CI repair evidence
 
@@ -291,13 +337,43 @@ final-journal database gates and the remaining release boundaries.
       and its `-control-proof.json`. Earlier harness failures remain recorded separately.
       This native proof does not execute Docker or the `/run/secrets` deployment wrapper.
       After the export-option correction, all 41 focused packaging tests pass again.
-- [ ] Obtain green remote CI for the candidate. The ea00026 PostgreSQL aggregate now
-      reaches the known direct SAML planning SQLSTATE 42702 instead of the previous
-      protected-configuration readiness timeout. Its web suite passes 2,151/2,152 tests;
-      the 50-member mention picker alone still times out at 5,000 ms. Do not weaken
-      assertions or time budgets without diagnosis. API and worker multi-arch runtime,
-      SBOM and scans pass on ea00026. Repeat all affected image/Compose/acceptance gates
-      on the next candidate; local Docker remains unavailable.
+- [x] Bound synthetic Gitleaks control generation without changing the scanner rules or
+      the 40 exact historical exceptions. Qualify random hexadecimal controls against
+      the rule's entropy floor and pinned stopwords, with bounded retries and negative
+      regressions. The actual scanner detects 40 controls, zero exact ignored controls,
+      all 40 replacements, and zero findings in the six-commit history; the combined
+      scanner/LDAP diagnostic tests pass 32/32. The missing CI value cannot establish
+      which random exclusion caused the previous 39/40 result.
+- [x] Add bounded, allowlist-reconstructed OpenLDAP failure diagnostics before teardown;
+      never emit raw environment, configuration, health output, DNs or secret-bearing
+      log lines. This collects evidence and does not repair the unproved startup cause.
+      Minimal Compose now has separate bounded diagnostics for migration/minio-provision
+      failures even when up itself fails, with safe state for PostgreSQL/MinIO and no
+      free-form service logs. The failure criterion and always-teardown are unchanged;
+      silent provisioner exit branches remain explicitly unattributed. All 47 focused
+      tests and pinned actionlint/ShellCheck pass; no local Docker execution is claimed.
+- [x] Repair the ticketing browser fixture's required sharedResources field and type it
+      against the generated DfirAlertWorkspace contract. All four E2E TypeScript inputs
+      now participate in normal type checking. The previously failing Playwright test
+      passes locally (1/1) with unchanged assertions, retries and timeouts.
+- [x] Build the database image on BUILDPLATFORM and validate the actual deployed output
+      before copying it into the target-platform runtime. The validator allows only the
+      three pinned production packages, contained relative links and portable compiled
+      assets; binary/archive signatures, extra packages and platform metadata fail closed.
+      All 64 packaging/manifest tests pass; an independently reviewed retained native
+      export passes validation. This is not an ARM64 container execution or scan proof.
+- [ ] Obtain green remote CI for the candidate. At published 61c2df9, deployment run
+      34031054630 passes web/API/worker/notifier multi-arch runtime, SBOM and scans.
+      Its database build hits QEMU SIGILL during ARM64 pnpm installation, then the
+      job's automatic 40-minute timeout; later runtime/scans never execute. OpenLDAP
+      authentication smoke and the 39/40 synthetic Gitleaks control also fail. In CI
+      run 34031054634, all 2,152 web unit tests pass, but the ticketing Playwright
+      fixture fails before the local repair above. PostgreSQL fails earlier at a 10s
+      compatibility-check statement timeout in platform-identity-binding; do not relax
+      its budget without diagnosis. Minimal Compose fails first in minio-provision,
+      then migration, and skips the later full profile. No inner provisioning error
+      was retained; permission assumptions do not prove the cause. Repeat affected
+      image/Compose/acceptance gates on the next candidate; local Docker is unavailable.
 
 ## Release evidence to obtain
 

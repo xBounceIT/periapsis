@@ -344,26 +344,31 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
   );
 
   // Retain the previous release's source corpus as a historical reference. Its
-  // predecessor is exercised by the isolated upgrade job, never on V50 clones.
-  const historical = new Set(["test:security:schema-compatibility-v49"]);
+  // predecessors are exercised by isolated upgrade jobs, never on V51 clones.
+  const historical = new Set([
+    "test:security:schema-compatibility-v49",
+    "test:security:schema-compatibility-v50",
+  ]);
   const standalone = new Set(["test:security:seed-audit", ...historical]);
   for (const name of historical) {
-    assert.equal(
-      scripts[name],
-      "tsx tests/security/schema-compatibility-v49-runtime.ts",
-    );
+    const suite = name.slice("test:security:".length);
+    const version = suite.slice("schema-compatibility-v".length);
+    assert.equal(scripts[name], `tsx tests/security/${suite}-runtime.ts`);
     assert.doesNotMatch(
       aggregate,
       new RegExp(`(?:^|\\s)run ${escapeRegExp(name)}(?:\\s|$)`, "u"),
     );
     assert.match(
       workflow,
-      /script: test:security:schema-compatibility-v49-upgrade\s+database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V49_UPGRADE_TEST_DATABASE_URL/u,
+      new RegExp(
+        `script: ${escapeRegExp(name)}-upgrade\\s+database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V${version}_UPGRADE_TEST_DATABASE_URL`,
+        "u",
+      ),
     );
   }
   assert.match(
     aggregate,
-    /(?:^|\s)run test:security:schema-compatibility-v50(?:\s|$)/u,
+    /(?:^|\s)run test:security:schema-compatibility-v51(?:\s|$)/u,
   );
   const securityScripts = Object.entries(scripts).filter(([name]) =>
     name.startsWith("test:security:"),

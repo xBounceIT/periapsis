@@ -8,13 +8,16 @@ import {
   readdir,
   realpath,
   rm,
+  symlink,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { validateDatabaseTaskPackaging } from "./validate-manifests.mjs";
+import { verifyPortableDatabaseArtifact } from "../../deploy/compose/portable-database-artifact.mjs";
 
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const databaseSource = join(repository, "packages/db");
@@ -95,6 +98,189 @@ test("database image keeps production dependencies and exact runtime assets only
   ]) {
     assert.notDeepEqual(validateDatabaseTaskPackaging(mutated, "database"), []);
   }
+});
+
+async function portableFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), "periapsis-db-portability-test-"));
+  t.after(async () => {
+    const owned = relative(resolve(tmpdir()), root);
+    assert.ok(
+      owned.startsWith("periapsis-db-portability-test-") &&
+        !isAbsolute(owned) &&
+        !owned.includes(".."),
+    );
+    await rm(root, { recursive: true, force: true });
+  });
+  const modules = join(root, "node_modules");
+  const compiled = join(root, "dist");
+  await mkdir(compiled);
+  await writeFile(
+    join(compiled, "migrate.js"),
+    "export const compiled = true;\n",
+  );
+  await Promise.all(
+    [
+      ["@opentelemetry/api", "1.9.1"],
+      ["drizzle-orm", "0.45.2"],
+      ["postgres", "3.4.9"],
+    ].map(async ([name, version]) => {
+      const directory = join(modules, name);
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, "package.json"),
+        JSON.stringify({ name, version }),
+      );
+      await writeFile(
+        join(directory, "index.js"),
+        "export const portable = true;\n",
+      );
+    }),
+  );
+  return { root, modules, compiled };
+}
+
+test("portability gate accepts exactly the reviewed JavaScript packages and confined relative links", async (t) => {
+  const fixture = await portableFixture(t);
+  await symlink("postgres", join(fixture.modules, "alias"), "dir");
+  assert.deepEqual(
+    verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+    {
+      dependencies: { files: 6, links: 1 },
+      compiled: { files: 1, links: 0 },
+    },
+  );
+});
+
+for (const [label, filename, content] of [
+  ["renamed ELF", "payload.js", Buffer.from("7f454c4602010100", "hex")],
+  ["renamed PE", "payload.json", Buffer.from("4d5a900003000000", "hex")],
+  ["renamed Mach-O", "payload.js", Buffer.from("cffaedfe01000000", "hex")],
+  ["universal Mach-O", "payload", Buffer.from("cafebabe00000001", "hex")],
+  ["WebAssembly", "payload.js", Buffer.from("0061736d01000000", "hex")],
+  ["native archive", "payload.js", Buffer.from("!<arch>\n")],
+  ["LLVM bitcode", "payload.js", Buffer.from("4243c0de00000000", "hex")],
+  ["renamed ZIP", "payload.js", Buffer.from("504b030400000000", "hex")],
+  ["renamed gzip", "payload.js", Buffer.from("1f8b080000000000", "hex")],
+  ["renamed bzip2", "payload.js", Buffer.from("425a683900000000", "hex")],
+  ["renamed XZ", "payload.js", Buffer.from("fd377a585a000000", "hex")],
+  ["renamed Zstandard", "payload.js", Buffer.from("28b52ffd00000000", "hex")],
+  ["Node addon", "payload.node", "export {};"],
+  ["versioned shared library", "payload.so.1", "export {};"],
+  ["uppercase DLL", "payload.DLL", "export {};"],
+  ["opaque archive", "payload.zip", "opaque"],
+]) {
+  test(`portability gate rejects ${label} in dependencies and compiled output`, async (t) => {
+    await Promise.all(
+      ["dependencies", "compiled"].map(async (location) => {
+        const fixture = await portableFixture(t);
+        const directory =
+          location === "dependencies"
+            ? join(fixture.modules, "postgres")
+            : fixture.compiled;
+        await writeFile(join(directory, filename), content);
+        assert.throws(
+          () =>
+            verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+          /Native or opaque binary payload|Native artifact extension/u,
+        );
+      }),
+    );
+  });
+}
+
+test("portability gate rejects unreviewed versions, packages and platform restrictions", async (t) => {
+  await Promise.all(
+    [
+      { name: "postgres", version: "3.4.10" },
+      { name: "unreviewed", version: "3.4.9" },
+      ...["os", "cpu", "libc", "gypfile", "bin"].map((key) => ({
+        name: "postgres",
+        version: "3.4.9",
+        [key]: "restricted",
+      })),
+    ].map(async (manifest) => {
+      const fixture = await portableFixture(t);
+      await writeFile(
+        join(fixture.modules, "postgres/package.json"),
+        JSON.stringify(manifest),
+      );
+      assert.throws(
+        () => verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+        /Unreviewed production dependency|Platform-specific production package metadata/u,
+      );
+    }),
+  );
+});
+
+test("portability gate rejects missing dependencies and files outside reviewed packages", async (t) => {
+  const fixture = await portableFixture(t);
+  await writeFile(
+    join(fixture.modules, "postgres/package.json"),
+    JSON.stringify({ type: "module" }),
+  );
+  assert.throws(
+    () => verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+    /Expected exactly the three reviewed production packages/u,
+  );
+  await writeFile(
+    join(fixture.modules, "postgres/package.json"),
+    JSON.stringify({ name: "postgres", version: "3.4.9" }),
+  );
+  await writeFile(join(fixture.modules, "unexpected.js"), "export {};");
+  assert.throws(
+    () => verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+    /Unowned production dependency file/u,
+  );
+});
+
+test("portability gate rejects absolute, escaping, dangling and cyclic artifact links", async (t) => {
+  await Promise.all(
+    ["absolute", "escaping", "dangling", "cyclic"].map(async (kind) => {
+      const fixture = await portableFixture(t);
+      const path = join(fixture.modules, "alias");
+      const target =
+        kind === "absolute"
+          ? join(fixture.modules, "postgres")
+          : kind === "escaping"
+            ? "../dist"
+            : kind === "dangling"
+              ? "missing"
+              : "alias";
+      await symlink(target, path, "dir");
+      assert.throws(() =>
+        verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+      );
+    }),
+  );
+});
+
+test("portability gate rejects native artifact names on confined symlinks", async (t) => {
+  const fixture = await portableFixture(t);
+  await symlink("migrate.js", join(fixture.compiled, "alias.node"), "file");
+  assert.throws(
+    () => verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
+    /Native artifact extension/u,
+  );
+});
+
+test("portability CLI fails closed without printing artifact content", async (t) => {
+  const fixture = await portableFixture(t);
+  const path = join(fixture.compiled, "bad.node");
+  await writeFile(path, "private-canary-never-log");
+  const result = runNode(
+    [
+      join(repository, "deploy/compose/portable-database-artifact.mjs"),
+      fixture.modules,
+      fixture.compiled,
+    ],
+    dirname(fixture.root),
+  );
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(
+    result.stderr,
+    "Database artifact portability verification failed.\n",
+  );
 });
 
 test("compiled entrypoint graph has no TypeScript, test suites, or runtime compiler", async () => {

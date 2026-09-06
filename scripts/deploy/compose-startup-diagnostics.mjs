@@ -1,0 +1,253 @@
+import { spawnSync } from "node:child_process";
+import { stripVTControlCharacters } from "node:util";
+
+const services = ["minio-provision", "migration", "minio", "postgres"];
+const oneShotServices = new Set(["minio-provision", "migration"]);
+const compose = [
+  "compose",
+  "--file",
+  "deploy/compose/compose.yaml",
+  "--profile",
+  "minimal",
+];
+const stateFormat =
+  '{"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"oomKilled":{{json .State.OOMKilled}},"errorPresent":{{if .State.Error}}true{{else}}false{{end}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}}}';
+const states = new Set([
+  "created",
+  "running",
+  "paused",
+  "restarting",
+  "removing",
+  "exited",
+  "dead",
+]);
+const healthStates = new Set([null, "starting", "healthy", "unhealthy"]);
+const databaseCodes = new Set([
+  "DATABASE_TASK_FAILED",
+  "UNSUPPORTED_TASK",
+  "INVALID_SECRET",
+  "INVALID_DATABASE_URL_FILE",
+  "DATABASE_URL_FILE_REQUIRED",
+  "INVALID_ENVIRONMENT",
+  "INVALID_DATABASE_URL",
+  "DATABASE_TLS_REQUIRED",
+  "ROLE_STATEMENT_FAILED",
+  "INVALID_WEBHOOK_PLAIN_LOCAL_OPT_IN",
+  "WEBHOOK_PLAIN_LOCAL_PRODUCTION_FORBIDDEN",
+  "MIGRATION_DATABASE_VERSION_UNSUPPORTED",
+  "MIGRATION_DATABASE_ADMIN_UNSUPPORTED",
+  "MIGRATION_DATABASE_LOCALE_UNSUPPORTED",
+  "MIGRATION_CLIENT_INCOMPATIBLE",
+  "MIGRATION_BUNDLE_DIVERGED",
+  "MIGRATION_JOURNAL_DIVERGED",
+  "MIGRATION_JOURNAL_UNAVAILABLE",
+  "MIGRATION_SEALER_DIVERGED",
+  "MIGRATION_LOCK_UNAVAILABLE",
+  "MIGRATION_LOCK_LOST",
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "EROFS",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "08001",
+  "08006",
+  "28P01",
+  "42501",
+  "42702",
+  "42P01",
+  "57014",
+  "55P03",
+  "23505",
+  "3D000",
+  "SIGNAL_SIGTERM",
+  "SIGNAL_SIGKILL",
+  "SIGNAL_SIGILL",
+  "SIGNAL_SIGABRT",
+]);
+// Error prefixes verified against the pinned mc RELEASE.2025-08-13T08-35-41Z
+// sources. Values, paths, credentials, remote messages and stack traces are omitted.
+const minioOperations = [
+  [
+    "Unable to initialize new alias from the provided credentials.",
+    "alias_set",
+  ],
+  ["Invalid access key", "alias_access_key_validation"],
+  ["Invalid secret key", "alias_secret_key_validation"],
+  ["Unable to load config", "config_load"],
+  ["Unable to update hosts in config version", "config_write"],
+  ["Unable to make bucket", "bucket_create"],
+  ["Unable to enable versioning", "version_enable"],
+  ["Unable to get policy", "policy_read"],
+  ["Unable to create new policy", "policy_create"],
+  ["Unable to add new user", "user_add"],
+  ["Unable to make user/group policy association", "policy_attach"],
+  ["Unable to initialize admin connection.", "admin_connect"],
+  ["Unable to open bucket CORS configuration file.", "cors_file_open"],
+  ["Unable to read bucket CORS configuration file.", "cors_file_read"],
+  ["Unable to set bucket CORS configuration for", "cors_set"],
+];
+const reasons = [
+  ["read-only file system", "read_only_filesystem"],
+  ["operation not permitted", "operation_not_permitted"],
+  ["permission denied", "permission_denied"],
+  ["no such file or directory", "file_missing"],
+  ["access denied", "access_denied"],
+  ["connection refused", "connection_refused"],
+  ["no such host", "dns_lookup_failed"],
+  ["i/o timeout", "io_timeout"],
+  ["not implemented", "not_implemented"],
+];
+
+function knownDatabaseCode(candidate) {
+  if (typeof candidate !== "string") return null;
+  if (databaseCodes.has(candidate)) return candidate;
+  const exit = /^EXIT_([1-9][0-9]{0,2})$/u.exec(candidate ?? "");
+  return exit && Number(exit[1]) <= 255 ? candidate : null;
+}
+
+function databaseEvent(line) {
+  try {
+    const entry = JSON.parse(line);
+    if (
+      entry?.service === "database-task" &&
+      entry.event === "database_task_failed"
+    ) {
+      const code = knownDatabaseCode(entry.code);
+      return code ? { kind: "database_driver", code } : null;
+    }
+  } catch {
+    // Native Node error properties are considered separately; never print the error.
+  }
+  const property = /^\s*code:\s*['"]([A-Z0-9_]{1,64})['"],?\s*$/u.exec(line);
+  const code = knownDatabaseCode(property?.[1]);
+  return code ? { kind: "database_error_property", code } : null;
+}
+
+function minioEvent(line) {
+  const message = /^mc: <ERROR>\s+(.*)$/u.exec(line)?.[1];
+  const operation = message
+    ? (minioOperations.find(([prefix]) => message.startsWith(prefix))?.[1] ??
+      "unclassified")
+    : /^(?:mkdir|tr):/u.test(line)
+      ? line.slice(0, line.indexOf(":"))
+      : line.startsWith("/usr/local/bin/provision-minio:")
+        ? "shell"
+        : null;
+  if (!operation) return null;
+  const reason =
+    reasons.find(([phrase]) => line.toLowerCase().includes(phrase))?.[1] ??
+    null;
+  return { kind: "minio_startup", operation, observedReason: reason };
+}
+
+// These are observed, allowlisted log markers, not a claim to infer every root
+// cause. The provisioning shell has silent exit-1 branches that remain unknown.
+export function redactComposeStartupLogs(service, source) {
+  const lines = source.slice(-65_536).trimEnd().split(/\r?\n/u).slice(-100);
+  const events = [];
+  let redactedLines = 0;
+  for (const raw of lines) {
+    if (!raw) continue;
+    const line = stripVTControlCharacters(raw);
+    const event =
+      service === "migration"
+        ? databaseEvent(line)
+        : service === "minio-provision"
+          ? minioEvent(line)
+          : null;
+    if (event) events.push(event);
+    else redactedLines += 1;
+  }
+  return { events, redactedLines };
+}
+
+function docker(args, execute) {
+  try {
+    const result = execute("docker", args, {
+      encoding: "utf8",
+      timeout: 5_000,
+      killSignal: "SIGKILL",
+      maxBuffer: 65_536,
+      windowsHide: true,
+    });
+    return !result.error && result.signal === null && result.status === 0
+      ? result
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeState(source) {
+  try {
+    const state = JSON.parse(source);
+    if (
+      states.has(state?.status) &&
+      Number.isInteger(state.exitCode) &&
+      state.exitCode >= 0 &&
+      state.exitCode <= 255 &&
+      typeof state.oomKilled === "boolean" &&
+      typeof state.errorPresent === "boolean" &&
+      healthStates.has(state.health)
+    ) {
+      return {
+        status: state.status,
+        exitCode: state.exitCode,
+        oomKilled: state.oomKilled,
+        errorPresent: state.errorPresent,
+        health: state.health,
+      };
+    }
+  } catch {
+    // No raw Docker error, health output, environment or configuration is returned.
+  }
+  return "unavailable";
+}
+
+export function collectComposeStartupDiagnostics(execute = spawnSync) {
+  return {
+    profile: "minimal",
+    services: services.map((service) => {
+      const result = {
+        service,
+        state: "unavailable",
+        logs: oneShotServices.has(service) ? "unavailable" : "not-collected",
+      };
+      const lookup = docker(
+        [...compose, "ps", "--all", "--quiet", service],
+        execute,
+      );
+      const container = lookup?.stdout.trim();
+      if (!container || !/^[a-f0-9]{64}$/u.test(container)) return result;
+      const inspected = docker(
+        ["inspect", "--format", stateFormat, container],
+        execute,
+      );
+      if (inspected) result.state = safeState(inspected.stdout);
+      if (oneShotServices.has(service)) {
+        const logs = docker(["logs", "--tail", "100", container], execute);
+        if (logs)
+          result.logs = redactComposeStartupLogs(
+            service,
+            `${logs.stdout}\n${logs.stderr}`,
+          );
+      }
+      return result;
+    }),
+  };
+}
+
+if (import.meta.main) {
+  try {
+    process.stdout.write(
+      `${JSON.stringify(collectComposeStartupDiagnostics())}\n`,
+    );
+  } catch {
+    process.stderr.write(
+      "Compose startup diagnostics unavailable; raw output withheld.\n",
+    );
+    process.exitCode = 1;
+  }
+}

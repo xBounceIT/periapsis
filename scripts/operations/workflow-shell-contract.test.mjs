@@ -107,6 +107,40 @@ test("LDAP DNs remain single arguments and only the container script defers expa
   );
 });
 
+test("failed LDAP smoke collects bounded redacted diagnostics before unconditional teardown", () => {
+  const manifests = job(security, "manifests");
+  const smokeName = "Smoke-test local LDAP, OIDC, and SAML providers";
+  const diagnosticName =
+    "Collect bounded redacted OpenLDAP startup diagnostics";
+  const teardownName = "Tear down authentication smoke profile";
+  assert.match(
+    step(manifests, smokeName),
+    /^        id: auth-provider-smoke$/mu,
+  );
+  const diagnostic = step(manifests, diagnosticName);
+  assert.match(
+    diagnostic,
+    /^        if: \$\{\{ failure\(\) && steps\.auth-provider-smoke\.outcome == 'failure' \}\}$/mu,
+  );
+  assert.match(diagnostic, /^        timeout-minutes: 1$/mu);
+  assert.match(
+    diagnostic,
+    /^        run: node scripts\/deploy\/openldap-diagnostics\.mjs$/mu,
+  );
+  assert.ok(manifests.indexOf(smokeName) < manifests.indexOf(diagnosticName));
+  assert.ok(
+    manifests.indexOf(diagnosticName) < manifests.indexOf(teardownName),
+  );
+  assert.match(
+    step(manifests, teardownName),
+    /if: \$\{\{ always\(\) && steps\.prepare-compose-secrets\.outcome == 'success' \}\}/u,
+  );
+  assert.match(
+    step(manifests, "Run dependency-free deployment contract tests"),
+    /node --test scripts\/deploy\/openldap-diagnostics\.test\.mjs/u,
+  );
+});
+
 test("the performance build quotes revision and the complete image tag", () => {
   const build = script(step(performance, "Build the pinned disposable gate"));
   assert.match(build, /--build-arg "REVISION=\$\{GITHUB_SHA\}"/u);

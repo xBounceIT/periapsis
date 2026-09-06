@@ -78,6 +78,99 @@ function coordinates(findings) {
     .toSorted();
 }
 
+// The pinned generic-api-key rule requires entropy >= 3.5 and has a stopword
+// allowlist. These are its only all-hex stopwords (v8.30.1/config/gitleaks.toml).
+// Qualify the ephemeral controls, never weaken or override the scanner's rule.
+const genericHexStopwords = [
+  "000000",
+  "6fe4476ee5a1832882e326b506d14126",
+  "aaaaaa",
+  "dead",
+  "feed",
+];
+const controlMinimumEntropy = 3.75;
+const controlSamplingLimit = 32;
+
+function entropy(value) {
+  const counts = new Map();
+  for (const character of value) {
+    counts.set(character, (counts.get(character) ?? 0) + 1);
+  }
+  return [...counts.values()].reduce((total, count) => {
+    const probability = count / value.length;
+    return total - probability * Math.log2(probability);
+  }, 0);
+}
+
+function qualifiesGenericControl(value) {
+  return (
+    /^[a-f0-9]{64}$/u.test(value) &&
+    entropy(value) >= controlMinimumEntropy &&
+    !genericHexStopwords.some((stopword) => value.includes(stopword))
+  );
+}
+
+function freshGenericControl(sample = randomBytes) {
+  for (let attempt = 0; attempt < controlSamplingLimit; attempt += 1) {
+    const value = sample(32).toString("hex");
+    if (qualifiesGenericControl(value)) return value;
+  }
+  throw new Error("Unable to sample a qualified ephemeral scanner control");
+}
+
+const balancedHex = "0123456789abcdef".repeat(4);
+
+test("generic controls reject low entropy and retain margin over the pinned 3.5 threshold", () => {
+  assert.equal(entropy(balancedHex), 4);
+  const thresholdHex = `${"0123".repeat(8)}${"456789ab".repeat(4)}`;
+  assert.equal(entropy(thresholdHex), 3.5);
+  assert.ok(!qualifiesGenericControl(thresholdHex));
+  const minimumHex = `${"0123".repeat(8)}${"4567".repeat(4)}${"89abcdef".repeat(2)}`;
+  assert.equal(entropy(minimumHex), controlMinimumEntropy);
+  assert.ok(qualifiesGenericControl(minimumHex));
+  assert.ok(qualifiesGenericControl(balancedHex));
+  let samples = 0;
+  assert.equal(
+    freshGenericControl((size) => {
+      assert.equal(size, 32);
+      return Buffer.from(++samples === 1 ? thresholdHex : balancedHex, "hex");
+    }),
+    balancedHex,
+  );
+  assert.equal(samples, 2);
+});
+
+for (const stopword of genericHexStopwords) {
+  test(`generic controls reject the pinned hex stopword ${stopword}`, () => {
+    const candidate = `${stopword}${balancedHex.slice(stopword.length)}`;
+    assert.ok(entropy(candidate) >= controlMinimumEntropy);
+    assert.ok(!qualifiesGenericControl(candidate));
+    let samples = 0;
+    assert.equal(
+      freshGenericControl(() =>
+        Buffer.from(++samples === 1 ? candidate : balancedHex, "hex"),
+      ),
+      balancedHex,
+    );
+    assert.equal(samples, 2);
+  });
+}
+
+test("generic control sampling fails closed after a bounded number of unsuitable samples", () => {
+  let samples = 0;
+  assert.throws(
+    () =>
+      freshGenericControl((size) => {
+        samples += 1;
+        return Buffer.alloc(size);
+      }),
+    /Unable to sample a qualified ephemeral scanner control/u,
+  );
+  assert.equal(samples, controlSamplingLimit);
+  assert.ok(!qualifiesGenericControl(balancedHex.toUpperCase()));
+  assert.ok(!qualifiesGenericControl(balancedHex.slice(1)));
+});
+
 test("historical Gitleaks review is the exact 40-fingerprint inventory for 41 findings", () => {
   assert.equal(sha256(ignoreSource), reviewedIgnoreSha256);
   assert.equal(entries.length, 40);
@@ -257,7 +350,7 @@ test(
                 privateKeyEncoding: { type: privateKeyType, format: "pem" },
                 publicKeyEncoding: { type: "spki", format: "pem" },
               }).privateKey.trimEnd()
-            : `api_key = "${randomBytes(32).toString("hex")}"`;
+            : `api_key = "${freshGenericControl()}"`;
         content.splice(entry.start - 1, 1, ...value.split("\n"));
       }
       await Promise.all(

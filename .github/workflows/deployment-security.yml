@@ -94,6 +94,7 @@ jobs:
         run: |
           node --test scripts/deploy/validate-manifests.test.mjs
           node --test scripts/deploy/prepare-compose-secrets.test.mjs
+          node --test scripts/deploy/openldap-diagnostics.test.mjs
           node --test scripts/operations/recovery-evidence.test.mjs
           node scripts/deploy/validate-manifests.mjs
       - name: Install pinned manifest validators
@@ -126,6 +127,7 @@ jobs:
           done
           docker stack config --compose-file deploy/swarm/stack.yml >/dev/null
       - name: Smoke-test local LDAP, OIDC, and SAML providers
+        id: auth-provider-smoke
         run: |
           set -euo pipefail
           compose=(docker compose --file deploy/compose/compose.yaml --profile auth-test)
@@ -156,6 +158,10 @@ jobs:
           }
           probe_identity_provider /realms/periapsis-test/.well-known/openid-configuration '"issuer"'
           probe_identity_provider /realms/periapsis-test/protocol/saml/descriptor EntityDescriptor
+      - name: Collect bounded redacted OpenLDAP startup diagnostics
+        if: ${{ failure() && steps.auth-provider-smoke.outcome == 'failure' }}
+        timeout-minutes: 1
+        run: node scripts/deploy/openldap-diagnostics.mjs
       - name: Tear down authentication smoke profile
         if: ${{ always() && steps.prepare-compose-secrets.outcome == 'success' }}
         run: docker compose --file deploy/compose/compose.yaml --profile auth-test down --volumes --remove-orphans

@@ -271,6 +271,8 @@ describe("PostgreSQL migration chain", () => {
       "0229_v49_compatibility.sql",
       "0230_session_logout_nullable_tenant.sql",
       "0231_v50_compatibility.sql",
+      "0232_platform_saml_admission_provenance.sql",
+      "0233_v51_compatibility.sql",
     ]);
   });
 

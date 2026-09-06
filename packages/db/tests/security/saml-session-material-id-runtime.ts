@@ -194,7 +194,7 @@ type SAMLDataViolations = {
   invalid_application_materials: number;
 };
 
-// V50 attests the current catalog/ACL graph; these five data checks retain the
+// V51 attests the current catalog/ACL graph; these five data checks retain the
 // material-lineage guarantees of the superseded V30 readiness implementation.
 async function assertSAMLDataInvariants(
   label: string,
@@ -537,6 +537,9 @@ const upstreamFixtures = [
   upstreamFixture("tenant_platform_provider", 7),
 ] as const;
 
+// Retained lookup aliases and the active ciphertext root are independent.
+const admittedSubjectKeys = { alias: 2, ciphertext: 1 } as const;
+
 async function seedUpstreamConfiguration(
   transaction: postgres.TransactionSql,
   fixture: SAMLUpstreamFixture,
@@ -744,10 +747,17 @@ async function seedTenantPlatformAdmission(
   const administratorMembership = uuid(base + 38);
   const providerKey = `saml_upstream_${fixture.sequence}`;
   const subjectDigest = digest(`saml-upstream-subject-${fixture.sequence}`);
+  const subjectAliases = [
+    {
+      keyVersion: admittedSubjectKeys.ciphertext,
+      digest: digest(`saml-upstream-active-subject-${fixture.sequence}`),
+    },
+    { keyVersion: admittedSubjectKeys.alias, digest: subjectDigest },
+  ];
 
   // Administrative fixture setup with ordinary constraints and triggers. These
   // pre-existing grants are inputs to authentication, never assertion outputs.
-  const configuration = await sql.begin(async (transaction) => {
+  const setupConfiguration = await sql.begin(async (transaction) => {
     await transaction`
       INSERT INTO public.users (id,email,display_name)
       VALUES (${fixture.user}::uuid,${`saml-upstream-${fixture.sequence}@example.invalid`},
@@ -757,6 +767,11 @@ async function seedTenantPlatformAdmission(
       INSERT INTO public.identity_keyring_versions (key_version,verifier,is_active,bound_at)
       VALUES (1,${Buffer.from(digest("saml-upstream-keyring"), "base64")},true,transaction_timestamp())
       ON CONFLICT (key_version) DO NOTHING
+    `;
+    await transaction`
+      INSERT INTO public.identity_keyring_versions (key_version,verifier,is_active,bound_at)
+      VALUES (${admittedSubjectKeys.alias},
+        ${Buffer.from(digest("saml-upstream-retained-keyring"), "base64")},false,transaction_timestamp())
     `;
     const projected = await seedUpstreamConfiguration(transaction, fixture);
     await transaction`
@@ -772,13 +787,14 @@ async function seedTenantPlatformAdmission(
         version,resource_version,created_at,updated_at
       ) VALUES (${fixture.externalIdentity}::uuid,${fixture.provider}::uuid,'saml',
         ${fixture.user}::uuid,'utf8_exact',${Buffer.alloc(32, 0x41)},${Buffer.alloc(12, 0x42)},
-        1,1,1,transaction_timestamp(),'known',1,1,transaction_timestamp(),transaction_timestamp())
+        ${admittedSubjectKeys.ciphertext},1,1,transaction_timestamp(),'known',1,1,
+        transaction_timestamp(),transaction_timestamp())
     `;
     await transaction`
       INSERT INTO public.platform_federated_external_identity_aliases (
         id,platform_provider_id,external_identity_id,key_version,subject_digest
       ) VALUES (${alias}::uuid,${fixture.provider}::uuid,${fixture.externalIdentity}::uuid,
-        1,${Buffer.from(subjectDigest, "base64")})
+        ${admittedSubjectKeys.alias},${Buffer.from(subjectDigest, "base64")})
     `;
     await transaction`
       INSERT INTO public.tenants (id,slug,name)
@@ -888,6 +904,15 @@ async function seedTenantPlatformAdmission(
   });
 
   const authorityBefore = await admissionAuthoritySnapshot(fixture);
+  const [retainedAliasBefore] = await sql<{ value: postgres.JSONValue }[]>`
+    SELECT to_jsonb(retained) AS value
+    FROM public.platform_federated_external_identity_aliases AS retained
+    WHERE retained.id=${alias}::uuid
+      AND retained.platform_provider_id=${fixture.provider}::uuid
+      AND retained.external_identity_id=${fixture.externalIdentity}::uuid
+      AND retained.key_version=${admittedSubjectKeys.alias}
+  `;
+  assert(retainedAliasBefore !== undefined, "prelinked retained SAML alias");
   const [begin] = await asRole(
     "periapsis_api",
     (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
@@ -900,11 +925,32 @@ async function seedTenantPlatformAdmission(
     begin?.value,
     "direct SAML configuration",
   );
+  const directMetadata = jsonRecord(
+    directConfiguration.metadata,
+    "direct SAML begin metadata",
+  );
+  assert.deepEqual(
+    directMetadata,
+    jsonRecord(setupConfiguration, "administrative SAML configuration")
+      .metadata,
+    "ordinary begin preserves the exact administratively configured metadata",
+  );
+  assert(typeof directMetadata.document === "string");
+  assert.equal(
+    directMetadata.digest,
+    createHash("sha256")
+      .update(Buffer.from(directMetadata.document, "base64"))
+      .digest("base64"),
+    "ordinary begin metadata digest binds its exact document bytes",
+  );
   const directFloor = jsonRecord(
     directConfiguration.platformFloor,
     "platform floor",
   );
-  const createdAt = new Date();
+  // Keep the caller's clock deliberately behind PostgreSQL, while preserving
+  // transaction creation before its later application. Never copy DB time into
+  // a command to satisfy an identity/alias observation guard.
+  const createdAt = new Date(Date.now() - 5_000);
   const protocolPins = {
     ...jsonRecord(directConfiguration.pins, "direct configuration pins"),
     configurationDigest: digest("saml-upstream-configuration-proof"),
@@ -956,7 +1002,7 @@ async function seedTenantPlatformAdmission(
     "direct SAML transaction",
   );
   assert.equal(loginTransaction.version, 1);
-  const observedAt = new Date();
+  const observedAt = new Date(Date.now() - 2_000);
   const [planning] = await asRole(
     "periapsis_api",
     (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
@@ -966,7 +1012,7 @@ async function seedTenantPlatformAdmission(
       pins,
       // Planning uses the Go enum UTF8Exact=3; apply uses the textual format.
       subjectFormat: 3,
-      subjectAliases: [{ keyVersion: 1, digest: subjectDigest }],
+      subjectAliases,
     })}::jsonb) AS value
   `,
   ).catch((error: unknown) => {
@@ -995,6 +1041,10 @@ async function seedTenantPlatformAdmission(
   assert.equal(match.externalIdentityId, fixture.externalIdentity);
   assert.equal(match.platformAuthorityId, platformGrant);
   assert.equal(match.protectedPlatformAuthorityLive, true);
+  assert.deepEqual(match.alias, {
+    keyVersion: admittedSubjectKeys.alias,
+    digest: subjectDigest,
+  });
   const expiresBase = Math.floor(observedAt.getTime() / 1000) * 1000;
   const absoluteExpiresAt = new Date(expiresBase + 60 * 60_000).toISOString();
   const idleExpiresAt = new Date(expiresBase + 30 * 60_000).toISOString();
@@ -1032,13 +1082,13 @@ async function seedTenantPlatformAdmission(
         },
       },
       subject: {
-        aliases: [{ keyVersion: 1, digest: subjectDigest }],
+        aliases: subjectAliases,
         subjectFormat: "utf8_exact",
         envelope: {
           format: "utf8_exact",
           ciphertext: Buffer.alloc(32, 0x51).toString("base64"),
           nonce: Buffer.alloc(12, 0x52).toString("base64"),
-          keyVersion: 1,
+          keyVersion: admittedSubjectKeys.ciphertext,
         },
       },
       platformFloor: directFloor,
@@ -1066,18 +1116,155 @@ async function seedTenantPlatformAdmission(
     audit: audit(42),
     proofDigest: digest("saml-upstream-login-proof"),
   };
-  const [authenticated] = await asRole(
-    "periapsis_api",
-    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
-    SELECT app.apply_platform_saml_authentication_v1(${transaction.json(login)}::jsonb) AS value
-  `,
-  );
+  const [authenticated] = await asRole("periapsis_api", async (transaction) => {
+    const result = await transaction<
+      {
+        value: postgres.JSONValue | null;
+        configuration_observed_at: postgres.JSONValue;
+      }[]
+    >`
+        SELECT app.apply_platform_saml_authentication_v1(${transaction.json(login)}::jsonb) AS value,
+          to_jsonb(statement_timestamp()) AS configuration_observed_at
+      `;
+    // The production write above runs only as the API role. Restore the
+    // test role for read-only inspection in that exact same transaction.
+    await transaction.unsafe("RESET ROLE");
+    const [aliasObservation] = await transaction<
+      {
+        alias_count: number;
+        created_with_database_time: boolean;
+        differs_from_application_time: boolean;
+        active_alias_digest: string;
+        retained_alias: postgres.JSONValue;
+      }[]
+    >`
+        SELECT
+          (SELECT count(*)::integer
+           FROM public.platform_federated_external_identity_aliases AS candidate
+           WHERE candidate.platform_provider_id=${fixture.provider}::uuid
+             AND candidate.external_identity_id=${fixture.externalIdentity}::uuid) AS alias_count,
+          fresh.created_at=transaction_timestamp() AS created_with_database_time,
+          fresh.created_at<>${login.appliedAt}::timestamptz AS differs_from_application_time,
+          replace(encode(fresh.subject_digest,'base64'),E'\\n','') AS active_alias_digest,
+          to_jsonb(retained) AS retained_alias
+        FROM public.platform_federated_external_identity_aliases AS fresh
+        JOIN public.platform_federated_external_identity_aliases AS retained
+          ON retained.id=${alias}::uuid
+          AND retained.platform_provider_id=fresh.platform_provider_id
+          AND retained.external_identity_id=fresh.external_identity_id
+        WHERE fresh.platform_provider_id=${fixture.provider}::uuid
+          AND fresh.external_identity_id=${fixture.externalIdentity}::uuid
+          AND fresh.key_version=${admittedSubjectKeys.ciphertext}
+          AND fresh.retired_at IS NULL
+      `;
+    assert.deepEqual(aliasObservation, {
+      alias_count: 2,
+      created_with_database_time: true,
+      differs_from_application_time: true,
+      active_alias_digest: subjectAliases[0]?.digest,
+      retained_alias: retainedAliasBefore.value,
+    });
+    await transaction.unsafe('SET LOCAL ROLE "periapsis_api"');
+    return result;
+  });
   const authenticatedResult = jsonRecord(
     authenticated?.value,
     "direct SAML login receipt",
   );
   assert.equal(authenticatedResult.category, "success");
   assert.equal(authenticatedResult.sessionId, fixture.ownerSession);
+  const configurationObservedAt = authenticated?.configuration_observed_at;
+  assert(typeof configurationObservedAt === "string");
+  // 0228 snapshots the ordinary begin document using the admitted authority
+  // pins and the apply statement's database clock. Build this expectation from
+  // those independent inputs, before metadata mutation or any logout claim;
+  // never use the material/claim configuration as its own expected value.
+  const admittedConfiguration: JSONRecord = {
+    ...directConfiguration,
+    observedAt: configurationObservedAt,
+    pins: protocolPins,
+  };
+  const admittedPins = jsonRecord(
+    admittedConfiguration.pins,
+    "admitted SAML configuration pins",
+  );
+  assert.equal(
+    admittedPins.configurationDigest,
+    digest("saml-upstream-configuration-proof"),
+  );
+  assert.equal(admittedPins.metadataDigest, directMetadata.digest);
+  assert.equal(admittedPins.metadataRevision, directMetadata.revision);
+  const [subjectObservation] = await sql<
+    {
+      ciphertext_key_version: number;
+      alias_key_version: number;
+      request_alias_key_version: number;
+      request_ciphertext_key_version: number;
+      request_applied_at: string;
+      request_configuration_pins: postgres.JSONValue;
+      receipt: postgres.JSONValue;
+    }[]
+  >`
+    SELECT identity.key_version AS ciphertext_key_version,provenance.alias_key_version,
+      (application.request_snapshot #>> '{plan,provenance,matchedAliasKeyVersion}')::integer
+        AS request_alias_key_version,
+      (application.request_snapshot #>> '{plan,subject,envelope,keyVersion}')::integer
+        AS request_ciphertext_key_version,
+      application.request_snapshot ->> 'appliedAt' AS request_applied_at,
+      application.request_snapshot #> '{authority,pins}' AS request_configuration_pins,
+      application.result_snapshot AS receipt
+    FROM public.platform_federated_external_identities identity
+    JOIN public.auth_session_platform_saml_provenance provenance
+      ON provenance.platform_provider_id=identity.platform_provider_id
+      AND provenance.external_identity_id=identity.id AND provenance.user_id=identity.user_id
+    JOIN public.platform_saml_authentication_applications application
+      ON application.session_id=provenance.session_id AND application.user_id=provenance.user_id
+      AND application.platform_provider_id=identity.platform_provider_id
+      AND application.external_identity_id=identity.id
+    WHERE identity.platform_provider_id=${fixture.provider}::uuid
+      AND identity.id=${fixture.externalIdentity}::uuid AND identity.user_id=${fixture.user}::uuid
+      AND provenance.session_id=${fixture.ownerSession}::uuid
+  `;
+  assert.deepEqual(subjectObservation, {
+    ciphertext_key_version: admittedSubjectKeys.ciphertext,
+    alias_key_version: admittedSubjectKeys.alias,
+    request_alias_key_version: admittedSubjectKeys.alias,
+    request_ciphertext_key_version: admittedSubjectKeys.ciphertext,
+    request_applied_at: login.appliedAt,
+    request_configuration_pins: protocolPins,
+    receipt: authenticatedResult,
+  });
+  const loginReplaySnapshot = async () => {
+    const [snapshot] = await sql<{ value: postgres.JSONValue }[]>`
+      SELECT jsonb_build_object(
+        'aliases',(SELECT jsonb_agg(to_jsonb(candidate) ORDER BY candidate.id)
+          FROM public.platform_federated_external_identity_aliases AS candidate
+          WHERE candidate.platform_provider_id=${fixture.provider}::uuid
+            AND candidate.external_identity_id=${fixture.externalIdentity}::uuid),
+        'sessions',(SELECT jsonb_agg(encode(sha256(convert_to(to_jsonb(session)::text,'UTF8')),'hex') ORDER BY session.id)
+          FROM public.auth_sessions AS session WHERE session.user_id=${fixture.user}::uuid),
+        'applications',(SELECT jsonb_agg(encode(sha256(convert_to(to_jsonb(application)::text,'UTF8')),'hex') ORDER BY application.transaction_id)
+          FROM public.platform_saml_authentication_applications AS application
+          WHERE application.user_id=${fixture.user}::uuid),
+        'audits',(SELECT jsonb_agg(encode(sha256(convert_to(to_jsonb(event)::text,'UTF8')),'hex') ORDER BY event.id)
+          FROM public.platform_audit_events AS event WHERE event.actor_user_id=${fixture.user}::uuid)
+      ) AS value
+    `;
+    assert(snapshot !== undefined);
+    return snapshot.value;
+  };
+  const beforeLoginReplay = await loginReplaySnapshot();
+  const [replayedLogin] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+      SELECT app.apply_platform_saml_authentication_v1(${transaction.json(login)}::jsonb) AS value
+    `,
+  );
+  assert.deepEqual(replayedLogin?.value, {
+    ...authenticatedResult,
+    category: "already_applied",
+  });
+  assert.deepEqual(await loginReplaySnapshot(), beforeLoginReplay);
   assert.deepEqual(await admissionAuthoritySnapshot(fixture), authorityBefore);
 
   const switchObservedAt = new Date().toISOString();
@@ -1095,6 +1282,14 @@ async function seedTenantPlatformAdmission(
     loaded?.value,
     "SAML tenant-switch snapshot",
   );
+  const sourceRevisions = jsonRecord(
+    jsonRecord(switchSnapshot.source, "direct SAML switch source").revisions,
+    "direct SAML switch source revisions",
+  );
+  assert.deepEqual(sourceRevisions.subjectAliasKey, {
+    pinned: admittedSubjectKeys.alias,
+    current: admittedSubjectKeys.alias,
+  });
   const target = jsonRecord(
     switchSnapshot.commandPins,
     "live SAML target command pins",
@@ -1107,6 +1302,7 @@ async function seedTenantPlatformAdmission(
   assert.equal(target.accessGrantId, grant);
   assert.equal(target.bindingVersion, 2);
   assert.equal(target.externalIdentityId, fixture.externalIdentity);
+  assert.equal(target.aliasKeyVersion, admittedSubjectKeys.alias);
   const switchCommand = {
     sourceSessionId: fixture.ownerSession,
     expectedVersion: 1,
@@ -1135,8 +1331,8 @@ async function seedTenantPlatformAdmission(
       authenticationMethod: "saml",
     },
   };
-  // V50 must fail here at the deferred typed-provenance constraint. Do not
-  // fabricate N or its receipt to advance past that production defect.
+  // V50 failed here at the deferred typed-provenance constraint. V51 must
+  // produce the successor and receipt through this ordinary production writer.
   const switched = await asRole("periapsis_api", async (transaction) => {
     const [result] = await transaction<{ value: postgres.JSONValue | null }[]>`
       SELECT app.apply_platform_saml_tenant_switch_v1(
@@ -1167,7 +1363,7 @@ async function seedTenantPlatformAdmission(
     "switch replay survives later session revision",
   );
   assert.deepEqual(await admissionAuthoritySnapshot(fixture), authorityBefore);
-  return configuration;
+  return admittedConfiguration;
 }
 
 async function verifyAdmittedSAMLRevalidation(
@@ -1177,6 +1373,8 @@ async function verifyAdmittedSAMLRevalidation(
     tenantId: fixture.tenant,
     sessionId: fixture.session,
     audience: "api",
+    authenticationMethod: "saml",
+    observedAt: new Date().toISOString(),
   };
   const [loaded] = await asRole(
     "periapsis_api",
@@ -1193,6 +1391,7 @@ async function verifyAdmittedSAMLRevalidation(
     "admitted SAML session snapshot",
   );
   const live = jsonRecord(revalidation.live, "admitted SAML live authority");
+  assert.deepEqual(revalidation.lookup, lookup);
   assert.equal(revalidation.authenticationMethod, "saml");
   assert.equal(snapshot.version, 2);
   assert.equal(snapshot.tenantId, fixture.tenant);
@@ -1233,7 +1432,6 @@ async function verifyAdmittedSAMLRevalidation(
   const mutation = {
     ...lookup,
     userId: fixture.user,
-    authenticationMethod: "saml",
     expectedVersion: 2,
     observedAt: new Date().toISOString(),
     decision: "usable",
@@ -1254,18 +1452,34 @@ async function verifyAdmittedSAMLRevalidation(
     applied: true,
   });
   const [stored] = await sql<
-    { version: number; live: boolean; parent: string }[]
+    {
+      version: number;
+      live: boolean;
+      parent: string;
+      alias_key_version: number;
+      ciphertext_key_version: number;
+    }[]
   >`
     SELECT state.session_version::integer AS version,session.revoked_at IS NULL AS live,
-           session.rotated_from_session_id AS parent
+           session.rotated_from_session_id AS parent,
+           provenance.subject_alias_key_version AS alias_key_version,
+           identity.key_version AS ciphertext_key_version
     FROM public.auth_session_mfa_states state
     JOIN public.auth_sessions session ON session.id=state.session_id
+    JOIN public.auth_session_tenant_platform_federated_provenance provenance
+      ON provenance.tenant_id=state.tenant_id AND provenance.session_id=state.session_id
+      AND provenance.user_id=state.user_id
+    JOIN public.platform_federated_external_identities identity
+      ON identity.platform_provider_id=provenance.platform_provider_id
+      AND identity.id=provenance.external_identity_id AND identity.user_id=provenance.user_id
     WHERE state.tenant_id=${fixture.tenant}::uuid AND state.session_id=${fixture.session}::uuid
   `;
   assert.deepEqual(stored, {
     version: 3,
     live: true,
     parent: fixture.ownerSession,
+    alias_key_version: admittedSubjectKeys.alias,
+    ciphertext_key_version: admittedSubjectKeys.ciphertext,
   });
 }
 
@@ -1623,7 +1837,7 @@ try {
   });
 
   const [ready] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(ready, { ready: true });
   await assertSAMLDataInvariants("seeded SAML material lineage");
@@ -1868,7 +2082,7 @@ try {
     `;
   });
   const [afterRotation] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(afterRotation, { ready: true });
   await assertSAMLDataInvariants("rotation retains the original material ID");
@@ -1903,7 +2117,7 @@ try {
     `;
   });
   const [afterStepUp] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(afterStepUp, { ready: true });
   await assertSAMLDataInvariants(
@@ -1965,7 +2179,7 @@ try {
     `;
   });
   const [afterPromotion] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(afterPromotion, { ready: true });
   await assertSAMLDataInvariants("promotion retains the original material ID");
@@ -1985,7 +2199,7 @@ try {
     `;
   });
   const [ambiguousLegacy] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(ambiguousLegacy, { ready: true });
   await assertSAMLDataInvariants("orphaned legacy material is detected", {
@@ -2005,7 +2219,7 @@ try {
     `;
   });
   const [driftedApplication] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(driftedApplication, { ready: true });
   await assertSAMLDataInvariants("application material ID drift is detected", {
@@ -2023,7 +2237,7 @@ try {
     `;
   });
   const [restoredReadiness] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(restoredReadiness, { ready: true });
   await assertSAMLDataInvariants("application material ID restored");
@@ -2057,7 +2271,7 @@ try {
         `CREATE TRIGGER ${trigger.name} BEFORE ${trigger.events} ON public.tenants FOR EACH ROW EXECUTE FUNCTION ${trigger.functionName}`,
       );
       const [spoofed] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
     `;
       assert.deepEqual(spoofed, { ready: false });
       await sql.unsafe(`DROP TRIGGER ${trigger.name} ON public.tenants`);
@@ -2071,7 +2285,7 @@ try {
         `CREATE TRIGGER ${trigger.name} BEFORE ${trigger.events} ON public.${trigger.relation} FOR EACH ROW WHEN (false) EXECUTE FUNCTION ${trigger.functionName}`,
       );
       const [conditional] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
     `;
       assert.deepEqual(conditional, { ready: false });
       await sql.unsafe(
@@ -2083,7 +2297,7 @@ try {
     },
   );
   const [exactTriggersRestored] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
   `;
   assert.deepEqual(exactTriggersRestored, { ready: true });
 
@@ -2129,12 +2343,12 @@ try {
     async (unexpectedGrant) => {
       await sql.unsafe(unexpectedGrant.grant);
       const [overGranted] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
     `;
       assert.deepEqual(overGranted, { ready: false });
       await sql.unsafe(unexpectedGrant.revoke);
       const [grantRevoked] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
     `;
       assert.deepEqual(grantRevoked, { ready: true });
     },

@@ -112,6 +112,73 @@ test("web builds natively but keeps the runtime target platform and artifact-onl
   );
 });
 
+function assertPortableDatabaseStages(databaseStages) {
+  assert.equal(databaseStages.length, 2);
+  const [builder, runtime] = databaseStages;
+  assert.equal(
+    builder.from,
+    "FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build",
+  );
+  assert.equal(runtime.from, "FROM ${NODE_IMAGE}");
+  const validator = "deploy/compose/portable-database-artifact.mjs";
+  assert.ok(builder.instructions.includes(`COPY ${validator} ${validator}`));
+  const build = builder.instructions.find((instruction) =>
+    instruction.includes("build:runtime"),
+  );
+  const exportCommand =
+    "corepack pnpm --filter @periapsis/db deploy --legacy --prod --config.hoist-workspace-packages=false /out";
+  const validation = `node ${validator} /out/node_modules packages/db/dist`;
+  const buildCommands = build.split(/\s*&&\s*/u);
+  assert.ok(buildCommands.includes(exportCommand));
+  assert.ok(buildCommands.includes(validation));
+  assert.equal(
+    buildCommands.indexOf(exportCommand) + 1,
+    buildCommands.indexOf(validation),
+  );
+  assert.ok(
+    !runtime.instructions.some((instruction) =>
+      instruction.includes(validator),
+    ),
+  );
+  assert.deepEqual(
+    runtime.instructions.filter((instruction) =>
+      instruction.startsWith("COPY "),
+    ),
+    [
+      "COPY --from=build --chown=10001:10001 /out/package.json /workspace/packages/db/package.json",
+      "COPY --from=build --chown=10001:10001 /out/node_modules /workspace/packages/db/node_modules",
+      "COPY --from=build --chown=10001:10001 /workspace/packages/db/dist/ /workspace/packages/db/",
+      "COPY --from=build --chown=10001:10001 /workspace/packages/db/migrations/ /workspace/packages/db/migrations/",
+      "COPY --from=build --chown=10001:10001 /workspace/packages/db/seeds/sla-fixture.generated.json /workspace/packages/db/seeds/sla-fixture.generated.json",
+      "COPY --from=build --chown=10001:10001 /workspace/deploy/compose/database-task-config.mjs /workspace/deploy/compose/database-task-config.mjs",
+      "COPY --from=build --chown=10001:10001 /workspace/deploy/compose/database-task.mjs /workspace/deploy/compose/database-task.mjs",
+    ],
+  );
+}
+
+test("database builds natively only behind a production-artifact portability gate", async () => {
+  const source = await readSource("deploy/compose/Dockerfile.database");
+  assertPortableDatabaseStages(stages(source));
+  for (const mutated of [
+    source.replace("--platform=$BUILDPLATFORM ", ""),
+    source.replace(
+      "\nFROM ${NODE_IMAGE}\n",
+      "\nFROM --platform=$BUILDPLATFORM ${NODE_IMAGE}\n",
+    ),
+    source.replace(
+      "&& node deploy/compose/portable-database-artifact.mjs",
+      "&& echo deploy/compose/portable-database-artifact.mjs",
+    ),
+    source.replace("--config.hoist-workspace-packages=false", ""),
+    source.replace(
+      "/out/node_modules packages/db/dist",
+      "/out/node_modules packages/db/dist || true",
+    ),
+    `${source}\nCOPY --from=build /workspace/deploy/compose/portable-database-artifact.mjs /workspace/validator.mjs\n`,
+  ])
+    assert.throws(() => assertPortableDatabaseStages(stages(mutated)));
+});
+
 test("performance patches its actual PostgreSQL final stage, not the copied Node stage", async () => {
   const performanceStages = stages(
     await readSource("deploy/performance/Dockerfile"),
