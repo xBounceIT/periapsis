@@ -138,6 +138,43 @@ function run(directory, extra = {}) {
   return result;
 }
 
+test("the actual LDAP entrypoint reaches its identity guard without readonly/local collisions", () => {
+  // Execute the file, rather than sourcing only its functions. Force a rejected
+  // identity before any storage, credential, TLS or slap* operation is reached.
+  const result = spawnSync(
+    shell,
+    [
+      "--noprofile",
+      "--norc",
+      "-c",
+      'id() { printf "%s\\n" 0; }; export -f id; exec "$BASH" --noprofile --norc "$1"',
+      "ldap-real-entrypoint-test",
+      bashPath(bootstrap),
+    ],
+    {
+      encoding: "utf8",
+      timeout: 5000,
+      killSignal: "SIGKILL",
+      windowsHide: true,
+      maxBuffer: 32768,
+      env: {
+        ...process.env,
+        BASH_ENV: "",
+        ENV: "",
+        LDAP_INIT_ROOT_USER_PW_FILE: "/run/secrets/ldap-admin-password",
+        LDAP_TLS_ENABLED: "true",
+        LDAP_LDAPS_ENABLED: "true",
+        LDAP_TLS_SSF: "128",
+      },
+    },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr.trim(), "PERIAPSIS_OPENLDAP_ERROR stage=identity");
+});
+
 test("OpenLDAP image fixes numeric identity at build time and never uses root bootstrap", async () => {
   const dockerfile = await source("deploy/compose/Dockerfile.openldap-test");
   const script = await source("deploy/compose/auth/openldap-bootstrap.sh");
@@ -162,7 +199,7 @@ test("OpenLDAP image fixes numeric identity at build time and never uses root bo
   );
   assert.match(
     script,
-    /exec slapd -d 0 -F "\$storage\/config" -h 'ldap:\/\/0\.0\.0\.0:1389\/ ldaps:\/\/0\.0\.0\.0:1636\/'/u,
+    /exec slapd -d 0 -F "\$ldap_storage_root\/config" -h 'ldap:\/\/0\.0\.0\.0:1389\/ ldaps:\/\/0\.0\.0\.0:1636\/'/u,
   );
   assert.doesNotMatch(script, /openssl dgst|sha1|sha256|ldap_verify_password/u);
 });

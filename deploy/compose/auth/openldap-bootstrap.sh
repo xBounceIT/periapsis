@@ -80,13 +80,13 @@ ldap_bootstrap() (
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   export PATH=/usr/sbin:/usr/bin:/sbin:/bin
-  readonly storage=/var/lib/periapsis-ldap
-  readonly runtime=/run/periapsis-ldap
+  readonly ldap_storage_root=/var/lib/periapsis-ldap
+  readonly ldap_runtime_root=/run/periapsis-ldap
   [[ ${LDAP_INIT_ROOT_USER_PW_FILE:-} == /run/secrets/ldap-admin-password &&
      ${LDAP_TLS_ENABLED:-} == true && ${LDAP_LDAPS_ENABLED:-} == true &&
      ${LDAP_TLS_SSF:-} == 128 ]] || ldap_fail settings
-  ldap_bootstrap "$storage" "$runtime" /usr/local/share/periapsis-ldap \
+  ldap_bootstrap "$ldap_storage_root" "$ldap_runtime_root" /usr/local/share/periapsis-ldap \
     /run/secrets/ldap-admin-password /etc/ldap/schema /run/secrets/ldap
   printf 'PERIAPSIS_OPENLDAP_READY_TO_START\n'
-  exec slapd -d 0 -F "$storage/config" -h 'ldap://0.0.0.0:1389/ ldaps://0.0.0.0:1636/' >/dev/null 2>&1
+  exec slapd -d 0 -F "$ldap_storage_root/config" -h 'ldap://0.0.0.0:1389/ ldaps://0.0.0.0:1636/' >/dev/null 2>&1
 fi
