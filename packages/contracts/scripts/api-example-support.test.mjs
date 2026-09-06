@@ -1,11 +1,61 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 import {
   containsSensitiveFixture,
+  generatedBy,
   sampleMediaType,
   validateMediaTypeExample,
 } from "./api-example-support.mjs";
+
+test("generator provenance matches the installed example toolchain", () => {
+  const require = createRequire(import.meta.url);
+  const versions = ["openapi-sampler", "ajv", "ajv-formats"].map(
+    (name) => `${name}@${require(`${name}/package.json`).version}`,
+  );
+  assert.equal(generatedBy, versions.join("+"));
+});
+
+test("example validation rejects data-supplied patterns but permits static patterns", () => {
+  const exampleDocument = { components: {} };
+  const mediaType = {
+    schema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string" },
+        value: { type: "string", pattern: { $data: "1/pattern" } },
+      },
+    },
+  };
+  assert.throws(
+    () =>
+      validateMediaTypeExample(exampleDocument, mediaType, "request", {
+        pattern: "^example$",
+        value: "example",
+      }),
+    /schema is invalid.*pattern/u,
+  );
+  const staticMediaType = { schema: { type: "string", pattern: "^example$" } };
+  assert.equal(
+    validateMediaTypeExample(
+      exampleDocument,
+      staticMediaType,
+      "request",
+      "example",
+    ).valid,
+    true,
+  );
+  assert.equal(
+    validateMediaTypeExample(
+      exampleDocument,
+      staticMediaType,
+      "request",
+      "different",
+    ).valid,
+    false,
+  );
+});
 
 const document = {
   components: {

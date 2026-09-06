@@ -76960,7 +76960,7 @@
         }
       }
     },
-    "generatedBy": "openapi-sampler@1.7.4+ajv@8.17.1+ajv-formats@3.0.1",
+    "generatedBy": "openapi-sampler@1.7.4+ajv@8.18.0+ajv-formats@3.0.1",
     "strategy": "one-schema-valid-safe-json-request-and-success-response-per-operation-tag"
   }
 }

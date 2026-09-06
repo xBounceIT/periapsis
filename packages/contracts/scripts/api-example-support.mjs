@@ -3,7 +3,7 @@ import addFormats from "ajv-formats";
 import { isIP } from "node:net";
 import { sample as sampleOpenAPI } from "openapi-sampler";
 
-export const generatedBy = "openapi-sampler@1.7.4+ajv@8.17.1+ajv-formats@3.0.1";
+export const generatedBy = "openapi-sampler@1.7.4+ajv@8.18.0+ajv-formats@3.0.1";
 export const generationStrategy =
   "one-schema-valid-safe-json-request-and-success-response-per-operation-tag";
 export const methods = ["get", "post", "put", "patch", "delete"];
@@ -162,6 +162,7 @@ const omitDirectionalProperties = (value, kind) => {
 
 const createAjv = () => {
   const ajv = new Ajv2020({
+    $data: false,
     allErrors: true,
     logger: false,
     strict: false,

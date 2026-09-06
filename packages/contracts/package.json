@@ -27,7 +27,7 @@
     "@hey-api/openapi-ts": "0.99.0",
     "@periapsis/tsconfig": "workspace:*",
     "@redocly/cli": "2.47.0",
-    "ajv": "8.17.1",
+    "ajv": "8.18.0",
     "ajv-formats": "3.0.1",
     "openapi-sampler": "1.7.4",
     "swagger-ui-dist": "5.32.14",

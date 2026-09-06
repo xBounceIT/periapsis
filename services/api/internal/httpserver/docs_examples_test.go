@@ -38,7 +38,7 @@ func TestDocumentationServesGeneratedExamples(t *testing.T) {
 	if err := json.Unmarshal(specificationResponse.Body.Bytes(), &specification); err != nil {
 		t.Fatalf("decode GET /openapi.json: %v", err)
 	}
-	if specification.Examples.GeneratedBy != "openapi-sampler@1.7.4+ajv@8.17.1+ajv-formats@3.0.1" {
+	if specification.Examples.GeneratedBy != "openapi-sampler@1.7.4+ajv@8.18.0+ajv-formats@3.0.1" {
 		t.Fatalf("generated example provenance = %q", specification.Examples.GeneratedBy)
 	}
 	if len(specification.Examples.Coverage) == 0 || len(specification.Examples.Coverage) != len(specification.Tags) {
