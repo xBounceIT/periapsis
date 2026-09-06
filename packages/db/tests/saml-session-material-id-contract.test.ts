@@ -16,8 +16,75 @@ const ledgerMaterialForeignKey = migration("0149_condemned_bedlam.sql");
 const mfa = migration("0132_federated_authentication_mfa_compatibility.sql");
 const sessions = migration("0133_federated_authentication_session_abi.sql");
 const schema = source("schema/identity-federation.ts");
+const runtime = readFileSync(
+  resolve(packageRoot, "tests/security/saml-session-material-id-runtime.ts"),
+  "utf8",
+);
 
 describe("immutable SAML session material identity contract", () => {
+  it("initializes tenants with ordinary authorization triggers before stored SAML graphs", () => {
+    const fixture = runtime.slice(
+      runtime.indexOf("async function seedFixture("),
+      runtime.indexOf("type SAMLOrigin ="),
+    );
+    const origin = fixture.indexOf(
+      "SET LOCAL session_replication_role = origin",
+    );
+    const tenant = fixture.indexOf("INSERT INTO public.tenants");
+    const membership = fixture.indexOf("INSERT INTO public.tenant_memberships");
+    const authorization = fixture.indexOf(
+      "SELECT app.seed_tenant_authorization(${fixture.tenant}::uuid,${fixture.membership}::uuid)",
+    );
+    const replica = fixture.indexOf(
+      "SET LOCAL session_replication_role = replica",
+    );
+    const saml = fixture.indexOf(
+      "INSERT INTO public.tenant_federated_provider_policies",
+    );
+    expect(origin).toBeGreaterThan(-1);
+    expect(tenant).toBeGreaterThan(origin);
+    expect(membership).toBeGreaterThan(tenant);
+    expect(authorization).toBeGreaterThan(membership);
+    expect(replica).toBeGreaterThan(authorization);
+    expect(saml).toBeGreaterThan(replica);
+    expect(fixture).not.toContain("INSERT INTO public.tenant_service_accounts");
+    expect(fixture).not.toContain("private_ensure_sla_system_principal_v1");
+  });
+
+  it("checks tenant initialization after both stored and real upstream SAML graphs", () => {
+    const verification = runtime.slice(
+      runtime.indexOf("async function assertTenantInitialization("),
+      runtime.indexOf("async function seedFixture("),
+    );
+    expect(verification).toContain("initialized_at IS NOT NULL");
+    expect(verification).toContain(
+      "key = 'sla_action_runtime' AND system_owned",
+    );
+    expect(verification).toContain(
+      "created_by_membership_id IS NULL AND archived_at IS NULL",
+    );
+    expect(verification).toContain("authorization_states: tenantIds.length");
+    expect(verification).toContain("system_principals: tenantIds.length");
+    expect(verification).toContain(
+      "app.private_sla_system_principal_catalog_ready_v1()",
+    );
+    expect(verification).toContain(
+      "app.platform_local_account_runtime_schema_readiness_v1()",
+    );
+    expect(runtime.match(/await assertTenantInitialization\(/g)).toHaveLength(
+      2,
+    );
+    expect(runtime).toMatch(
+      /await assertSAMLDataInvariants\("seeded SAML material lineage"\);\s+await assertTenantInitialization\(/,
+    );
+    expect(runtime).toMatch(
+      /await serially\(upstreamFixtures, verifyUpstreamLogout\);\s+await assertTenantInitialization\(/,
+    );
+    expect(runtime).toContain(
+      '.filter((fixture) => fixture.origin !== "platform_provider")',
+    );
+  });
+
   it("models one always-present identity row with an optional all-or-none envelope", () => {
     expect(schema).toContain('keyVersion: integer("key_version"),');
     expect(schema).toContain('ciphertext: bytea("ciphertext"),');

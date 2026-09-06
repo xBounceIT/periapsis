@@ -51,7 +51,7 @@ async function readiness(): Promise<boolean> {
     "periapsis_api",
     (transaction) =>
       transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v51() AS ready
+        SELECT app.release_runtime_schema_readiness_v52() AS ready
       `,
   );
   assert(row, "interactive LDAP readiness returned no row");
@@ -145,7 +145,7 @@ try {
     "periapsis_worker",
     (transaction) =>
       transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v51() AS ready
+        SELECT app.release_runtime_schema_readiness_v52() AS ready
       `,
   );
   assert.equal(workerReadiness?.ready, true);
@@ -156,7 +156,7 @@ try {
         asRole(
           role,
           (transaction) =>
-            transaction`SELECT app.release_runtime_schema_readiness_v51()`,
+            transaction`SELECT app.release_runtime_schema_readiness_v52()`,
         ),
         (error) => {
           assertSqlState(error, "42501");

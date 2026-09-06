@@ -81,7 +81,7 @@ try {
     "periapsis_api",
     (transaction) =>
       transaction<{ ready: boolean }[]>`
-      SELECT app.federated_authentication_schema_readiness_v51() AS ready
+      SELECT app.federated_authentication_schema_readiness_v52() AS ready
     `,
   );
   assert.deepEqual(ready, { ready: true });
@@ -111,8 +111,8 @@ try {
            predecessor_projection.applied_count::integer AS predecessor_count,
            predecessor_projection.latest_hash AS predecessor_hash,
            predecessor_projection.migration_fingerprint AS predecessor_fingerprint,
-           app.release_runtime_schema_readiness_v51() AS release_ready
-    FROM app.schema_compatibility_v51() AS current_projection
+           app.release_runtime_schema_readiness_v52() AS release_ready
+    FROM app.schema_compatibility_v52() AS current_projection
     CROSS JOIN app.schema_compatibility_v28() AS legacy_projection
     CROSS JOIN app.schema_compatibility_v27() AS predecessor_projection
   `;
@@ -169,7 +169,7 @@ try {
     asRole(
       "periapsis_notifier",
       (transaction) =>
-        transaction`SELECT app.federated_authentication_schema_readiness_v51()`,
+        transaction`SELECT app.federated_authentication_schema_readiness_v52()`,
     ),
     (error) => {
       assertSqlState(error, "42501");

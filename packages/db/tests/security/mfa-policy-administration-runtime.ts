@@ -304,7 +304,7 @@ try {
       const [ready] = await sql.begin(async (transaction) => {
         await transaction.unsafe(`SET LOCAL ROLE "${role}"`);
         return transaction<{ value: boolean }[]>`
-          SELECT app.release_runtime_schema_readiness_v51() AS value
+          SELECT app.release_runtime_schema_readiness_v52() AS value
         `;
       });
       assert.equal(ready?.value, true);

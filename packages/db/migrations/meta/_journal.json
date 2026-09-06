@@ -1639,6 +1639,20 @@
       "when": 1788695899106,
       "tag": "0233_v51_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1788707177193,
+      "tag": "0234_service_readiness_aggregation",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1788707601308,
+      "tag": "0235_v52_compatibility",
+      "breakpoints": true
     }
   ]
 }

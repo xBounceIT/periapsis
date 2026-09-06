@@ -150,10 +150,10 @@ try {
            predecessor_projection.latest_created_at::text AS predecessor_latest,
            predecessor_projection.latest_hash AS predecessor_hash,
            retired_projection.applied_count::integer AS retired_count,
-           app.release_runtime_schema_readiness_v51() AS release_ready,
+           app.release_runtime_schema_readiness_v52() AS release_ready,
            app.identity_mfa_schema_readiness_v1() AS ready,
            app.identity_mfa_device_management_readiness_v1() AS device_ready
-    FROM app.schema_compatibility_v51() AS current_projection
+    FROM app.schema_compatibility_v52() AS current_projection
     CROSS JOIN app.schema_compatibility_v26() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v25() AS retired_projection
   `;

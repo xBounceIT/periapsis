@@ -556,7 +556,7 @@ services:
       PERIAPSIS_WEB_PORT: ${PERIAPSIS_WEB_PORT:-8443}
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./auth/keycloak-realm.json:/opt/keycloak/data/import/periapsis-realm.json:ro
+      - ./auth/keycloak-realm.json:/opt/keycloak/data/import/periapsis-test-realm.json:ro
     tmpfs:
       - /tmp:uid=1000,gid=0,mode=1770
     healthcheck:

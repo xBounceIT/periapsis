@@ -467,6 +467,7 @@ jobs:
       - name: Validate the composed full acceptance profile
         run: docker compose --file deploy/compose/compose.yaml --profile full config --quiet
       - name: Start fresh API, worker, notifier, Mailpit, edge, OpenLDAP, and Keycloak stack
+        id: full-stack-start
         run: docker compose --file deploy/compose/compose.yaml --profile full up --detach --no-build --wait edge openldap identity-provider worker notifier mailpit
       - name: Probe the hardened full acceptance containers and dependencies
         shell: bash
@@ -539,6 +540,10 @@ jobs:
             echo 'periapsis_api_login unexpectedly deleted audit_events' >&2
             exit 1
           fi
+      - name: Collect bounded redacted identity-provider startup diagnostics
+        if: ${{ failure() && steps.full-stack-start.outcome == 'failure' }}
+        timeout-minutes: 1
+        run: node scripts/deploy/identity-provider-diagnostics.mjs full
       - name: Stop composed full acceptance stack
         if: always()
         run: docker compose --file deploy/compose/compose.yaml --profile full down --volumes --remove-orphans
@@ -616,6 +621,9 @@ jobs:
           - name: V51 SAML admission and provenance compatibility seal
             script: test:security:schema-compatibility-v51-upgrade
             database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V51_UPGRADE_TEST_DATABASE_URL
+          - name: V52 service readiness aggregation compatibility seal
+            script: test:security:schema-compatibility-v52-upgrade
+            database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V52_UPGRADE_TEST_DATABASE_URL
     services:
       postgres:
         image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
@@ -768,7 +776,7 @@ jobs:
             periapsis_federated_auth \
             periapsis_tenant_federation_admin \
             periapsis_saml_material \
-            periapsis_schema_compatibility_v51 \
+            periapsis_schema_compatibility_v52 \
             periapsis_passkey_revalidation \
             periapsis_mfa_policy \
             periapsis_tenant_lifecycle \
@@ -833,7 +841,7 @@ jobs:
           PERIAPSIS_FEDERATED_AUTH_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_federated_auth?sslmode=disable
           PERIAPSIS_TENANT_FEDERATION_ADMIN_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_federation_admin?sslmode=disable
           PERIAPSIS_SAML_MATERIAL_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_saml_material?sslmode=disable
-          PERIAPSIS_SCHEMA_COMPATIBILITY_V51_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_schema_compatibility_v51?sslmode=disable
+          PERIAPSIS_SCHEMA_COMPATIBILITY_V52_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_schema_compatibility_v52?sslmode=disable
           PERIAPSIS_PASSKEY_REVALIDATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_passkey_revalidation?sslmode=disable
           PERIAPSIS_MFA_POLICY_ADMIN_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_mfa_policy?sslmode=disable
           PERIAPSIS_TENANT_LIFECYCLE_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_lifecycle?sslmode=disable

@@ -1509,19 +1509,20 @@ describe("direct platform OIDC v39 database contract", () => {
     );
   });
 
-  it("binds API and worker health to the current V51 release roots", () => {
+  it("binds API and worker health to the current V52 release roots", () => {
     for (const health of [apiHealth, workerHealth]) {
       for (const root of [
+        "app.schema_compatibility_v52()",
         "app.schema_compatibility_v51()",
         "app.schema_compatibility_v50()",
         "app.schema_compatibility_v49()",
         "app.private_v47_migration_convergence_schema_readiness_v1()",
-        "app.private_schema_compatibility_journal_v51()",
-        "app.private_release_runtime_dependency_surface_hash_v51()",
-        "app.private_release_runtime_schema_readiness_v51()",
-        "app.release_runtime_schema_readiness_v51()",
-        "app.ticket_bulk_runtime_schema_readiness_v51()",
-        "app.ticket_export_runtime_schema_readiness_v51()",
+        "app.private_schema_compatibility_journal_v52()",
+        "app.private_release_runtime_dependency_surface_hash_v52()",
+        "app.private_release_runtime_schema_readiness_v52()",
+        "app.release_runtime_schema_readiness_v52()",
+        "app.ticket_bulk_runtime_schema_readiness_v52()",
+        "app.ticket_export_runtime_schema_readiness_v52()",
         "app.private_rotate_sla_readiness_v48()",
       ]) {
         expect(health).toContain(root);
@@ -1532,6 +1533,10 @@ describe("direct platform OIDC v39 database contract", () => {
       expect(health).toContain(
         "expectedRetiredSchemaCompatibilityV50SourceHash",
       );
+      expect(health).toContain(
+        "expectedRetiredSchemaCompatibilityV51SourceHash",
+      );
+      expect(health).not.toContain("from app.schema_compatibility_v51()");
       expect(health).not.toContain("from app.schema_compatibility_v50()");
       expect(health).not.toContain("from app.schema_compatibility_v49()");
       expect(health).not.toContain("from app.schema_compatibility_v48()");
@@ -1540,10 +1545,10 @@ describe("direct platform OIDC v39 database contract", () => {
       );
     }
     expect(apiHealth).toContain(
-      "count(*) = 16 and coalesce(bool_and(catalog_ready), false)",
+      "count(*) = 18 and coalesce(bool_and(catalog_ready), false)",
     );
     expect(workerHealth).toContain(
-      "count(*) = 13 and coalesce(bool_and(catalog_ready), false)",
+      "count(*) = 15 and coalesce(bool_and(catalog_ready), false)",
     );
   });
 });

@@ -11,8 +11,8 @@ artifact. The current candidate state appears after the matrix; external evidenc
 tracked in [`TASKS.md`](../TASKS.md).
 
 The matrix retains earlier focused and final-journal results. Those labels do not
-carry forward to V51 automatically: only the explicitly versioned evidence below
-applies to the current published candidate.
+carry forward to a new seal automatically: only the explicitly versioned evidence below
+applies to the named candidate. V52 is currently under verification, not production-validated.
 
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -49,6 +49,64 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+### V52 candidate under verification
+
+Forward migration 0234 adds role-specific API/worker readiness aggregates; 0235 seals
+the 236-entry journal. The published 0000-0233 prefix remains byte-identical. Each
+aggregate performs one release attestation per invocation, retains all ordered live-data
+checks and stays inside the full catalog transcript. Serving Go queries independently
+attest the aggregate source, complete ABI/owner/ACL and the retained V51 predecessor.
+The worker's ordinary keyring write remains outside the stable aggregate; neither
+statement timeouts nor cross-statement trust are changed.
+
+The nonzero V52 catalog digest is
+`7782b810b281fefee6142a0be6bd1691a7fc66f90be197322c95755a658e5b9f`,
+derived on a new PostgreSQL 18.6 UTF8/C cluster with TCP SCRAM. The 235-entry interval
+returns fixed false arrays for both services while the V52 release root is absent.
+The raw 236-entry candidate also remains unsealed/not ready. Proof:
+`C:\Users\dange\AppData\Local\Temp\periapsis-v52-catalog-owned-93520f08e6f14f24bedbd67afef09937\derivation-proof.json`.
+The companion transport proof retains stable input hashes, cluster shutdown and removal
+of the generated administrator password file. This is catalog derivation, not evidence
+of a normal sealed installation, upgrade, runtime matrix, optimized timing or green CI.
+
+The subsequent normal installation and complete V52 catalog/tamper suite pass on a
+separate owned PostgreSQL 18.6 cluster, after ordinary migration and runtime-role
+provisioning. Journal, catalog, source, template and SCRAM role pins remain unchanged;
+the cluster is stopped. This is catalog-only mode, not the full 58-suite aggregate.
+Proof:
+`C:\Users\dange\AppData\Local\Temp\periapsis-v52-aggregate-owned-a4a2970e5b0d44b59284be8ad9631c34\proof.json`.
+
+The real V51-to-V52 upgrade also passes from the exact published 234-entry prefix:
+the 235-entry interval fails closed, final V52 sealing preserves fixture/replay data,
+retires historical roots, and passes the ordinary three-origin SAML flow. Normal
+migration restart and runtime-role provisioning pass afterward. The SAML test fixture
+now initializes each tenant through ordinary authorization/SLA-principal setup before
+loading its synthetic SAML graph; no readiness leaf or assertion was relaxed. Stable
+source pins, owned-cluster shutdown and removal of all five generated password files
+are retained in
+`C:\Users\dange\AppData\Local\Temp\periapsis-v52-upgrade-owned-fd452afc0a3347d685dda995502e6ca1\proof.json`.
+This is one upgrade path, not a new pass of the complete 22-path matrix.
+
+The full V52 aggregate subsequently passes all 58 PostgreSQL security suites, both
+seed runs and seed audit on fresh isolated databases. It includes the actual Go API
+and worker readiness queries with unchanged 10-second statement limits, exactly one
+catalog-hasher call per successful query, prepared-statement tamper rejection and
+rollback restoration. Both unseeded templates and provisioned roles retain their exact
+pins; all source hashes are stable, both owned clusters are stopped and the generated
+administrator password file is removed. Proof:
+`C:\Users\dange\AppData\Local\Temp\periapsis-v52-aggregate-owned-e67d84a794b7437eb5cfc7ad62bf0a41\proof.json`.
+The separate RLS SQL and 15-test Go CI selections are not part of these 58 suites.
+
+Complete local `pnpm verify` passes for this V52 source candidate: 663 DB tests,
+2,158 web tests, 175 notifier tests plus one conditional Mailpit skip, and all 172
+operations tests with the real Gitleaks scanner and no operations skips. Formatting,
+lint, TypeScript/E2E checks, generated drift, builds, Go vet and Go tests pass. Evidence:
+`.tmp/verify-v52-service-readiness-final-20260906.log`.
+The separate RLS/Go selection, complete upgrade matrix, current CI and composed
+acceptance remain independent gates; this local verification is not production approval.
+
+### Published V51 evidence
 
 The published V51 database baseline is `cad3fdf8a8887b865f620eb209025312ba03b83e` on
 [`xBounceIT/periapsis`](https://github.com/xBounceIT/periapsis). It has 234 immutable

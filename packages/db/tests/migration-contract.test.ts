@@ -273,6 +273,8 @@ describe("PostgreSQL migration chain", () => {
       "0231_v50_compatibility.sql",
       "0232_platform_saml_admission_provenance.sql",
       "0233_v51_compatibility.sql",
+      "0234_service_readiness_aggregation.sql",
+      "0235_v52_compatibility.sql",
     ]);
   });
 

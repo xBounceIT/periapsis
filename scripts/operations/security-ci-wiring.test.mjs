@@ -344,10 +344,11 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
   );
 
   // Retain the previous release's source corpus as a historical reference. Its
-  // predecessors are exercised by isolated upgrade jobs, never on V51 clones.
+  // predecessors are exercised by isolated upgrade jobs, never on V52 clones.
   const historical = new Set([
     "test:security:schema-compatibility-v49",
     "test:security:schema-compatibility-v50",
+    "test:security:schema-compatibility-v51",
   ]);
   const standalone = new Set(["test:security:seed-audit", ...historical]);
   for (const name of historical) {
@@ -368,7 +369,7 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
   }
   assert.match(
     aggregate,
-    /(?:^|\s)run test:security:schema-compatibility-v51(?:\s|$)/u,
+    /(?:^|\s)run test:security:schema-compatibility-v52(?:\s|$)/u,
   );
   const securityScripts = Object.entries(scripts).filter(([name]) =>
     name.startsWith("test:security:"),

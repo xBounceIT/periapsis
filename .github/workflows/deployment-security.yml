@@ -176,6 +176,10 @@ jobs:
         if: ${{ failure() && steps.auth-provider-smoke.outcome == 'failure' }}
         timeout-minutes: 1
         run: node scripts/deploy/openldap-diagnostics.mjs
+      - name: Collect bounded redacted identity-provider startup diagnostics
+        if: ${{ failure() && steps.auth-provider-smoke.outcome == 'failure' }}
+        timeout-minutes: 1
+        run: node scripts/deploy/identity-provider-diagnostics.mjs auth-test
       - name: Tear down authentication smoke profile
         if: ${{ always() && steps.prepare-compose-secrets.outcome == 'success' }}
         run: docker compose --file deploy/compose/compose.yaml --profile auth-test down --volumes --remove-orphans

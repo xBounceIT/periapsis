@@ -24,6 +24,7 @@ import {
   expectedMigrations,
   expectedRetiredSchemaCompatibilityV49SourceHash,
   expectedRetiredSchemaCompatibilityV50SourceHash,
+  expectedRetiredSchemaCompatibilityV51SourceHash,
   expectedSealSchemaCompatibilityManifestV49SourceHash,
 } from "../../src/admin/schema-compatibility-manifest.gen.js";
 import {
@@ -131,16 +132,18 @@ assert.deepEqual(v49Latest, {
   createdAt: 1_788_520_217_531,
   hash: "a69775fe655ff7795b0aad4688925789d20d59d2bc9c06eb38e79f3a40cf7554",
 });
-assert.equal(journal.entries.length, 234);
-assert.equal(expectedMigrationCount, 234);
-assert.equal(expectedMigrations.length, 234);
+assert.equal(journal.entries.length, 236);
+assert.equal(expectedMigrationCount, 236);
+assert.equal(expectedMigrations.length, 236);
 assert.deepEqual(
-  journal.entries.slice(-4).map((entry) => entry.tag),
+  journal.entries.slice(-6).map((entry) => entry.tag),
   [
     "0230_session_logout_nullable_tenant",
     "0231_v50_compatibility",
     "0232_platform_saml_admission_provenance",
     "0233_v51_compatibility",
+    "0234_service_readiness_aggregation",
+    "0235_v52_compatibility",
   ],
 );
 const v49Fingerprint = v49Manifest
@@ -165,6 +168,24 @@ assert.notEqual(
 assert.equal(
   v51CatalogDigest,
   "2b1f33e2a513a16dff5f5b6b20ab6bf654cc4c081bd010864db96e09dbf8b51c",
+);
+const v52Migration = await readFile(
+  resolve(migrationsRoot, "0235_v52_compatibility.sql"),
+  "utf8",
+);
+const v52CatalogDigest =
+  /private_release_runtime_dependency_surface_hash_v52\(\)<>\s*'([0-9a-f]{64})'/u.exec(
+    v52Migration,
+  )?.[1];
+assert(v52CatalogDigest, "0235 must pin the V52 catalog digest");
+assert.notEqual(
+  v52CatalogDigest,
+  "0".repeat(64),
+  "V52 cannot run with a placeholder digest",
+);
+assert.equal(
+  v52CatalogDigest,
+  "7782b810b281fefee6142a0be6bd1691a7fc66f90be197322c95755a658e5b9f",
 );
 const unsupported: CompatibilityRow = {
   applied_count: "0",
@@ -199,6 +220,20 @@ const retiredV50Roots = [
   "ticket_export_runtime_schema_readiness_v50",
   "ticket_metadata_runtime_schema_readiness_v50",
   "notification_dispatch_readiness_v50",
+];
+const retiredV51Roots = [
+  "schema_compatibility_v51",
+  "release_runtime_schema_readiness_v51",
+  "federated_authentication_schema_readiness_v51",
+  "platform_oidc_direct_runtime_schema_readiness_v51",
+  "platform_saml_direct_runtime_schema_readiness_v51",
+  "platform_local_account_runtime_schema_readiness_v51",
+  "sla_trigger_action_runtime_schema_readiness_v51",
+  "sla_object_event_ingress_schema_readiness_v51",
+  "ticket_bulk_runtime_schema_readiness_v51",
+  "ticket_export_runtime_schema_readiness_v51",
+  "ticket_metadata_runtime_schema_readiness_v51",
+  "notification_dispatch_readiness_v51",
 ];
 const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-schema-v50-upgrade-"),
@@ -462,21 +497,30 @@ async function assertLogoutEffects(
   });
 }
 
-async function assertSealedV51(): Promise<void> {
-  await assertAppliedPrefix(234);
+async function assertSealedV52(): Promise<void> {
+  await assertAppliedPrefix(236);
   const [current] = await sql<
-    (CompatibilityRow & { catalog_digest: string; ready: boolean })[]
+    (CompatibilityRow & {
+      catalog_digest: string;
+      ready: boolean;
+      api_array: boolean[];
+      worker_array: boolean[];
+    })[]
   >`
-    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v51() AS catalog_digest,
-      app.release_runtime_schema_readiness_v51() AS ready FROM app.schema_compatibility_v51() AS compatibility
+    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v52() AS catalog_digest,
+      app.api_runtime_schema_readiness_v52() AS api_array,
+      app.worker_runtime_schema_readiness_v52() AS worker_array,
+      app.release_runtime_schema_readiness_v52() AS ready FROM app.schema_compatibility_v52() AS compatibility
   `;
   assert.deepEqual(current, {
     applied_count: String(expectedMigrationCount),
     latest_created_at: String(expectedMigrationCreatedAt),
     latest_hash: expectedMigrationHash,
     migration_fingerprint: expectedMigrationFingerprint,
-    catalog_digest: v51CatalogDigest,
+    catalog_digest: v52CatalogDigest,
     ready: true,
+    api_array: Array<boolean>(8).fill(true),
+    worker_array: Array<boolean>(5).fill(true),
   });
   await Promise.all(
     [
@@ -487,6 +531,10 @@ async function assertSealedV51(): Promise<void> {
       {
         signature: "app.schema_compatibility_v50()",
         sourceHash: expectedRetiredSchemaCompatibilityV50SourceHash,
+      },
+      {
+        signature: "app.schema_compatibility_v51()",
+        sourceHash: expectedRetiredSchemaCompatibilityV51SourceHash,
       },
     ].map(async (root) => {
       const [retired] = await sql<{ config: string[]; source_hash: string }[]>`
@@ -510,13 +558,13 @@ async function assertSealedV51(): Promise<void> {
     SELECT root.name, (SELECT count(*)::integer FROM (VALUES
       ('periapsis_api'), ('periapsis_worker'), ('periapsis_notifier'), ('periapsis_auditor')
     ) AS role(name) WHERE has_function_privilege(role.name, procedure.oid, 'EXECUTE')) AS runtime_grants
-    FROM unnest(${[...retiredV49Roots, ...retiredV50Roots]}::text[]) AS root(name)
+    FROM unnest(${[...retiredV49Roots, ...retiredV50Roots, ...retiredV51Roots]}::text[]) AS root(name)
     JOIN pg_catalog.pg_proc AS procedure ON procedure.oid=to_regprocedure('app.' || root.name || '()')
     ORDER BY root.name
   `;
   assert.deepEqual(
     roots.map(({ name, runtime_grants }) => ({ name, runtime_grants })),
-    [...retiredV49Roots, ...retiredV50Roots]
+    [...retiredV49Roots, ...retiredV50Roots, ...retiredV51Roots]
       .toSorted()
       .map((name) => ({ name, runtime_grants: 0 })),
   );
@@ -648,16 +696,16 @@ try {
   });
 
   await migrateSchema(sql, migrationsRoot);
-  await assertSealedV51();
+  await assertSealedV52();
   assert.deepEqual(
     await redactedSnapshot(),
     before,
-    "V51 sealing must not mutate historical logout data",
+    "V52 sealing must not mutate historical logout data",
   );
   assert.deepEqual(
     await revoke(tenantCommand),
     tenantReceipt,
-    "historical tenant receipt must replay exactly after V51",
+    "historical tenant receipt must replay exactly after V52",
   );
   assert.deepEqual(await redactedSnapshot(), before);
 
@@ -682,7 +730,7 @@ try {
   );
 
   await migrateSchema(sql, migrationsRoot);
-  await assertSealedV51();
+  await assertSealedV52();
   assert.deepEqual(
     await redactedSnapshot(),
     afterPlatform,

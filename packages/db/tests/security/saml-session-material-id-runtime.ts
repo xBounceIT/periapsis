@@ -194,7 +194,7 @@ type SAMLDataViolations = {
   invalid_application_materials: number;
 };
 
-// V51 attests the current catalog/ACL graph; these five data checks retain the
+// V52 attests the current catalog/ACL graph; these five data checks retain the
 // material-lineage guarantees of the superseded V30 readiness implementation.
 async function assertSAMLDataInvariants(
   label: string,
@@ -349,6 +349,46 @@ const lineage: SAMLFixture = {
   hasEnvelope: false,
 };
 
+async function assertTenantInitialization(
+  tenantIds: string[],
+  label: string,
+): Promise<void> {
+  const [state] = await sql<
+    {
+      tenants: number;
+      authorization_states: number;
+      system_principals: number;
+      principal_catalog_ready: boolean;
+      local_account_ready: boolean;
+    }[]
+  >`
+    SELECT
+      (SELECT count(*)::integer FROM public.tenants
+       WHERE id = ANY(${sql.array(tenantIds)}::uuid[])) AS tenants,
+      (SELECT count(*)::integer FROM public.tenant_authorization_states
+       WHERE tenant_id = ANY(${sql.array(tenantIds)}::uuid[])
+         AND initialized_at IS NOT NULL) AS authorization_states,
+      (SELECT count(*)::integer FROM public.tenant_service_accounts
+       WHERE tenant_id = ANY(${sql.array(tenantIds)}::uuid[])
+         AND key = 'sla_action_runtime' AND system_owned
+         AND created_by_membership_id IS NULL AND archived_at IS NULL)
+        AS system_principals,
+      app.private_sla_system_principal_catalog_ready_v1() AS principal_catalog_ready,
+      app.platform_local_account_runtime_schema_readiness_v1() AS local_account_ready
+  `;
+  assert.deepEqual(
+    state,
+    {
+      tenants: tenantIds.length,
+      authorization_states: tenantIds.length,
+      system_principals: tenantIds.length,
+      principal_catalog_ready: true,
+      local_account_ready: true,
+    },
+    label,
+  );
+}
+
 async function seedFixture(
   transaction: postgres.TransactionSql,
   fixture: SAMLFixture,
@@ -361,6 +401,10 @@ async function seedFixture(
   const requestSnapshot = {
     samlSession: { materialId: fixture.material },
   };
+  // Tenant initialization is ordinary even when the caller installs a stored
+  // SAML graph below. Its authorization-state trigger creates the protected,
+  // non-login SLA principal; replica mode must not suppress that bootstrap.
+  await transaction.unsafe("SET LOCAL session_replication_role = origin");
   await transaction`
     INSERT INTO public.tenants (id, slug, name)
     VALUES (
@@ -385,6 +429,12 @@ async function seedFixture(
       'tenant_admin','active',${now},${now}
     )
   `;
+  await transaction`
+    SELECT app.seed_tenant_authorization(${fixture.tenant}::uuid,${fixture.membership}::uuid)
+  `;
+  // Only the pre-existing synthetic SAML lineage uses the privileged fixture
+  // mode. All tested authentication, revalidation and logout calls remain normal.
+  await transaction.unsafe("SET LOCAL session_replication_role = replica");
   await transaction`
     INSERT INTO public.tenant_federated_provider_policies (
       tenant_id,provider_id,binding_id,provider_kind,
@@ -1837,10 +1887,14 @@ try {
   });
 
   const [ready] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(ready, { ready: true });
   await assertSAMLDataInvariants("seeded SAML material lineage");
+  await assertTenantInitialization(
+    [marker.tenant, envelope.tenant, localEnvelope.tenant, lineage.tenant],
+    "stored SAML graphs preserve normal tenant initialization",
+  );
 
   await serially(
     ["tenant_saml_session_materials", "tenant_saml_logout_commands"],
@@ -2082,7 +2136,7 @@ try {
     `;
   });
   const [afterRotation] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(afterRotation, { ready: true });
   await assertSAMLDataInvariants("rotation retains the original material ID");
@@ -2117,7 +2171,7 @@ try {
     `;
   });
   const [afterStepUp] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(afterStepUp, { ready: true });
   await assertSAMLDataInvariants(
@@ -2179,7 +2233,7 @@ try {
     `;
   });
   const [afterPromotion] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(afterPromotion, { ready: true });
   await assertSAMLDataInvariants("promotion retains the original material ID");
@@ -2199,7 +2253,7 @@ try {
     `;
   });
   const [ambiguousLegacy] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(ambiguousLegacy, { ready: true });
   await assertSAMLDataInvariants("orphaned legacy material is detected", {
@@ -2219,7 +2273,7 @@ try {
     `;
   });
   const [driftedApplication] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(driftedApplication, { ready: true });
   await assertSAMLDataInvariants("application material ID drift is detected", {
@@ -2237,7 +2291,7 @@ try {
     `;
   });
   const [restoredReadiness] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(restoredReadiness, { ready: true });
   await assertSAMLDataInvariants("application material ID restored");
@@ -2271,7 +2325,7 @@ try {
         `CREATE TRIGGER ${trigger.name} BEFORE ${trigger.events} ON public.tenants FOR EACH ROW EXECUTE FUNCTION ${trigger.functionName}`,
       );
       const [spoofed] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v52() AS ready
     `;
       assert.deepEqual(spoofed, { ready: false });
       await sql.unsafe(`DROP TRIGGER ${trigger.name} ON public.tenants`);
@@ -2285,7 +2339,7 @@ try {
         `CREATE TRIGGER ${trigger.name} BEFORE ${trigger.events} ON public.${trigger.relation} FOR EACH ROW WHEN (false) EXECUTE FUNCTION ${trigger.functionName}`,
       );
       const [conditional] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v52() AS ready
     `;
       assert.deepEqual(conditional, { ready: false });
       await sql.unsafe(
@@ -2297,7 +2351,7 @@ try {
     },
   );
   const [exactTriggersRestored] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(exactTriggersRestored, { ready: true });
 
@@ -2343,12 +2397,12 @@ try {
     async (unexpectedGrant) => {
       await sql.unsafe(unexpectedGrant.grant);
       const [overGranted] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v52() AS ready
     `;
       assert.deepEqual(overGranted, { ready: false });
       await sql.unsafe(unexpectedGrant.revoke);
       const [grantRevoked] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v51() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v52() AS ready
     `;
       assert.deepEqual(grantRevoked, { ready: true });
     },
@@ -2416,6 +2470,18 @@ try {
     `;
   });
   await serially(upstreamFixtures, verifyUpstreamLogout);
+  await assertTenantInitialization(
+    [
+      marker.tenant,
+      envelope.tenant,
+      localEnvelope.tenant,
+      lineage.tenant,
+      ...upstreamFixtures
+        .filter((fixture) => fixture.origin !== "platform_provider")
+        .map((fixture) => fixture.tenant),
+    ],
+    "all three upstream SAML origins preserve normal tenant initialization",
+  );
 } finally {
   await sql.end();
 }

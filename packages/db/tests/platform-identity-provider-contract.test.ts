@@ -153,25 +153,29 @@ describe("platform identity-provider database contract", () => {
         /pg_catalog\.encode\(\s*pg_catalog\.sha256\(pg_catalog\.convert_to\(function\.prosrc, 'UTF8'\)\),\s*'hex'\s*\)/u,
       );
       for (const currentRoot of [
+        "app.schema_compatibility_v52()",
         "app.schema_compatibility_v51()",
+        "app.schema_compatibility_v50()",
         "app.schema_compatibility_v49()",
         "app.private_v47_migration_convergence_schema_readiness_v1()",
-        "app.private_schema_compatibility_journal_v51()",
-        "app.private_release_runtime_dependency_surface_hash_v51()",
-        "app.private_release_runtime_schema_readiness_v51()",
-        "app.release_runtime_schema_readiness_v51()",
+        "app.private_schema_compatibility_journal_v52()",
+        "app.private_release_runtime_dependency_surface_hash_v52()",
+        "app.private_release_runtime_schema_readiness_v52()",
+        "app.release_runtime_schema_readiness_v52()",
         "app.private_rotate_sla_readiness_v48()",
       ]) {
         expect(healthSource).toContain(currentRoot);
       }
       for (const currentSourceHash of [
-        "expectedSchemaCompatibilityV51SourceHash",
+        "expectedSchemaCompatibilityV52SourceHash",
+        "expectedRetiredSchemaCompatibilityV51SourceHash",
+        "expectedRetiredSchemaCompatibilityV50SourceHash",
         "expectedRetiredSchemaCompatibilityV49SourceHash",
         "expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash",
-        "expectedPrivateSchemaCompatibilityJournalV51SourceHash",
-        "expectedPrivateReleaseRuntimeDependencySurfaceHashV51SourceHash",
-        "expectedPrivateReleaseRuntimeReadinessV51SourceHash",
-        "expectedReleaseRuntimeReadinessV51SourceHash",
+        "expectedPrivateSchemaCompatibilityJournalV52SourceHash",
+        "expectedPrivateReleaseRuntimeDependencySurfaceHashV52SourceHash",
+        "expectedPrivateReleaseRuntimeReadinessV52SourceHash",
+        "expectedReleaseRuntimeReadinessV52SourceHash",
         "expectedPrivateRotateSLAReadinessV48SourceHash",
       ]) {
         expect(healthSource).toContain(currentSourceHash);

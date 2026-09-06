@@ -21,7 +21,7 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 		mutate    func(*stubSchemaRow)
 		wantReady bool
 	}{
-		{name: "exact v51 state", wantReady: true},
+		{name: "exact v52 state", wantReady: true},
 		{name: "identity keyring mismatch", mutate: func(row *stubSchemaRow) {
 			row.keyringReady = false
 		}},
@@ -59,6 +59,18 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 		{name: "retired v50 source tampered", mutate: func(row *stubSchemaRow) {
 			row.sourceHashes[12] = "unexpected"
 		}},
+		{name: "retired v51 source removed", mutate: func(row *stubSchemaRow) {
+			row.sourceHashes = slices.Delete(row.sourceHashes, 13, 14)
+		}},
+		{name: "retired v51 source tampered", mutate: func(row *stubSchemaRow) {
+			row.sourceHashes[13] = "unexpected"
+		}},
+		{name: "worker aggregate source removed", mutate: func(row *stubSchemaRow) {
+			row.sourceHashes = slices.Delete(row.sourceHashes, 14, 15)
+		}},
+		{name: "worker aggregate source tampered despite all-true readiness", mutate: func(row *stubSchemaRow) {
+			row.sourceHashes[14] = "unexpected"
+		}},
 		{name: "trusted function catalog drift", mutate: func(row *stubSchemaRow) {
 			row.catalogReady = false
 		}},
@@ -81,7 +93,7 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 	}
 }
 
-func TestHealthCheckerRequiresEveryV51RuntimeAndTrustedRoot(t *testing.T) {
+func TestHealthCheckerRequiresEveryV52RuntimeAndTrustedRoot(t *testing.T) {
 	for index := range 5 {
 		t.Run(fmt.Sprintf("runtime_%02d", index+1), func(t *testing.T) {
 			row := exactStubSchemaRow()
@@ -125,18 +137,28 @@ func TestHealthCheckerPassesKeyringEvidenceAndExpectedMigrationFingerprint(t *te
 	}
 }
 
-func TestSchemaCompatibilityQuerySealsV51TrustedSet(t *testing.T) {
-	if len(expectedTrustedFunctionSourceHashes) != 13 {
-		t.Fatalf("trusted source hash count = %d, want 13", len(expectedTrustedFunctionSourceHashes))
+func TestSchemaCompatibilityQuerySealsV52TrustedSet(t *testing.T) {
+	if len(expectedTrustedFunctionSourceHashes) != 15 {
+		t.Fatalf("trusted source hash count = %d, want 15", len(expectedTrustedFunctionSourceHashes))
 	}
 	if expectedTrustedFunctionSourceHashes[12] != expectedRetiredSchemaCompatibilityV50SourceHash {
 		t.Fatal("retired v50 root is not bound to its exact generated source hash")
 	}
+	if expectedTrustedFunctionSourceHashes[13] != expectedRetiredSchemaCompatibilityV51SourceHash {
+		t.Fatal("retired v51 root is not bound to its exact generated source hash")
+	}
+	if expectedTrustedFunctionSourceHashes[14] != expectedWorkerRuntimeReadinessV52SourceHash {
+		t.Fatal("worker aggregate is not bound to its exact generated source hash")
+	}
 	for _, required := range []string{
-		"from app.schema_compatibility_v51()",
+		"from app.schema_compatibility_v52()",
 		"'app.schema_compatibility_fingerprint=' || $4::text",
 		"(2, 'retired', 'app.schema_compatibility_v49()'",
 		"(13, 'retired_v50', 'app.schema_compatibility_v50()'",
+		"(14, 'retired_v51', 'app.schema_compatibility_v51()'",
+		"(15, 'worker_aggregate', 'app.worker_runtime_schema_readiness_v52()'",
+		"app.worker_runtime_schema_readiness_v52() AS array",
+		"'boolean[]', " + trustedWorkerACL,
 		"'app.schema_compatibility_fingerprint=RETIRED'",
 		"'journal'",
 		"'latest_rows',",
@@ -150,7 +172,7 @@ func TestSchemaCompatibilityQuerySealsV51TrustedSet(t *testing.T) {
 		"function.provariadic = 0",
 		"function.prosupport = 0",
 		"function.proretset = (expected.function_key in (",
-		"'compatibility', 'retired', 'retired_v50', 'journal'",
+		"'compatibility', 'retired', 'retired_v50', 'retired_v51', 'journal'",
 		"function.procost = 100::real",
 		"function.prorows = case when function.proretset",
 		"function.protrftypes is null",
@@ -171,13 +193,13 @@ func TestSchemaCompatibilityQuerySealsV51TrustedSet(t *testing.T) {
 		"function_acl.privilege_type = 'EXECUTE'",
 		"not function_acl.is_grantable",
 		"array_agg(source_hash order by ordinal)",
-		"count(*) = 13 and coalesce(bool_and(catalog_ready), false)",
+		"count(*) = 15 and coalesce(bool_and(catalog_ready), false)",
 		trustedWorkerACL,
 		trustedSLARotationACL,
-		"app.sla_trigger_action_runtime_schema_readiness_v51()",
-		"app.sla_object_event_ingress_schema_readiness_v51()",
-		"app.ticket_bulk_runtime_schema_readiness_v51()",
-		"app.ticket_export_runtime_schema_readiness_v51()",
+		"app.sla_trigger_action_runtime_schema_readiness_v52()",
+		"app.sla_object_event_ingress_schema_readiness_v52()",
+		"app.ticket_bulk_runtime_schema_readiness_v52()",
+		"app.ticket_export_runtime_schema_readiness_v52()",
 		"app.private_rotate_sla_readiness_v48()",
 	} {
 		if !strings.Contains(schemaCompatibilityQuery, required) {
@@ -190,11 +212,11 @@ func TestSchemaCompatibilityQuerySealsV51TrustedSet(t *testing.T) {
 	if got := strings.Count(schemaCompatibilityQuery, trustedReleaseACL); got != 1 {
 		t.Fatalf("release trusted-root ACL count = %d, want 1", got)
 	}
-	if got := strings.Count(schemaCompatibilityQuery, trustedOwnerACL); got != 6 {
-		t.Fatalf("owner-only trusted-root ACL count = %d, want 6", got)
+	if got := strings.Count(schemaCompatibilityQuery, trustedOwnerACL); got != 7 {
+		t.Fatalf("owner-only trusted-root ACL count = %d, want 7", got)
 	}
-	if got := strings.Count(schemaCompatibilityQuery, trustedWorkerACL); got != 2 {
-		t.Fatalf("worker trusted-root ACL count = %d, want 2", got)
+	if got := strings.Count(schemaCompatibilityQuery, trustedWorkerACL); got != 3 {
+		t.Fatalf("worker trusted-root ACL count = %d, want 3", got)
 	}
 	if got := strings.Count(schemaCompatibilityQuery, trustedSLARotationACL); got != 1 {
 		t.Fatalf("SLA rotation trusted-root ACL count = %d, want 1", got)
@@ -206,16 +228,18 @@ func TestSchemaCompatibilityQuerySealsV51TrustedSet(t *testing.T) {
 	}{
 		{"app.schema_compatibility_v49()", 1},
 		{"app.schema_compatibility_v50()", 1},
-		{"app.schema_compatibility_v51()", 2},
+		{"app.schema_compatibility_v51()", 1},
+		{"app.schema_compatibility_v52()", 2},
+		{"app.worker_runtime_schema_readiness_v52()", 2},
 		{"app.private_v47_migration_convergence_schema_readiness_v1()", 1},
-		{"app.private_schema_compatibility_journal_v51()", 1},
-		{"app.private_release_runtime_dependency_surface_hash_v51()", 1},
-		{"app.private_release_runtime_schema_readiness_v51()", 1},
-		{"app.release_runtime_schema_readiness_v51()", 2},
-		{"app.sla_trigger_action_runtime_schema_readiness_v51()", 2},
-		{"app.sla_object_event_ingress_schema_readiness_v51()", 2},
-		{"app.ticket_bulk_runtime_schema_readiness_v51()", 2},
-		{"app.ticket_export_runtime_schema_readiness_v51()", 2},
+		{"app.private_schema_compatibility_journal_v52()", 1},
+		{"app.private_release_runtime_dependency_surface_hash_v52()", 1},
+		{"app.private_release_runtime_schema_readiness_v52()", 1},
+		{"app.release_runtime_schema_readiness_v52()", 1},
+		{"app.sla_trigger_action_runtime_schema_readiness_v52()", 1},
+		{"app.sla_object_event_ingress_schema_readiness_v52()", 1},
+		{"app.ticket_bulk_runtime_schema_readiness_v52()", 1},
+		{"app.ticket_export_runtime_schema_readiness_v52()", 1},
 		{"app.private_rotate_sla_readiness_v48()", 1},
 	}
 	for _, root := range roots {
@@ -228,6 +252,9 @@ func TestSchemaCompatibilityQuerySealsV51TrustedSet(t *testing.T) {
 	}
 	if strings.Contains(schemaCompatibilityQuery, "from app.schema_compatibility_v50()") {
 		t.Fatal("health query directly calls retired schema compatibility v50")
+	}
+	if strings.Contains(schemaCompatibilityQuery, "from app.schema_compatibility_v51()") {
+		t.Fatal("health query directly calls retired schema compatibility v51")
 	}
 	for _, stale := range []string{
 		"app.platform_identity_runtime_schema_readiness_v13()",

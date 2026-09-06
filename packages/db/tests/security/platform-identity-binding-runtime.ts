@@ -6,29 +6,36 @@ import { resolve } from "node:path";
 import postgres, { type Sql } from "postgres";
 
 import {
-  expectedFederatedAuthenticationReadinessV51SourceHash,
+  expectedAPIRuntimeReadinessV52SourceHash,
+  expectedFederatedAuthenticationReadinessV52SourceHash,
   expectedMigrationCount,
   expectedMigrationCreatedAt,
   expectedMigrationFingerprint,
   expectedMigrationHash,
-  expectedPlatformLocalAccountRuntimeReadinessV51SourceHash,
-  expectedPlatformOIDCDirectRuntimeReadinessV51SourceHash,
-  expectedPlatformSAMLDirectRuntimeReadinessV51SourceHash,
-  expectedPrivateReleaseRuntimeDependencySurfaceHashV51SourceHash,
-  expectedPrivateReleaseRuntimeReadinessV51SourceHash,
+  expectedPlatformLocalAccountRuntimeReadinessV52SourceHash,
+  expectedPlatformOIDCDirectRuntimeReadinessV52SourceHash,
+  expectedPlatformSAMLDirectRuntimeReadinessV52SourceHash,
+  expectedPrivateReleaseRuntimeDependencySurfaceHashV52SourceHash,
+  expectedPrivateReleaseRuntimeReadinessV52SourceHash,
   expectedPrivateRotateSLAReadinessV48SourceHash,
-  expectedPrivateSchemaCompatibilityJournalV51SourceHash,
+  expectedPrivateSchemaCompatibilityJournalV52SourceHash,
   expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash,
-  expectedReleaseRuntimeReadinessV51SourceHash,
+  expectedReleaseRuntimeReadinessV52SourceHash,
   expectedRetiredSchemaCompatibilityV49SourceHash,
   expectedRetiredSchemaCompatibilityV50SourceHash,
-  expectedSchemaCompatibilityV51SourceHash,
-  expectedSLAObjectEventIngressReadinessV51SourceHash,
-  expectedSLATriggerActionRuntimeReadinessV51SourceHash,
-  expectedTicketBulkRuntimeReadinessV51SourceHash,
-  expectedTicketExportRuntimeReadinessV51SourceHash,
-  expectedTicketMetadataRuntimeReadinessV51SourceHash,
+  expectedRetiredSchemaCompatibilityV51SourceHash,
+  expectedSchemaCompatibilityV52SourceHash,
+  expectedSLAObjectEventIngressReadinessV52SourceHash,
+  expectedSLATriggerActionRuntimeReadinessV52SourceHash,
+  expectedTicketBulkRuntimeReadinessV52SourceHash,
+  expectedTicketExportRuntimeReadinessV52SourceHash,
+  expectedTicketMetadataRuntimeReadinessV52SourceHash,
+  expectedWorkerRuntimeReadinessV52SourceHash,
 } from "../../src/admin/schema-compatibility-manifest.gen.js";
+import {
+  assertServiceReadinessAggregation,
+  type ServiceReadinessHealthRow as LiveHealthRow,
+} from "../helpers/service-readiness-aggregation.js";
 
 type ErrorWithCode = Error & { code?: string };
 type RuntimeRole = "periapsis_api" | "periapsis_worker";
@@ -39,46 +46,39 @@ type BindingReceipt = {
   replayed: boolean;
   document: Projection;
 };
-type LiveHealthRow = {
-  applied_count: number | string;
-  latest_created_at: number | string;
-  latest_hash: string;
-  migration_fingerprint: string;
-  array: boolean[];
-  source_hashes: string[];
-  catalog_ready: boolean;
-  verify_identity_keyring_v3?: boolean;
-};
-
 const commonHealthSourceHashes = [
-  expectedSchemaCompatibilityV51SourceHash,
+  expectedSchemaCompatibilityV52SourceHash,
   expectedRetiredSchemaCompatibilityV49SourceHash,
   expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash,
-  expectedPrivateSchemaCompatibilityJournalV51SourceHash,
-  expectedPrivateReleaseRuntimeDependencySurfaceHashV51SourceHash,
-  expectedPrivateReleaseRuntimeReadinessV51SourceHash,
-  expectedReleaseRuntimeReadinessV51SourceHash,
+  expectedPrivateSchemaCompatibilityJournalV52SourceHash,
+  expectedPrivateReleaseRuntimeDependencySurfaceHashV52SourceHash,
+  expectedPrivateReleaseRuntimeReadinessV52SourceHash,
+  expectedReleaseRuntimeReadinessV52SourceHash,
 ] as const;
 const apiHealthSourceHashes = [
   ...commonHealthSourceHashes,
-  expectedFederatedAuthenticationReadinessV51SourceHash,
-  expectedPlatformOIDCDirectRuntimeReadinessV51SourceHash,
-  expectedPlatformSAMLDirectRuntimeReadinessV51SourceHash,
-  expectedPlatformLocalAccountRuntimeReadinessV51SourceHash,
-  expectedTicketBulkRuntimeReadinessV51SourceHash,
-  expectedTicketExportRuntimeReadinessV51SourceHash,
-  expectedTicketMetadataRuntimeReadinessV51SourceHash,
+  expectedFederatedAuthenticationReadinessV52SourceHash,
+  expectedPlatformOIDCDirectRuntimeReadinessV52SourceHash,
+  expectedPlatformSAMLDirectRuntimeReadinessV52SourceHash,
+  expectedPlatformLocalAccountRuntimeReadinessV52SourceHash,
+  expectedTicketBulkRuntimeReadinessV52SourceHash,
+  expectedTicketExportRuntimeReadinessV52SourceHash,
+  expectedTicketMetadataRuntimeReadinessV52SourceHash,
   expectedPrivateRotateSLAReadinessV48SourceHash,
   expectedRetiredSchemaCompatibilityV50SourceHash,
+  expectedRetiredSchemaCompatibilityV51SourceHash,
+  expectedAPIRuntimeReadinessV52SourceHash,
 ] as const;
 const workerHealthSourceHashes = [
   ...commonHealthSourceHashes,
-  expectedSLATriggerActionRuntimeReadinessV51SourceHash,
-  expectedSLAObjectEventIngressReadinessV51SourceHash,
-  expectedTicketBulkRuntimeReadinessV51SourceHash,
-  expectedTicketExportRuntimeReadinessV51SourceHash,
+  expectedSLATriggerActionRuntimeReadinessV52SourceHash,
+  expectedSLAObjectEventIngressReadinessV52SourceHash,
+  expectedTicketBulkRuntimeReadinessV52SourceHash,
+  expectedTicketExportRuntimeReadinessV52SourceHash,
   expectedPrivateRotateSLAReadinessV48SourceHash,
   expectedRetiredSchemaCompatibilityV50SourceHash,
+  expectedRetiredSchemaCompatibilityV51SourceHash,
+  expectedWorkerRuntimeReadinessV52SourceHash,
 ] as const;
 type KeyringEvidenceRow = {
   key_version: number;
@@ -429,7 +429,7 @@ async function expectReadinessTamperRejected(
     admin.begin(async (transaction) => {
       await mutate(transaction);
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v51()
+        SELECT app.release_runtime_schema_readiness_v52()
                  AS ready
       `;
       assert.equal(
@@ -443,7 +443,7 @@ async function expectReadinessTamperRejected(
   );
 
   const [restored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v51() AS ready
+    SELECT app.release_runtime_schema_readiness_v52() AS ready
   `;
   assert.equal(restored?.ready, true);
 }
@@ -849,7 +849,7 @@ async function seedFixture(): Promise<void> {
 async function verifyCompatibilityAndAcl(): Promise<void> {
   const [compatibility] = await admin<
     {
-      v51: number;
+      v52: number;
       currentLatest: string;
       currentHash: string;
       currentFingerprint: string;
@@ -866,7 +866,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
     }[]
   >`
     SELECT
-      current.applied_count::integer AS v51,
+      current.applied_count::integer AS v52,
       current.latest_created_at::text AS "currentLatest",
       current.latest_hash AS "currentHash",
       current.migration_fingerprint AS "currentFingerprint",
@@ -878,14 +878,14 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
       legacy.latest_created_at::text AS "legacyLatest",
       legacy.latest_hash AS "legacyHash",
       legacy.migration_fingerprint AS "legacyFingerprint",
-      app.release_runtime_schema_readiness_v51() AS ready,
-      app.platform_oidc_direct_runtime_schema_readiness_v51() AS "oidcReady"
-    FROM app.schema_compatibility_v51() AS current
+      app.release_runtime_schema_readiness_v52() AS ready,
+      app.platform_oidc_direct_runtime_schema_readiness_v52() AS "oidcReady"
+    FROM app.schema_compatibility_v52() AS current
     CROSS JOIN app.schema_compatibility_v48() AS predecessor
     CROSS JOIN app.schema_compatibility_v40() AS legacy
   `;
   assert.deepEqual(compatibility, {
-    v51: expectedMigrationCount,
+    v52: expectedMigrationCount,
     currentLatest: String(expectedMigrationCreatedAt),
     currentHash: expectedMigrationHash,
     currentFingerprint: expectedMigrationFingerprint,
@@ -953,6 +953,26 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
     assertLiveHealthRow(result.rows[0], result.role);
   }
 
+  await assertServiceReadinessAggregation({
+    admin,
+    userId: fixture.operator,
+    api: {
+      query: apiHealthQuery,
+      parameters: [expectedMigrationFingerprint],
+      assertReady: (row) => assertLiveHealthRow(row, "periapsis_api"),
+    },
+    worker: {
+      query: workerHealthQuery,
+      parameters: [
+        workerKeyVersions,
+        postgresByteaArray(workerKeyVerifiers),
+        workerActiveKeyVersion,
+        expectedMigrationFingerprint,
+      ],
+      assertReady: (row) => assertLiveHealthRow(row, "periapsis_worker"),
+    },
+  });
+
   const rollbackReadinessProof = new Error("rollback readiness ACL proof");
   await assert.rejects(
     admin.begin(async (transaction) => {
@@ -962,7 +982,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
         FROM periapsis_api
       `;
       const [revoked] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v51() AS ready
+        SELECT app.release_runtime_schema_readiness_v52() AS ready
       `;
       assert.equal(revoked?.ready, false);
       throw rollbackReadinessProof;
@@ -970,7 +990,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
     (error: unknown) => error === rollbackReadinessProof,
   );
   const [restoredReadiness] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v51() AS ready
+    SELECT app.release_runtime_schema_readiness_v52() AS ready
   `;
   assert.equal(restoredReadiness?.ready, true);
 
@@ -1134,7 +1154,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
         DROP CONSTRAINT tenant_auth_provider_login_keys_pkey
       `;
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v51() AS ready
+        SELECT app.release_runtime_schema_readiness_v52() AS ready
       `;
       assert.equal(tampered?.ready, false);
       throw rollbackKeyProof;
@@ -1142,7 +1162,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
     (error: unknown) => error === rollbackKeyProof,
   );
   const [restoredKeyReadiness] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v51() AS ready
+    SELECT app.release_runtime_schema_readiness_v52() AS ready
   `;
   assert.equal(restoredKeyReadiness?.ready, true);
 
@@ -1156,7 +1176,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
         SET UNLOGGED
       `;
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v51() AS ready
+        SELECT app.release_runtime_schema_readiness_v52() AS ready
       `;
       assert.equal(tampered?.ready, false);
       throw rollbackPersistenceProof;
@@ -1164,7 +1184,7 @@ async function verifyCompatibilityAndAcl(): Promise<void> {
     (error: unknown) => error === rollbackPersistenceProof,
   );
   const [restoredPersistenceReadiness] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v51() AS ready
+    SELECT app.release_runtime_schema_readiness_v52() AS ready
   `;
   assert.equal(restoredPersistenceReadiness?.ready, true);
 
@@ -2285,7 +2305,7 @@ async function verifyEpochLedgerAndAudit(): Promise<void> {
     SELECT
       (SELECT count(*)::integer
        FROM public.tenant_platform_identity_provider_access_epochs) AS epochs,
-      app.release_runtime_schema_readiness_v51() AS ready
+      app.release_runtime_schema_readiness_v52() AS ready
   `;
   assert.deepEqual(finalState, {
     epochs: 0,

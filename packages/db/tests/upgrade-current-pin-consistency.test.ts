@@ -70,6 +70,35 @@ function upgradeSources(): [string, string][] {
     });
 }
 
+function currentReleaseVersion(): string {
+  const tag = manifest.expectedMigrations.at(-1)?.tag;
+  const version = /^\d{4}_v(\d+)_compatibility$/u.exec(tag ?? "")?.[1];
+  assert(
+    version !== undefined,
+    "current journal must end at a named release seal",
+  );
+  return version;
+}
+
+function requiredCurrentSQLPins(
+  source: string,
+  names: readonly string[],
+): string[] {
+  const version = currentReleaseVersion();
+  return names.filter((name) => !source.includes(`app.${name}_v${version}()`));
+}
+
+function sourceHashIdentifiers(body: string): string[] {
+  const identifiers = body
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  for (const name of identifiers) {
+    assert.match(name, /^expected[A-Za-z0-9]+SourceHash$/u);
+  }
+  return identifiers;
+}
+
 describe("upgrade current-manifest pin consistency", () => {
   it("recomputes the generated current manifest from every canonical migration byte", () => {
     const value: unknown = JSON.parse(
@@ -116,9 +145,9 @@ describe("upgrade current-manifest pin consistency", () => {
     ).toBe(manifest.expectedMigrationFingerprint);
   });
 
-  it("keeps all 21 upgrade suites aligned with generated current pins", () => {
+  it("keeps all 22 upgrade suites aligned with generated current pins", () => {
     const sources = upgradeSources();
-    expect(sources).toHaveLength(21);
+    expect(sources).toHaveLength(22);
     const workflow = readFileSync(
       resolve(packageRoot, "../../.github/workflows/ci.yml"),
       "utf8",
@@ -130,6 +159,99 @@ describe("upgrade current-manifest pin consistency", () => {
       );
     });
     expect(problems).toEqual([]);
+  });
+
+  it("keeps current-serving upgrade SQL separate from immutable predecessor probes", () => {
+    const currentConsumers = [
+      "federated-authentication",
+      "platform-identity-account-observation",
+      "identity-mfa",
+      "platform-tenant-lifecycle",
+      "saml-session-material-id",
+      "saved-ticket-views",
+      "sla-queue-metrics",
+      "tenant-provider-mfa-continuation",
+      "ticket-query-projections",
+    ];
+    for (const name of currentConsumers) {
+      const source = readFileSync(
+        resolve(packageRoot, `tests/security/${name}-upgrade.ts`),
+        "utf8",
+      );
+      const required = ["release_runtime_schema_readiness"];
+      if (name === "tenant-provider-mfa-continuation") {
+        required.push(
+          "private_release_runtime_schema_readiness",
+          "private_release_runtime_dependency_surface_hash",
+        );
+      } else {
+        required.push("schema_compatibility");
+      }
+      expect(requiredCurrentSQLPins(source, required), name).toEqual([]);
+      const stale = source.replaceAll(
+        `_v${currentReleaseVersion()}()`,
+        "_v0()",
+      );
+      expect(
+        requiredCurrentSQLPins(stale, required),
+        `${name} negative control`,
+      ).toEqual(required);
+    }
+  });
+
+  it("keeps the real binding fixture's ordered hash arrays and projection aligned with serving Go SQL", () => {
+    const fixture = readFileSync(
+      resolve(
+        packageRoot,
+        "tests/security/platform-identity-binding-runtime.ts",
+      ),
+      "utf8",
+    );
+    const common =
+      /const commonHealthSourceHashes = \[([\s\S]*?)\] as const;/u.exec(
+        fixture,
+      )?.[1];
+    assert(common !== undefined);
+    const commonHashes = sourceHashIdentifiers(common);
+    for (const [service, count, aggregate] of [
+      ["api", 18, "APIRuntimeReadiness"],
+      ["worker", 15, "WorkerRuntimeReadiness"],
+    ] as const) {
+      const body = new RegExp(
+        `const ${service}HealthSourceHashes = \\[([\\s\\S]*?)\\] as const;`,
+        "u",
+      ).exec(fixture)?.[1];
+      assert(body !== undefined);
+      assert.equal(body.match(/\.\.\.commonHealthSourceHashes/gu)?.length, 1);
+      const fixtureHashes = sourceHashIdentifiers(
+        body.replace("...commonHealthSourceHashes", commonHashes.join(",")),
+      );
+      const go = readFileSync(
+        resolve(
+          packageRoot,
+          `../../services/${service}/internal/postgres/health.go`,
+        ),
+        "utf8",
+      );
+      const goBody =
+        /var expectedTrustedFunctionSourceHashes = \[\.\.\.\]string\{([\s\S]*?)\}/u.exec(
+          go,
+        )?.[1];
+      assert(goBody !== undefined);
+      expect(fixtureHashes).toEqual(sourceHashIdentifiers(goBody));
+      expect(fixtureHashes).toHaveLength(count);
+      expect(fixtureHashes.slice(-2)).toEqual([
+        "expectedRetiredSchemaCompatibilityV51SourceHash",
+        `expected${aggregate}V${currentReleaseVersion()}SourceHash`,
+      ]);
+      expect(go).toContain(
+        `app.${service}_runtime_schema_readiness_v${currentReleaseVersion()}() AS array`,
+      );
+    }
+    expect(fixture).toContain(
+      'assert.equal(row.array.length, role === "periapsis_api" ? 8 : 5)',
+    );
+    expect(fixture).toContain('"verify_identity_keyring_v3"');
   });
 
   it("distinguishes current drift from intentional immutable historical prefixes", () => {

@@ -29,6 +29,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import {
+  memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -81,6 +83,27 @@ const emptyDraft = (): Draft => ({
   visibility: "public",
 });
 
+type MentionSelectionChange = (membershipId: string, checked: boolean) => void;
+
+function withMentionSelection(
+  current: Draft,
+  membershipId: string,
+  checked: boolean,
+): Draft {
+  const mentionedMembershipIds = new Set(current.mentionedMembershipIds);
+  if (checked) {
+    if (
+      mentionedMembershipIds.size < 50 ||
+      mentionedMembershipIds.has(membershipId)
+    ) {
+      mentionedMembershipIds.add(membershipId);
+    }
+  } else {
+    mentionedMembershipIds.delete(membershipId);
+  }
+  return { ...current, mentionedMembershipIds };
+}
+
 export function TicketCommentPanel({
   kind,
   projection,
@@ -115,6 +138,24 @@ export function TicketCommentPanel({
   const attemptRef = useRef<IdempotencyReference["current"]>(null);
   const editAttemptRef = useRef<IdempotencyReference["current"]>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const changeMention = useCallback<MentionSelectionChange>(
+    (membershipId, checked) => {
+      setDraft((current) =>
+        withMentionSelection(current, membershipId, checked),
+      );
+      setPreview(null);
+    },
+    [],
+  );
+  const changeEditMention = useCallback<MentionSelectionChange>(
+    (membershipId, checked) => {
+      setEditDraft((current) =>
+        withMentionSelection(current, membershipId, checked),
+      );
+      setEditPreview(null);
+    },
+    [],
+  );
   const ticketReadPermission = `${kind}.read` as TenantPermissionKey;
   const readPermission = `${kind}.comment.read` as TenantPermissionKey;
   const publicPermission = `${kind}.comment.public` as TenantPermissionKey;
@@ -520,13 +561,7 @@ export function TicketCommentPanel({
               <MentionPicker
                 candidates={candidates.data ?? []}
                 selected={draft.mentionedMembershipIds}
-                onChange={(mentionedMembershipIds) => {
-                  setDraft((current) => ({
-                    ...current,
-                    mentionedMembershipIds,
-                  }));
-                  setPreview(null);
-                }}
+                onChange={changeMention}
               />
             </>
           ) : preview ? (
@@ -662,13 +697,7 @@ export function TicketCommentPanel({
               <MentionPicker
                 candidates={candidates.data ?? []}
                 selected={editDraft.mentionedMembershipIds}
-                onChange={(mentionedMembershipIds) => {
-                  setEditDraft((current) => ({
-                    ...current,
-                    mentionedMembershipIds,
-                  }));
-                  setEditPreview(null);
-                }}
+                onChange={changeEditMention}
               />
               {editPreview ? <CommentPreview preview={editPreview} /> : null}
               <div>
@@ -828,7 +857,7 @@ function MentionPicker({
   selected,
 }: {
   candidates: Array<{ displayName: string; membershipId: string }>;
-  onChange: (value: Set<string>) => void;
+  onChange: MentionSelectionChange;
   selected: Set<string>;
 }): React.JSX.Element {
   if (candidates.length === 0) return <p>No eligible operator mentions.</p>;
@@ -837,24 +866,14 @@ function MentionPicker({
     <fieldset>
       <legend>Mention ticket operators</legend>
       {candidates.map((candidate) => (
-        <label key={candidate.membershipId}>
-          <Checkbox
-            checked={selected.has(candidate.membershipId)}
-            disabled={limitReached && !selected.has(candidate.membershipId)}
-            onCheckedChange={(checked) => {
-              const next = new Set(selected);
-              if (checked === true) {
-                if (next.size < 50 || next.has(candidate.membershipId)) {
-                  next.add(candidate.membershipId);
-                }
-              } else {
-                next.delete(candidate.membershipId);
-              }
-              onChange(next);
-            }}
-          />
-          {candidate.displayName}
-        </label>
+        <MentionCandidate
+          key={candidate.membershipId}
+          membershipId={candidate.membershipId}
+          displayName={candidate.displayName}
+          checked={selected.has(candidate.membershipId)}
+          disabled={limitReached && !selected.has(candidate.membershipId)}
+          onChange={onChange}
+        />
       ))}
       {limitReached ? (
         <small role="status">
@@ -864,6 +883,31 @@ function MentionPicker({
     </fieldset>
   );
 }
+
+const MentionCandidate = memo(function MentionCandidate({
+  membershipId,
+  displayName,
+  checked,
+  disabled,
+  onChange,
+}: {
+  membershipId: string;
+  displayName: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: MentionSelectionChange;
+}): React.JSX.Element {
+  return (
+    <label>
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(value) => onChange(membershipId, value === true)}
+      />
+      {displayName}
+    </label>
+  );
+});
 
 function CommentPreview({
   preview,

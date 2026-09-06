@@ -491,10 +491,40 @@ final-journal database gates and the remaining release boundaries.
       the new OpenLDAP adapter builds, then exits before TLS/LDAP readiness.
       Reports: `.tmp/ci-c429841-upgrades-pg-smtp.md` and
       `.tmp/ci-c429841-openldap-entrypoint-diagnosis.md`.
-      A read-only readiness design proposes service-specific probes which compute the
-      full catalog hash once, retaining every leaf, source and ACL check without caching.
-      This is not implemented: `.tmp/v51-readiness-dedup-design.md`. It requires new
-      forward migrations/sealing and real timeout/tamper/upgrade proofs.
+      At 857d477, all 21 actual upgrade paths and five application-image jobs pass again;
+      real Caddy CORS, OpenLDAP health and MinIO provisioning now pass. Keycloak exits,
+      and the Compose migration exit remains unattributed. The JS job records three 5s
+      timeouts (mentions and two custody-revision tests), PostgreSQL repeats 57014, and
+      Mailpit is skipped. The Keycloak realm-import filename is deterministically invalid
+      against its pinned upstream implementation; its target mount and redacted failure
+      diagnostics are corrected locally, without claiming the lost first exception.
+      Report: `.tmp/ci-857d477-terminal-and-idp-diagnostics.md`.
+      The mounted mention picker now memoizes individual rows with stable functional
+      callbacks. Real-checkbox instrumentation shows 2,601 to 102 renders for the unchanged
+      51-candidate/50-click test; two uninstrumented repeats and ten focused tests pass.
+      This does not establish a CI pass or resolve the separate custody timeouts.
+      Report: `.tmp/mention-picker-857d477-render-reduction.md`.
+      The readiness design in `.tmp/v51-readiness-dedup-design.md` is implemented in the
+      in-flight V52 candidate (0234 aggregates, 0235 seal, 236 journal entries), retaining
+      all leaves and independent source/ABI/ACL checks without caching or longer timeouts.
+      The real owned raw derivation produces nonzero digest 7782b810b281fefee6142a0be6bd1691a7fc66f90be197322c95755a658e5b9f;
+      both arrays remain false in the 235-entry/root-absent interval and unsealed236 state.
+      Normal sealed installation/provisioning and the complete V52 catalog/tamper suite
+      now pass on a separate owned cluster. The real V51-to-V52 upgrade, ordinary SAML
+      flow, migration restart and role provisioning also pass, with stable inputs and
+      cleanup. The SAML fixture initializes every tenant's ordinary authorization/SLA
+      principal before loading synthetic SAML rows; live readiness assertions remain intact.
+      Full local verification passes: DB663, web2158, notifier175 plus conditional Mailpit
+      skip, operations172 with actual Gitleaks and no operations skips, generated/build/Go
+      gates. Proofs and explicit boundaries are recorded in `docs/release-acceptance.md`.
+      The full58 PostgreSQL aggregate now passes too, including actual API/worker queries,
+      one catalog hash per successful query, unchanged10s limits, prepared tamper rejection,
+      both seed runs and seed audit. Sources/templates/roles remain pinned and both owned
+      clusters are stopped. The separate RLS/Go selection, all22 upgrade paths, exact
+      candidate CI and composed acceptance remain independent gates;
+      V51 evidence does not automatically certify V52. Read-only follow-up diagnosis
+      identifies redundant rendering of the shared 999-event custody history and loss of
+      unclassified migration-phase diagnostics; neither follow-up change is included here.
 
 ## Release evidence to obtain
 
