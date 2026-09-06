@@ -106,7 +106,7 @@ assert.equal(
   "d7db1d274a73068b9152b822082f8752d4fc30e9ddb675904cba1ce1b6cba40c",
 );
 assert.equal(expectedMigrationCount, 234);
-assert.equal(expectedMigrationCreatedAt, 1788650095675);
+assert.equal(expectedMigrationCreatedAt, 1788695899106);
 const predecessorFingerprint = expectedMigrations
   .slice(0, predecessorIndex + 1)
   .map((entry) => `${entry.createdAt}@${entry.hash}`)

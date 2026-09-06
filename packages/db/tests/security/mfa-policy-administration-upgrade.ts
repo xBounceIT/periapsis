@@ -70,7 +70,7 @@ const parsedJournal: unknown = JSON.parse(
 );
 assert(isJournal(parsedJournal));
 const journal = parsedJournal;
-assert.equal(journal.entries.length, 232);
+assert.equal(journal.entries.length, 234);
 assert.equal(expectedMigrationCount, 234);
 assert.equal(
   journal.entries[181]?.tag,

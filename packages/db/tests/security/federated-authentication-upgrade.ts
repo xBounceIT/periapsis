@@ -94,7 +94,7 @@ assert.equal(
   "211491eec9cf3e475db463fd815d31a98c2e80263e3c3957cf0eef7a5434a9d8",
 );
 assert.equal(expectedMigrationCount, 234);
-assert.equal(expectedMigrationCreatedAt, 1788650095675);
+assert.equal(expectedMigrationCreatedAt, 1788695899106);
 
 const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-federated-auth-rolling-0125-"),

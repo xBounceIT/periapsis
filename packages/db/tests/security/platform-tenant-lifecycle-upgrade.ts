@@ -108,7 +108,7 @@ assert.equal(
   "0f5a388806ac70eb58aa11782575b57ff66bc650df981b36fd3a065dfa713c6a",
 );
 assert.equal(expectedMigrationCount, 234);
-assert.equal(expectedMigrationCreatedAt, 1788650095675);
+assert.equal(expectedMigrationCreatedAt, 1788695899106);
 const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-tenant-lifecycle-rolling-0149-"),
 );
@@ -244,12 +244,12 @@ try {
   const appendedCreatedAt = expectedMigrations
     .slice(predecessorIndex + 1)
     .map((entry) => entry.createdAt);
-  assert.equal(appendedCreatedAt.length, 82);
+  assert.equal(appendedCreatedAt.length, 84);
   assert.deepEqual(
     appendedCreatedAt.slice(0, 5),
     [1787758674256, 1787758694313, 1787759373746, 1787852011539, 1787852085088],
   );
-  assert.equal(appendedCreatedAt.at(-1), 1788650095675);
+  assert.equal(appendedCreatedAt.at(-1), 1788695899106);
 
   const [compatibility] = await sql<
     {
