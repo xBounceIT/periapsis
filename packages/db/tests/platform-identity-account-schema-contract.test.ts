@@ -15,14 +15,6 @@ const runtimeSource = readFileSync(
   resolve(import.meta.dirname, "../src/schema/identity-platform-runtime.ts"),
   "utf8",
 );
-const packageManifest = readFileSync(
-  resolve(import.meta.dirname, "../package.json"),
-  "utf8",
-);
-const runtimeHarness = readFileSync(
-  resolve(import.meta.dirname, "security/platform-identity-account-runtime.ts"),
-  "utf8",
-);
 
 const columnNames = (
   table:
@@ -198,39 +190,5 @@ describe("platform identity-account canonical schema", () => {
     expect(commandSource).not.toMatch(
       /issuer|subjectCiphertext|subjectNonce|subjectDigest|keyVersion/u,
     );
-  });
-
-  it("keeps the focused PostgreSQL 18 account proof in the aggregate gate", () => {
-    expect(packageManifest).toContain(
-      '"test:security:platform-identity-accounts": "tsx tests/security/platform-identity-account-runtime.ts"',
-    );
-    expect(packageManifest).toContain(
-      "corepack pnpm run test:security:platform-identity-accounts",
-    );
-    for (const invariant of [
-      "platform_identity_account_commands",
-      "platform.identity_account.read",
-      "platform.identity_account.manage",
-      "missing persisted alias",
-      "changed issuer payload",
-      "exact replay advanced audit or account timestamps",
-      "exact replay after provider archive",
-      "exact replay after subject key retirement",
-      "platform identity account commands are immutable",
-      "subject_material_included",
-      "auth_session_tenant_platform_federated_provenance",
-      "compositeRepresentationValidator",
-      "observation changed the representation validator",
-      "user projection changed the representation validator",
-      "observation invalidated security provenance",
-      "tenant_post_primary_continuations",
-      "tenant_platform_federated_provider_access_grants",
-      "tenant_mfa_subjects",
-      "tenant.platform_identity_account.retired",
-      "platform.identity_account.retired",
-      "failed final audit append did not roll back dependent invalidation",
-    ]) {
-      expect(runtimeHarness).toContain(invariant);
-    }
   });
 });

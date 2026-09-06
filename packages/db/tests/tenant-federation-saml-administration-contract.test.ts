@@ -4,25 +4,12 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const packageRoot = resolve(import.meta.dirname, "..");
-const repositoryRoot = resolve(packageRoot, "../..");
 const migration = readFileSync(
   resolve(packageRoot, "migrations/0228_tenant_federation_administration.sql"),
   "utf8",
 );
 const auditGuard = readFileSync(
   resolve(packageRoot, "migrations/0103_crazy_scarlet_witch.sql"),
-  "utf8",
-);
-const runtime = readFileSync(
-  resolve(
-    packageRoot,
-    "tests/security/tenant-federation-administration-runtime.ts",
-  ),
-  "utf8",
-);
-const manifest = readFileSync(resolve(packageRoot, "package.json"), "utf8");
-const workflow = readFileSync(
-  resolve(repositoryRoot, ".github/workflows/ci.yml"),
   "utf8",
 );
 
@@ -185,26 +172,5 @@ describe("tenant SAML administration database contract", () => {
     expect(migration).toContain(
       "GRANT EXECUTE ON FUNCTION %s TO periapsis_api",
     );
-  });
-
-  it("keeps the SAML PostgreSQL proof in the isolated federation runtime gate", () => {
-    expect(manifest).toContain(
-      '"test:security:tenant-federation-administration": "tsx tests/security/tenant-federation-administration-runtime.ts"',
-    );
-    expect(workflow).toContain("periapsis_tenant_federation_admin");
-    expect(workflow).toContain(
-      "PERIAPSIS_TENANT_FEDERATION_ADMIN_TEST_DATABASE_URL:",
-    );
-    for (const proof of [
-      "prepare_tenant_saml_metadata_v1",
-      "replace_tenant_saml_metadata_v1",
-      "prepare_tenant_saml_sp_credential_v1",
-      "replace_tenant_saml_sp_credential_v1",
-      "clear_tenant_saml_sp_credential_v1",
-      "get_tenant_saml_sp_metadata_v1",
-      "rollback tenant SAML expired metadata probe",
-    ]) {
-      expect(runtime).toContain(proof);
-    }
   });
 });

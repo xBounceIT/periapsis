@@ -11,6 +11,22 @@ candidate state and the requirement-to-test map are in
 [`docs/release-acceptance.md`](docs/release-acceptance.md), including the completed
 final-journal database gates and the remaining release boundaries.
 
+## Test-suite pruning (2026-09-06)
+
+- [x] Remove 22 low-value cases: nine CSS/source presentation checks, one redundant
+      React-context probe, seven database fixture/test-source checks, two tests of
+      hardcoded transport stubs, and three inventories of live-test source strings.
+      Retain mounted credential/export behavior, HTTP boundaries, exact seed-wrapper
+      assertions, generated-fixture verification, security-suite wiring, real database
+      and browser scenarios, and crash-detecting fuzz targets. No production code changes.
+- [x] Complete three clean review cycles covering duplication, execution cost and
+      lost-coverage risks after preserving the exact seed match-rule assertion.
+- [x] Pass root `pnpm verify` on top of `2da01ba`: web 2,204, DB 656,
+      notifier 180, UI 2, contract checks, operations 187, generated drift, builds,
+      Go vet and uncached Go tests. Mailpit acceptance and the actual Gitleaks binary
+      control remain conditional skips; 11 existing OpenAPI warnings and the existing
+      Vite chunk-size warning remain. This does not rerun database/container acceptance.
+
 ## GitHub CodeQL remediation slice (2026-09-06)
 
 - [x] Triage all 25 open alerts against actual code/data flows. Implement CSS and

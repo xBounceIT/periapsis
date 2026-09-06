@@ -589,11 +589,3 @@ func TestApplicationHandlerRequiresLDAPAdministrationBoundary(t *testing.T) {
 		t.Fatalf("NewApplicationHandler() error = %v, want missing LDAP administration failure", err)
 	}
 }
-
-func TestTransportLDAPAdministrationStubIsFailClosed(t *testing.T) {
-	if _, err := (&transportLDAPAdministrationStub{}).ListBindings(
-		context.Background(), authorization.Actor{}, uuid.Nil, identityprovider.ListBindingsInput{},
-	); err != identityprovider.ErrUnavailable {
-		t.Fatalf("default LDAP administration stub error = %v", err)
-	}
-}

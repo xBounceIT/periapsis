@@ -33,10 +33,6 @@ const compatibility = migration(
   "0162_tenant_platform_identity_binding_compatibility.sql",
 );
 const lifecycle = migration("0164_platform_oidc_binding_lifecycle.sql");
-const packageSource = readFileSync(
-  resolve(packageRoot, "package.json"),
-  "utf8",
-);
 const generator = readFileSync(
   resolve(packageRoot, "../../scripts/generate-schema-compatibility.mjs"),
   "utf8",
@@ -437,19 +433,6 @@ describe("tenant platform identity binding database contract", () => {
     );
     expect(generator).toContain(
       'migration: "0162_tenant_platform_identity_binding_compatibility.sql"',
-    );
-  });
-
-  it("runs both platform-provider and binding harnesses in the aggregate gate", () => {
-    const aggregate =
-      packageSource.match(/"test:security":\s*"([^"]+)"/)?.[1] ?? "";
-    expect(aggregate).toContain("test:security:platform-identity-providers");
-    expect(aggregate).toContain("test:security:platform-identity-bindings");
-    expect(packageSource).toContain(
-      '"test:security:platform-identity-bindings": "tsx tests/security/platform-identity-binding-runtime.ts"',
-    );
-    expect(packageSource).toContain(
-      '"test:security:platform-identity-bindings-upgrade": "tsx tests/security/platform-identity-binding-upgrade.ts"',
     );
   });
 });

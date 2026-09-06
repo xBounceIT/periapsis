@@ -106,13 +106,6 @@ func (s *transportIdentityProviderStub) TestBind(ctx context.Context, actor auth
 	return identityprovider.TestResult{}, identityprovider.ErrUnavailable
 }
 
-func TestTransportIdentityProviderStubIsFailClosed(t *testing.T) {
-	t.Parallel()
-	if _, err := (&transportIdentityProviderStub{}).List(context.Background(), authorization.Actor{}, uuid.Nil, identityprovider.ListInput{}); err == nil {
-		t.Fatal("transport identity-provider test boundary failed open")
-	}
-}
-
 func TestTenantLDAPTransportWiresAllOperationsAndRedactsResponses(t *testing.T) {
 	tenantID := uuid.Must(uuid.NewV7())
 	providerID := uuid.Must(uuid.NewV7())
