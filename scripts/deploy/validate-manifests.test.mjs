@@ -366,51 +366,48 @@ test("inline secret detection accepts indirection and rejects literals", () => {
   assert.equal(validateInlineSecrets('"clientSecret": "hostile"').length, 1);
 });
 
-test("DFIR storage CORS is exact and rejects wildcard or credentialed access", () => {
-  const valid = `
-<AllowedOrigin>https://periapsis.example.com</AllowedOrigin>
-<AllowedMethod>GET</AllowedMethod>
-<AllowedMethod>HEAD</AllowedMethod>
-<AllowedMethod>PUT</AllowedMethod>
-<AllowedHeader>Content-Length</AllowedHeader>
-<AllowedHeader>Content-Type</AllowedHeader>
-<AllowedHeader>If-None-Match</AllowedHeader>
-<AllowedHeader>X-Amz-Meta-Periapsis-Declared-Mime</AllowedHeader>
-<AllowedHeader>X-Amz-Meta-Periapsis-Expected-Size</AllowedHeader>
-<ExposeHeader>ETag</ExposeHeader>
-`;
+test("local DFIR storage CORS source has exact closed headers and upstream isolation", async () => {
+  const valid = await readFile(
+    new URL("../../deploy/compose/edge/Caddyfile", import.meta.url),
+    "utf8",
+  );
   assert.deepEqual(validateDFIRStorageCORS(valid), []);
-  assert.ok(
-    validateDFIRStorageCORS(
-      valid.replace("<AllowedHeader>If-None-Match</AllowedHeader>", ""),
-    ).some((error) => error.includes("If-None-Match")),
-  );
-  assert.ok(
-    validateDFIRStorageCORS(
-      valid.replace(
-        "<AllowedHeader>X-Amz-Meta-Periapsis-Declared-Mime</AllowedHeader>",
-        "",
-      ),
-    ).some((error) => error.includes("Declared-Mime")),
-  );
-  assert.ok(
-    validateDFIRStorageCORS(
-      valid.replace("https://periapsis.example.com", "*"),
-    ).some((error) => error.includes("wildcard origin")),
-  );
-  assert.ok(
-    validateDFIRStorageCORS(
-      `${valid}<Access-Control-Allow-Credentials>true</Access-Control-Allow-Credentials>`,
-    ).some((error) => error.includes("credentialed")),
-  );
-  assert.ok(
-    validateDFIRStorageCORS(
-      valid.replace(
-        "<AllowedHeader>Content-Type</AllowedHeader>",
-        "<AllowedHeader>*</AllowedHeader>",
-      ),
-    ).length > 0,
-  );
+  for (const [before, after] of [
+    ["If-None-Match, ", ""],
+    ["X-Amz-Meta-Periapsis-Declared-Mime, ", ""],
+    [
+      "Access-Control-Allow-Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
+      "Access-Control-Allow-Origin *",
+    ],
+    [
+      'Access-Control-Allow-Methods "GET, HEAD, PUT"',
+      'Access-Control-Allow-Methods "GET, HEAD, PUT, DELETE"',
+    ],
+    ["Content-Length, Content-Type,", "*,"],
+    ["Access-Control-Expose-Headers ETag", "Access-Control-Expose-Headers *"],
+    ["Access-Control-Max-Age 300", "Access-Control-Max-Age 86400"],
+    ["header_down -Access-Control-*", ""],
+    ["respond @options 403", ""],
+    ["respond @foreign_origin 403", ""],
+    ["respond @browser_method_denied 403", ""],
+    ["respond @browser_path_denied 403", ""],
+  ]) {
+    assert.notEqual(valid.replace(before, after), valid, before);
+    assert.ok(
+      validateDFIRStorageCORS(valid.replace(before, after)).length > 0,
+      before,
+    );
+  }
+  for (const added of [
+    "Access-Control-Allow-Credentials true",
+    "Access-Control-Allow-Private-Network true",
+    "Access-Control-Expose-Headers ETag",
+  ]) {
+    assert.ok(
+      validateDFIRStorageCORS(`${valid}\n${added}\n`).length > 0,
+      added,
+    );
+  }
 });
 
 test("workload security check reports missing closed markers", () => {

@@ -152,12 +152,26 @@ Every runtime profile starts local MinIO and ClamAV because DFIR readiness must 
 when either boundary is absent. Set independent MinIO root and application credentials;
 the one-shot `minio-provision` service creates only the `periapsis-evidence` bucket,
 enables versioning, and grants the application user only bucket location/list plus object
-get/put/delete. Its CORS policy permits the exact `https://localhost:PERIAPSIS_WEB_PORT`
+get/put/delete. The pinned local MinIO does not implement per-bucket CORS. The TLS edge
+therefore owns the browser policy and removes every upstream `Access-Control-*` response
+header; MinIO's global origin setting is additionally limited to the same local origin.
+The edge policy permits the exact `https://localhost:PERIAPSIS_WEB_PORT`
 origin, `GET`/`HEAD`/`PUT`, and the closed signed-header set including `Content-Type`,
 `Content-Length`, `If-None-Match`, `X-Amz-Meta-Periapsis-Declared-Mime`, and
 `X-Amz-Meta-Periapsis-Expected-Size`. It never enables wildcard or
-credentialed CORS. Changing the web port reruns this idempotent provisioner on the next
-profile start.
+credentialed CORS. Preflights receive only this static header allowlist, never a reflection
+of requested headers: a browser rejects an unlisted header. Foreign origins, unsupported
+methods and paths outside the evidence bucket are rejected at the edge. Requests without
+an Origin receive no CORS grant and still require normal S3 authorization. Only `ETag` is
+exposed, with a 300-second preflight lifetime and origin/method/header cache variation.
+Changing the web port recreates the edge/MinIO configuration on the next profile start;
+resource provisioning remains idempotent and never resets existing storage.
+
+`pnpm test:storage-cors` runs the deployed policy with real Caddy 2.11.4 against an
+owned loopback HTTP fixture; set `PERIAPSIS_CADDY_BINARY` to the checksum-verified
+executable returned by `node scripts/deploy/install-caddy-test-binary.mjs`. Missing
+or wrong-version binaries fail the gate. Deployment CI installs and runs this check
+independently of database/LDAP startup. It does not replace the live browser/S3 tests.
 
 The API and worker reach MinIO only on the internal `storage` network while browser grants
 use `https://storage.localhost:PERIAPSIS_MINIO_API_PORT` through the loopback-only TLS

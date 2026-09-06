@@ -35,13 +35,18 @@ Production credentials are accepted only from `PERIAPSIS_S3_ACCESS_KEY_FILE` and
 `PERIAPSIS_S3_SECRET_KEY_FILE`; a private CA, when required, is mounted through
 `PERIAPSIS_S3_CA_BUNDLE_FILE`.
 
-Configure bucket CORS for the one canonical web origin, never `*` and never credentialed
+In production, configure bucket CORS for the one canonical web origin, never `*` and never credentialed
 cross-origin requests. Permit only `GET`, `HEAD`, and `PUT`; allow `Content-Length`,
 `Content-Type`, `Cache-Control`, `Content-Disposition`, `If-None-Match`, and
 `X-Amz-Meta-Periapsis-Declared-Mime` and `X-Amz-Meta-Periapsis-Expected-Size`; expose only
 `ETag`. The browser must not synthesize
 the forbidden `Content-Length` header: its fetch implementation derives that header from
 the exact `File` body, while the signature still binds the resulting wire value.
+
+The disposable Compose MinIO is a local-test exception: its pinned release does not
+implement per-bucket CORS. The loopback TLS edge enforces the same closed browser policy
+and strips upstream CORS headers. See the [Compose storage setup](../../deploy/compose/README.md#local-evidence-storage-and-scanner).
+This adapter does not configure or replace the production external S3 policy.
 
 ## Scan, hash, and custody
 

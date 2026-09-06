@@ -267,27 +267,52 @@ export function validateInlineSecrets(contents, path = "manifest") {
   return errors;
 }
 
-export function validateDFIRStorageCORS(contents, path = "storage CORS") {
-  const errors = requireMarkers(contents, path, [
-    "<AllowedOrigin>",
-    "<AllowedMethod>GET</AllowedMethod>",
-    "<AllowedMethod>HEAD</AllowedMethod>",
-    "<AllowedMethod>PUT</AllowedMethod>",
-    "<AllowedHeader>Content-Length</AllowedHeader>",
-    "<AllowedHeader>Content-Type</AllowedHeader>",
-    "<AllowedHeader>If-None-Match</AllowedHeader>",
-    "<AllowedHeader>X-Amz-Meta-Periapsis-Declared-Mime</AllowedHeader>",
-    "<AllowedHeader>X-Amz-Meta-Periapsis-Expected-Size</AllowedHeader>",
-    "<ExposeHeader>ETag</ExposeHeader>",
+export function validateDFIRStorageCORS(contents, path = "local storage CORS") {
+  const storage = contents.slice(
+    contents.indexOf("https://storage.localhost:"),
+  );
+  const errors = requireMarkers(storage, path, [
+    "@preflight {",
+    "method OPTIONS",
+    "path /periapsis-evidence/*",
+    "header Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
+    "header Access-Control-Request-Method GET",
+    "header Access-Control-Request-Method HEAD",
+    "header Access-Control-Request-Method PUT",
+    'respond "" 204',
+    "respond @options 403",
+    "respond @foreign_origin 403",
+    "respond @browser_method_denied 403",
+    "respond @browser_path_denied 403",
+    '+Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"',
+    "header_down -Access-Control-*",
   ]);
-  if (/<AllowedOrigin>\s*\*\s*<\/AllowedOrigin>/iu.test(contents)) {
-    errors.push(`${path}: wildcard origin is forbidden`);
+  const expected = new Map([
+    [
+      "Access-Control-Allow-Origin",
+      "https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
+    ],
+    ["Access-Control-Allow-Methods", '"GET, HEAD, PUT"'],
+    [
+      "Access-Control-Allow-Headers",
+      '"Cache-Control, Content-Disposition, Content-Length, Content-Type, If-None-Match, X-Amz-Meta-Periapsis-Declared-Mime, X-Amz-Meta-Periapsis-Expected-Size"',
+    ],
+    ["Access-Control-Expose-Headers", "ETag"],
+    ["Access-Control-Max-Age", "300"],
+  ]);
+  const counts = new Map();
+  for (const [, name, value] of storage.matchAll(
+    /^\s*(Access-Control-[\w-]+)\s+([^\r\n]+)$/gmu,
+  )) {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    if (expected.get(name) !== value.trim()) {
+      errors.push(`${path}: unexpected CORS header or value: ${name}`);
+    }
   }
-  if (/<AllowedHeader>\s*\*\s*<\/AllowedHeader>/iu.test(contents)) {
-    errors.push(`${path}: wildcard request headers are forbidden`);
-  }
-  if (/AllowCredentials|Access-Control-Allow-Credentials/iu.test(contents)) {
-    errors.push(`${path}: credentialed cross-origin requests are forbidden`);
+  for (const name of expected.keys()) {
+    if (counts.get(name) !== (name === "Access-Control-Allow-Origin" ? 2 : 1)) {
+      errors.push(`${path}: missing or duplicate CORS header: ${name}`);
+    }
   }
   return errors;
 }
@@ -1218,10 +1243,12 @@ export async function validateRepository(rootDirectory) {
   const minioProvisionPath = "deploy/compose/storage/provision-minio.sh";
   const minioProvision = contentsByPath.get(minioProvisionPath) ?? "";
   errors.push(
-    ...validateDFIRStorageCORS(minioProvision, minioProvisionPath),
+    ...validateDFIRStorageCORS(
+      contentsByPath.get("deploy/compose/edge/Caddyfile") ?? "",
+      "deploy/compose/edge/Caddyfile",
+    ),
     ...requireMarkers(minioProvision, minioProvisionPath, [
-      'case "$origin" in',
-      "https://localhost:[0-9]*",
+      '[ "$bucket" = "periapsis-evidence" ] || exit 1',
       "version enable",
       '"s3:DeleteObject", "s3:GetObject", "s3:PutObject"',
       '"s3:ListBucketVersions"',
@@ -1229,7 +1256,15 @@ export async function validateRepository(rootDirectory) {
       '"s3:prefix": ["????????-????-7???-????-????????????/????????-????-7???-????-????????????"]',
       "admin policy attach",
     ]),
+    ...requireMarkers(compose, composePath, [
+      "MINIO_API_CORS_ALLOW_ORIGIN: https://localhost:${PERIAPSIS_WEB_PORT:-8443}",
+    ]),
   );
+  if (/\bmc\b[^\r\n]*\bcors\s+set\b/u.test(minioProvision)) {
+    errors.push(
+      `${minioProvisionPath}: the pinned local MinIO does not implement bucket CORS`,
+    );
+  }
   for (const [path, markers] of [
     [
       "deploy/compose/clamav/clamd.conf",

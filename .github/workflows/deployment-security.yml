@@ -98,6 +98,13 @@ jobs:
           node --test scripts/deploy/openldap-test-image.test.mjs
           node --test scripts/operations/recovery-evidence.test.mjs
           node scripts/deploy/validate-manifests.mjs
+      - name: Exercise storage CORS with checksum-pinned Caddy
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          PERIAPSIS_CADDY_BINARY="$(node scripts/deploy/install-caddy-test-binary.mjs)"
+          export PERIAPSIS_CADDY_BINARY
+          node --test scripts/deploy/storage-cors-runtime.test.mjs
       - name: Install pinned manifest validators
         env:
           GOBIN: ${{ runner.temp }}/deployment-tools

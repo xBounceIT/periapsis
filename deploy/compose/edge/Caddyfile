@@ -23,5 +23,57 @@ https://idp.localhost:{$PERIAPSIS_IDP_PORT:18090} {
 
 https://storage.localhost:{$PERIAPSIS_MINIO_API_PORT:19000} {
 	import periapsis_dev_tls
-	reverse_proxy http://minio:9000
+	# The pinned local MinIO has no per-bucket CORS implementation. The only
+	# browser-facing S3 hop owns this policy; upstream CORS headers never escape.
+	@preflight {
+		method OPTIONS
+		path /periapsis-evidence/*
+		header Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}
+		header Access-Control-Request-Method GET
+		header Access-Control-Request-Method HEAD
+		header Access-Control-Request-Method PUT
+	}
+	@options method OPTIONS
+	@foreign_origin {
+		header Origin *
+		not header Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}
+	}
+	@browser_method_denied {
+		header Origin *
+		not method GET HEAD PUT
+	}
+	@browser_path_denied {
+		header Origin *
+		not path /periapsis-evidence/*
+	}
+	@browser header Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}
+	route {
+		header {
+			+Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+			defer
+		}
+		handle @preflight {
+			header {
+				Access-Control-Allow-Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}
+				Access-Control-Allow-Methods "GET, HEAD, PUT"
+				Access-Control-Allow-Headers "Cache-Control, Content-Disposition, Content-Length, Content-Type, If-None-Match, X-Amz-Meta-Periapsis-Declared-Mime, X-Amz-Meta-Periapsis-Expected-Size"
+				Access-Control-Max-Age 300
+			}
+			respond "" 204
+		}
+		respond @options 403
+		respond @foreign_origin 403
+		respond @browser_method_denied 403
+		respond @browser_path_denied 403
+		header @browser {
+			Access-Control-Allow-Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}
+			Access-Control-Expose-Headers ETag
+			defer
+		}
+		# No request rewrite: preserve Host, raw URL, signed headers and body.
+		# Requests without Origin still require MinIO's normal S3 authorization.
+		reverse_proxy http://minio:9000 {
+			header_down -Access-Control-*
+		}
+	}
 }

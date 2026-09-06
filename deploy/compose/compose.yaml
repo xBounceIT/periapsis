@@ -628,6 +628,7 @@ services:
     environment:
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
       MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_API_CORS_ALLOW_ORIGIN: https://localhost:${PERIAPSIS_WEB_PORT:-8443}
     secrets:
       - minio_root_password
       - minio_root_user
@@ -665,7 +666,6 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      PERIAPSIS_DFIR_CORS_ORIGIN: https://localhost:${PERIAPSIS_WEB_PORT:-8443}
       PERIAPSIS_S3_BUCKET: periapsis-evidence
     secrets:
       - minio_root_password
