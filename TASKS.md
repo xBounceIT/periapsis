@@ -188,7 +188,7 @@ final-journal database gates and the remaining release boundaries.
       Both V50 clones were dropped, sources/template pins unchanged; local lint/typecheck
       pass. The V51 progress below supersedes this diagnostic without rewriting the
       historical evidence.
-- [ ] Finish the ordinary SAML flow on the unpublished V51 successor. Generated forward
+- [ ] Complete the advanced SAML matrix after the published V51 ordinary-flow repair. Generated forward
       migrations 0232/0233 preserve all 232 published SQL files, attest the effective
       predecessor bodies (including 0188 and 0228 amendments), and retire the V50 serving
       roots without discarding their source attestations. The typed provenance repair
@@ -217,9 +217,8 @@ final-journal database gates and the remaining release boundaries.
       localRequired/freshness, rotate/step_up and
       historical revocation-drift cases also remain required; primary-only success is
       insufficient. Independent review: `.tmp/saml-v51-provenance-independent-review.md`.
-- [ ] Rebuild the final compatibility seal on the stable journal, then run the fresh full
-      PostgreSQL 18.6 `test:security` aggregate and complete upgrade/compatibility matrix,
-      replacing all pre-seal database evidence.
+- [ ] Complete the final-journal PostgreSQL RLS/Go and upgrade/compatibility matrix,
+      preserving the published V51 seal and replacing the remaining pre-seal evidence.
       Historical V49 seal `048078bb2a5c69057ec356857e323d55d0b97a43a5894e620140eab1f758414e`
       passed all 58 security suites in one aggregate, RLS, repeated seed/audit, the expanded
       13-test Go CI selection and all 19 upgrade entries with stable source hashes.
@@ -246,6 +245,21 @@ final-journal database gates and the remaining release boundaries.
       stable sources, stopped owned cluster and removed temporary admin-password file:
       `C:\Users\dange\AppData\Local\Temp\periapsis-v51-aggregate-owned-3ac573356ec64606a5e8c16ed80fb1de\proof.json`.
       This is one catalog suite, not the full 58-suite aggregate or container acceptance.
+      The subsequent full V51 aggregate now passes all 58 security suites, two seed runs
+      and seed audit on native PostgreSQL 18.6 with normal provisioning and TCP SCRAM
+      administration. Exact source, empty-template and runtime-role pins remain stable;
+      both owned instances are stopped and the temporary administrator password removed.
+      Proof: `C:\Users\dange\AppData\Local\Temp\periapsis-v51-aggregate-owned-0b0348cde2f94414854284589518ea92\proof.json`;
+      log: `.tmp/v51-full-aggregate-20260906.log`. This run used cad3fdf's database inputs
+      before the following dependency and upgrade-test repairs; it is not the separate
+      RLS/Go selection, complete 21-upgrade matrix or container acceptance.
+      The separate RLS SQL gate and exact current CI Go selection also pass on a fresh
+      provisioned PostgreSQL 18.6 cluster: all 15 top-level Go tests execute with no
+      skips, both committed-fixture clones are dropped normally, source/template/role
+      pins remain unchanged and the owned server is stopped. This run includes the
+      dependency and upgrade-pin repairs. Proof:
+      `C:\Users\dange\AppData\Local\Temp\periapsis-v51-extra-owned-05564106dfd740b8b723f5ecde8f8584\proof.json`;
+      log: `.tmp/v51-extra-rls-go-20260906.log`. The full 21-upgrade matrix is still open.
 - [x] Repeat the complete `pnpm verify` command after the final frontend/SR-18 changes.
       V50 verification passed with exit 0: web 155 files/2,152 tests, DB 73 files/627
       tests, notifier 175 with conditional Mailpit skipped, operations 52, generated
@@ -272,6 +286,12 @@ final-journal database gates and the remaining release boundaries.
       143 operations totals, all generated/build/Go gates:
       `.tmp/verify-v51-publish-20260906.log`. Temporary PostgreSQL instances are stopped;
       their proof files and data directories are retained for inspection.
+      The dependency/upgrade-pin/OpenLDAP follow-up also passes the complete command:
+      `.tmp/verify-v51-dependencies-openldap-20260906.log`, exit 0. Totals are 648 DB,
+      2,152 web, 175 notifier plus one conditional Mailpit skip, and 161 operations
+      with the actual Gitleaks binary and no operations skips. Generated drift, E2E
+      typing, builds, Go vet and Go tests pass. Only documentation changed afterward;
+      focused formatting and diff checks cover that handoff update.
 
 ## GitHub CI repair evidence
 
@@ -379,6 +399,24 @@ final-journal database gates and the remaining release boundaries.
       assets; binary/archive signatures, extra packages and platform metadata fail closed.
       All 64 packaging/manifest tests pass; an independently reviewed retained native
       export passes validation. This is not an ARM64 container execution or scan proof.
+- [x] Update the development toolchain's vulnerable Ajv and legacy esbuild instances:
+      Ajv 8.18.0 with matching installed-version/generated-example provenance, plus
+      esbuild 0.25.12 only under @esbuild-kit/core-utils 3.3.2. Actual sync/async loader
+      transformations pass; benign dynamic-pattern rejection and static-pattern controls
+      preserve example validation. Normal and frozen installs pass, generated OpenAPI
+      changes only its provenance, and pnpm audit reports zero known vulnerabilities
+      across all 517 dependencies. These nodes are absent from the production graph;
+      no alert was dismissed and no runtime dependency or SQL was changed. Evidence:
+      `.tmp/dependabot-cad3fdf-triage.md`, `.tmp/dependency-security-audit-20260906.json`.
+- [x] Replace the pinned OpenLDAP test image's root-only entrypoint with a fixed-purpose
+      repository adapter using the same binaries/schema, UID/GID 10001, ports 1389/1636,
+      read-only root and explicit writable storage. Do not inherit anonymous volumes;
+      never migrate/reset legacy data or rotate the initial password automatically.
+      The existing real TLS/admin bind remains the password verifier; no custom crypto
+      or root runtime is introduced. All 64 focused adapter/diagnostic/manifest/workflow/
+      acceptance-contract tests pass, as do shell/static checks and independent review.
+      Evidence: `.tmp/openldap-test-adapter-proof.md`. These tests simulate ownership
+      and slap* binaries; actual Docker/TLS/fixture CRUD remains a required remote gate.
 - [ ] Obtain green remote CI for the candidate. At published 61c2df9, deployment run
       34031054630 passes web/API/worker/notifier multi-arch runtime, SBOM and scans.
       Its database build hits QEMU SIGILL during ARM64 pnpm installation, then the
@@ -402,6 +440,19 @@ final-journal database gates and the remaining release boundaries.
       `.tmp/v51-worker-health-30ae47cd35d74776b8ee4afeed829b05-proof.json`.
       This identifies repeated work, not the complete cause or resolution of the CI
       timeout. Do not remove integrity checks or relax budgets on this evidence alone.
+      At cad3fdf, deployment run 34036722527 now passes all five image jobs, including
+      database-task AMD64/ARM64 runtime/SBOM/scans, and Gitleaks. The manifest job fails
+      because the pinned OpenLDAP entrypoint recursively chowns read-only /etc/ldap;
+      downstream manifest checks are skipped. CI run 34036722521 remains failed:
+      the concurrent health query again reaches SQLSTATE 57014 inside the V51 catalog
+      hash; MinIO provisioning reports cors_set/not_implemented; migration exits 1 with
+      no recognized inner error; Mailpit's connection probe fails without a retained
+      socket cause. A successful local SMTP control does not diagnose Linux/Mailpit.
+      Ten upgrade jobs stop on stale current V50 timestamp/count assertions; twelve
+      exact current-pin corrections in ten files preserve all historical prefixes and
+      SQL bytes. A new consistency regression checks all 21 suites and the canonical
+      generated fingerprint; 24 focused tests pass. Runtime upgrade repetition remains
+      required. Evidence: `.tmp/ci-cad3fdf-readonly-diagnosis.md`.
 
 ## Release evidence to obtain
 

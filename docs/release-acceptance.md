@@ -10,6 +10,10 @@ and a green repository gate does not replace a retained container/CI or producti
 artifact. The current candidate state appears after the matrix; external evidence is also
 tracked in [`TASKS.md`](../TASKS.md).
 
+The matrix retains earlier focused and final-journal results. Those labels do not
+carry forward to V51 automatically: only the explicitly versioned evidence below
+applies to the current published candidate.
+
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | 1. Tenant isolation              | Forced-RLS tenant schema, application authorization, customer-safe ticket/DFIR projections, explicit platform-to-tenant access, and tenant-aware bulk/export/download paths                                                                                     | [`tests/security/rls.sql`](../tests/security/rls.sql), [`ticket-query-projections-runtime.ts`](../packages/db/tests/security/ticket-query-projections-runtime.ts), [`ticket-bulk-export-runtime.ts`](../packages/db/tests/security/ticket-bulk-export-runtime.ts), [`contacts-portal-runtime.ts`](../packages/db/tests/security/contacts-portal-runtime.ts)                                                                    | Final-journal PG/RLS passes; composed tenant-isolation proof remains external     |
@@ -46,7 +50,73 @@ sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
 
-The current V50 candidate has 232 migrations, ending at 0231, with catalog digest
+The published V51 database baseline is `cad3fdf8a8887b865f620eb209025312ba03b83e` on
+[`xBounceIT/periapsis`](https://github.com/xBounceIT/periapsis). It has 234 immutable
+migrations, ending at 0233, and catalog digest
+`2b1f33e2a513a16dff5f5b6b20ab6bf654cc4c081bd010864db96e09dbf8b51c`.
+Forward migration 0232 repairs the ordinary SAML planning, typed provenance and
+session-material loader paths; 0233 seals V51 and retires the V50 serving roots.
+All previously published migration bytes are preserved.
+Subsequent development-toolchain, test and OpenLDAP-fixture repairs recorded in
+`TASKS.md` do not change this SQL journal or catalog seal.
+
+Verified on isolated native PostgreSQL 18.6 databases:
+
+- Fresh installation through the normal migration runner twice preserves the exact
+  journal fingerprint, readiness, catalog digest and retired-runtime ACLs. Proof:
+  `C:\Users\dange\AppData\Local\Temp\periapsis-v51-fresh-151597124ea5483982113ea9f9810455\fresh-proof.json`.
+- The ordinary three-origin SAML flow passes real administrative setup, admission,
+  tenant switch, first revalidation, logout, immutable configuration after metadata
+  change, a three-way claim race and exact replay. Its expected configuration is
+  independently derived from admitted request pins and apply statement time. Proof:
+  `.tmp/v51-saml-24756756baa14213adb4f819cedcebd9-proof.json`.
+- Current V51 catalog/tamper checks pass after normal runtime-role provisioning,
+  with TCP SCRAM administration and unchanged template, role and source pins. Proof:
+  `C:\Users\dange\AppData\Local\Temp\periapsis-v51-aggregate-owned-3ac573356ec64606a5e8c16ed80fb1de\proof.json`.
+  This is the catalog-only mode, not all 58 security suites.
+- The subsequent full aggregate passes all 58 suites, two seed runs and seed audit
+  against cad3fdf's database inputs. Normal provisioning and TCP SCRAM administration,
+  unchanged source/template/role pins and shutdown of both owned clusters are retained
+  in `C:\Users\dange\AppData\Local\Temp\periapsis-v51-aggregate-owned-0b0348cde2f94414854284589518ea92\proof.json`;
+  log: `.tmp/v51-full-aggregate-20260906.log`. This is distinct from the separate
+  RLS/Go and upgrade selections, and precedes the later development-dependency and
+  upgrade-test repairs.
+- The separate RLS SQL gate and exact 15-test Go CI selection pass on a fresh
+  provisioned cluster after those repairs, with no skipped Go tests. The two
+  committed-fixture clones are dropped normally, source/template/role pins remain
+  unchanged and the server is stopped. Proof:
+  `C:\Users\dange\AppData\Local\Temp\periapsis-v51-extra-owned-05564106dfd740b8b723f5ecde8f8584\proof.json`;
+  log: `.tmp/v51-extra-rls-go-20260906.log`.
+- Focused V49, V50-path and V51-path upgrade tests pass with owned-cluster cleanup,
+  source stability and preserved historical controls. The V51 path also executes the
+  ordinary SAML flow. Proofs: `.tmp/schema-upgrade-V49-559f4a53609e481eabcf72d4d2afcf47-proof.json`,
+  `.tmp/schema-upgrade-V50-86997ecfba514532bdd44d59778b84ab-proof.json` and
+  `.tmp/schema-upgrade-V51-771777d0793248dc9b2d1f3df0bc69c3-proof.json`.
+
+Complete local `pnpm verify` passes with 644 DB tests, 2,152 web tests, 175 notifier
+tests plus the conditional Mailpit skip, and all 143 operations tests with the real
+Gitleaks scanner and no operations skips. Generated drift, E2E TypeScript checks,
+builds, Go vet and Go tests also pass. Evidence:
+`.tmp/verify-v51-publish-20260906.log`.
+
+The follow-up complete verification also passes after those repairs: 648 DB,
+2,152 web, 175 notifier plus one conditional Mailpit skip, and 161 operations tests
+with no operations skips. Generated drift, builds and Go gates pass; dependency audit
+reports zero known vulnerabilities. Evidence:
+`.tmp/verify-v51-dependencies-openldap-20260906.log` and
+`.tmp/dependency-security-audit-20260906.json`. This does not establish a green
+replacement CI run or real OpenLDAP/Compose startup.
+
+The complete 21-entry upgrade matrix still requires retained passing evidence.
+Elevated SAML MFA,
+trust/freshness/local-required controls, rotate/step-up and historical revocation
+drift remain distinct from the passing ordinary flow. The shared DFIR projection and
+last-safe-revision matrices, full performance repeat and production-boundary restore
+remain open in `TASKS.md`. Do not describe this candidate as production-accepted.
+
+## Historical V50 database evidence
+
+The previous V50 candidate has 232 migrations, ending at 0231, with catalog digest
 `e68c7797c4f72188d1ddd4d133e5adff3f099004578fa77ad9f6472027fea9f8`.
 Migration 0230 fixes the explicit-null tenant coordinate for platform logout while
 preserving required-coordinate validation, actor/tenant authorization and transactional
