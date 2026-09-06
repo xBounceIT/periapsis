@@ -2,11 +2,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  formatTenantInstant,
-  resolveTenantDateTimePreferences,
   TenantDateTimeProvider,
   TenantInstant,
 } from "./tenant-date-time-context";
+import {
+  formatTenantInstant,
+  resolveTenantDateTimePreferences,
+} from "./tenant-date-time";
 
 afterEach(cleanup);
 

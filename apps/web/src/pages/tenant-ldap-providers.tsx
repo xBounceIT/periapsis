@@ -48,13 +48,24 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
 import { ServerDenied } from "../components/server-denied";
+import { TenantRequiredPage } from "../components/tenant-required-page";
 import { idempotencyKeyForPayload } from "../lib/payload-idempotency";
 import {
   describePhaseTwoError,
@@ -68,6 +79,7 @@ import {
   type TenantLdapAuthProviderView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { LdapAdministrationWorkspace } from "./ldap-administration-workspace";
 import {
   createLdapProviderDraft,
   diagnosticCategoryLabel,
@@ -82,7 +94,11 @@ import {
   type LdapProviderDraft,
   type LdapTemplateKind,
 } from "./ldap-provider-model";
-import { LdapAdministrationWorkspace } from "./ldap-administration-workspace";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 type ProviderListState =
   | { kind: "error"; message: string }
@@ -109,12 +125,20 @@ interface MutationNotice {
 }
 
 export function TenantLdapProvidersPage(): React.JSX.Element {
+  const model = useTenantLdapProvidersPageModel();
+  if (model.kind === "content") return model.content;
+  return <TenantLdapProvidersPageView model={model.data} />;
+}
+
+function useTenantLdapProvidersPageModel() {
   const { api, clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const tenantId = session.activeTenantId;
   const pairKey = authority.pairKey;
   const pairKeyRef = useRef(pairKey);
-  pairKeyRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairKeyRef.current = pairKey;
+  }, [pairKey]);
   const canRead = authority.hasPermission("identity_provider.read", "tenant");
   const canManage = authority.hasPermission(
     "identity_provider.manage",
@@ -130,17 +154,71 @@ export function TenantLdapProvidersPage(): React.JSX.Element {
     "tenant",
   );
   const canSync = authority.hasPermission("identity_sync.run", "tenant");
-  const [listState, setListState] = useState<ProviderListState>({
-    kind: "loading",
-  });
-  const [revision, setRevision] = useState(0);
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
-    null,
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<TenantLdapProvidersPageState>,
+    undefined,
+    (): TenantLdapProvidersPageState => ({
+      listState: {
+        kind: "loading",
+      },
+      revision: 0,
+      selectedProviderId: null,
+      createOpen: false,
+      loadingMore: false,
+      paginationError: null,
+      notice: null,
+    }),
   );
-  const [createOpen, setCreateOpen] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [paginationError, setPaginationError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<MutationNotice | null>(null);
+  const {
+    listState,
+    revision,
+    selectedProviderId,
+    createOpen,
+    loadingMore,
+    paginationError,
+    notice,
+  } = workspaceState;
+  const {
+    setListState,
+    setRevision,
+    setSelectedProviderId,
+    setCreateOpen,
+    setLoadingMore,
+    setPaginationError,
+    setNotice,
+  } = useMemo(
+    () => ({
+      setListState: (
+        value: React.SetStateAction<TenantLdapProvidersPageState["listState"]>,
+      ) => updateWorkspaceState({ listState: value }),
+      setRevision: (
+        value: React.SetStateAction<TenantLdapProvidersPageState["revision"]>,
+      ) => updateWorkspaceState({ revision: value }),
+      setSelectedProviderId: (
+        value: React.SetStateAction<
+          TenantLdapProvidersPageState["selectedProviderId"]
+        >,
+      ) => updateWorkspaceState({ selectedProviderId: value }),
+      setCreateOpen: (
+        value: React.SetStateAction<TenantLdapProvidersPageState["createOpen"]>,
+      ) => updateWorkspaceState({ createOpen: value }),
+      setLoadingMore: (
+        value: React.SetStateAction<
+          TenantLdapProvidersPageState["loadingMore"]
+        >,
+      ) => updateWorkspaceState({ loadingMore: value }),
+      setPaginationError: (
+        value: React.SetStateAction<
+          TenantLdapProvidersPageState["paginationError"]
+        >,
+      ) => updateWorkspaceState({ paginationError: value }),
+      setNotice: (
+        value: React.SetStateAction<TenantLdapProvidersPageState["notice"]>,
+      ) => updateWorkspaceState({ notice: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const cursorHistoryRef = useRef(new Set<string>());
 
   const handleRequestError = useCallback(
@@ -168,11 +246,13 @@ export function TenantLdapProvidersPage(): React.JSX.Element {
   );
 
   useEffect(() => {
-    setSelectedProviderId(null);
-    setCreateOpen(false);
-    setNotice(null);
-    setPaginationError(null);
-    setLoadingMore(false);
+    updateWorkspaceState({
+      selectedProviderId: null,
+      createOpen: false,
+      notice: null,
+      paginationError: null,
+      loadingMore: false,
+    });
     cursorHistoryRef.current.clear();
   }, [pairKey]);
 
@@ -188,10 +268,11 @@ export function TenantLdapProvidersPage(): React.JSX.Element {
     const controller = new AbortController();
     const expectedPair = pairKey;
     cursorHistoryRef.current.clear();
-    setListState((current) =>
-      current.kind === "ready" ? current : { kind: "loading" },
-    );
-    setPaginationError(null);
+    updateWorkspaceState({
+      listState: (current) =>
+        current.kind === "ready" ? current : { kind: "loading" },
+      paginationError: null,
+    });
     void api
       .listTenantLdapAuthProviders(tenantId, {
         includeArchived: true,
@@ -230,6 +311,7 @@ export function TenantLdapProvidersPage(): React.JSX.Element {
       });
     return () => controller.abort();
   }, [
+    setListState,
     api,
     authority.status,
     canRead,
@@ -250,8 +332,7 @@ export function TenantLdapProvidersPage(): React.JSX.Element {
     }
     const cursor = listState.nextCursor;
     const expectedPair = pairKey;
-    setLoadingMore(true);
-    setPaginationError(null);
+    updateWorkspaceState({ loadingMore: true, paginationError: null });
     try {
       const page = await api.listTenantLdapAuthProviders(tenantId, {
         after: cursor,
@@ -291,222 +372,96 @@ export function TenantLdapProvidersPage(): React.JSX.Element {
         ),
       );
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairKeyRef.current === expectedPair) setLoadingMore(false);
     }
   }
 
   if (!tenantId) {
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading">
-          <div>
-            <p className="section-label">Tenant administration</p>
-            <h1>Select a tenant to manage identity providers.</h1>
-            <p>
-              The tenant switcher establishes the explicit authorization and RLS
-              context.
-            </p>
-          </div>
-        </section>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <TenantRequiredPage
+          label="Tenant administration"
+          title="Select a tenant to manage identity providers."
+        >
+          The tenant switcher establishes the explicit authorization and RLS
+          context.
+        </TenantRequiredPage>
+      ),
+    };
   }
   if (authority.status === "forbidden" || listState.kind === "forbidden") {
-    return <ServerDenied resource="tenant LDAP providers" />;
+    return {
+      kind: "content" as const,
+      content: <ServerDenied resource="tenant LDAP providers" />,
+    };
   }
   if (authority.status === "error") {
-    return (
-      <div className="content content--narrow">
-        <FocusedError
-          message={authority.message ?? "Tenant authority could not be loaded."}
-        />
-        <Button type="button" variant="outline" onClick={authority.reload}>
-          <RefreshCw aria-hidden="true" /> Reload tenant authority
-        </Button>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <div className="content content--narrow">
+          <FocusedError
+            message={
+              authority.message ?? "Tenant authority could not be loaded."
+            }
+          />
+          <Button type="button" variant="outline" onClick={authority.reload}>
+            <RefreshCw aria-hidden="true" /> Reload tenant authority
+          </Button>
+        </div>
+      ),
+    };
   }
   if (authority.status !== "ready" || listState.kind === "loading") {
-    return <LdapProviderSkeleton />;
+    return { kind: "content" as const, content: <LdapProviderSkeleton /> };
   }
-  if (!canRead) return <ServerDenied resource="tenant LDAP providers" />;
+  if (!canRead)
+    return {
+      kind: "content" as const,
+      content: <ServerDenied resource="tenant LDAP providers" />,
+    };
 
-  return (
-    <div className="content ldap-provider-page">
-      <section className="page-heading ldap-provider-page__heading">
-        <div>
-          <p className="section-label">Tenant administration</p>
-          <h1>LDAP identity providers</h1>
-          <p>
-            Configure TLS-protected directory endpoints, redacted bind-secret
-            state, and bounded connection diagnostics. Visibility here is an
-            affordance; the API rechecks every permission.
-          </p>
-        </div>
-        {canManage ? (
-          <Button type="button" onClick={() => setCreateOpen(true)}>
-            <Plus aria-hidden="true" /> Create provider
-          </Button>
-        ) : null}
-      </section>
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      authority,
+      canManage,
+      canMappingManage,
+      canMappingRead,
+      canRead,
+      canSync,
+      canTest,
+      clearSession,
+      createOpen,
+      listState,
+      loadMore,
+      loadingMore,
+      notice,
+      paginationError,
+      pairKey,
+      selectedProviderId,
+      session,
+      setCreateOpen,
+      setNotice,
+      setRevision,
+      setSelectedProviderId,
+      tenantId,
+    },
+  };
+}
 
-      {notice ? (
-        <Alert className="ldap-provider-notice">
-          {notice.tone === "success" ? (
-            <CheckCircle2 aria-hidden="true" />
-          ) : (
-            <ShieldAlert aria-hidden="true" />
-          )}
-          <AlertTitle>
-            {notice.tone === "success" ? "Action completed" : "Review needed"}
-          </AlertTitle>
-          <AlertDescription>{notice.message}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {listState.kind === "error" ? (
-        <div className="ldap-provider-list-error">
-          <FocusedError message={listState.message} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setRevision((value) => value + 1)}
-          >
-            <RefreshCw aria-hidden="true" /> Retry inventory
-          </Button>
-        </div>
-      ) : (
-        <Card className="ldap-provider-table-card">
-          <CardHeader>
-            <CardTitle>Provider inventory</CardTitle>
-            <CardDescription>
-              Bind secrets are represented only by configured/rotated metadata.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table className="ldap-provider-table">
-              <TableCaption>
-                {listState.items.length === 0
-                  ? "No LDAP providers are configured for this tenant."
-                  : `${listState.items.length} LDAP provider${listState.items.length === 1 ? "" : "s"} loaded.`}
-              </TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Template</TableHead>
-                  <TableHead>Endpoints</TableHead>
-                  <TableHead>Bind secret</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {listState.items.map((provider) => (
-                  <TableRow key={provider.id}>
-                    <TableCell>
-                      <div className="ldap-provider-name-cell">
-                        <strong>{provider.displayName}</strong>
-                        <small>{provider.key}</small>
-                      </div>
-                    </TableCell>
-                    <TableCell>{templateLabel(provider.template)}</TableCell>
-                    <TableCell>
-                      {provider.enabledEndpointCount} enabled
-                    </TableCell>
-                    <TableCell>
-                      {provider.bindSecretConfigured ? "Configured" : "Not set"}
-                    </TableCell>
-                    <TableCell>
-                      <ProviderStateBadge provider={provider} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedProviderId(provider.id)}
-                      >
-                        Inspect
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {listState.nextCursor ? (
-              <div className="ldap-provider-pagination">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void loadMore()}
-                  disabled={loadingMore}
-                >
-                  <ArrowDown aria-hidden="true" />
-                  {loadingMore ? "Loading…" : "Load more providers"}
-                </Button>
-                {paginationError ? (
-                  <FocusedError message={paginationError} />
-                ) : null}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      )}
-
-      <CreateLdapProviderDialog
-        api={api}
-        canManage={canManage}
-        csrfToken={session.csrfToken}
-        onCreated={(location) => {
-          setCreateOpen(false);
-          setNotice({
-            message:
-              "The provider was created disabled. Add a bind secret and review readiness before enabling it.",
-            tone: "success",
-          });
-          setRevision((value) => value + 1);
-          const providerId = providerIdFromLocation(location);
-          if (providerId) setSelectedProviderId(providerId);
-        }}
-        onOpenChange={setCreateOpen}
-        onPermissionError={authority.reload}
-        onUnauthenticated={() => clearSession(session.id)}
-        open={createOpen}
-        pairKey={pairKey}
-        tenantId={tenantId}
-      />
-
-      <LdapProviderDetailDialog
-        api={api}
-        canManage={canManage}
-        canMappingManage={canMappingManage}
-        canMappingRead={canMappingRead}
-        canRead={canRead}
-        canSync={canSync}
-        canTest={canTest}
-        csrfToken={session.csrfToken}
-        onArchived={() => {
-          setSelectedProviderId(null);
-          setNotice({
-            message: "The LDAP provider was archived and disabled.",
-            tone: "success",
-          });
-          setRevision((value) => value + 1);
-        }}
-        onListRefresh={() => setRevision((value) => value + 1)}
-        onNotice={setNotice}
-        onOpenChange={(open) => {
-          if (!open) setSelectedProviderId(null);
-        }}
-        onPermissionError={authority.reload}
-        onUnauthenticated={() => clearSession(session.id)}
-        open={selectedProviderId !== null}
-        pairKey={pairKey}
-        providerId={selectedProviderId}
-        tenantId={tenantId}
-      />
-    </div>
-  );
+function TenantLdapProvidersPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantLdapProvidersPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <LdapProvidersWorkspace model={model} />;
 }
 
 interface CreateDialogProps {
@@ -522,7 +477,19 @@ interface CreateDialogProps {
   tenantId: string;
 }
 
-function CreateLdapProviderDialog({
+function CreateLdapProviderDialog(props: CreateDialogProps): React.JSX.Element {
+  return <CreateLdapProviderForm key={props.pairKey} {...props} />;
+}
+
+interface CreateProviderState {
+  template: LdapTemplateKind;
+  draft: LdapProviderDraft;
+  errors: readonly string[];
+  requestError: string | null;
+  submitting: boolean;
+}
+
+function CreateLdapProviderForm({
   api,
   canManage,
   csrfToken,
@@ -534,26 +501,28 @@ function CreateLdapProviderDialog({
   pairKey,
   tenantId,
 }: CreateDialogProps): React.JSX.Element {
-  const [template, setTemplate] =
-    useState<LdapTemplateKind>("active_directory");
-  const [draft, setDraft] = useState(() => createLdapProviderDraft(template));
-  const [errors, setErrors] = useState<readonly string[]>([]);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [state, updateCreateState] = useReducer(
+    reduceWorkspaceState<CreateProviderState>,
+    undefined,
+    (): CreateProviderState => ({
+      template: "active_directory",
+      draft: createLdapProviderDraft("active_directory"),
+      errors: [],
+      requestError: null,
+      submitting: false,
+    }),
+  );
+  const { template, draft, errors, requestError, submitting } = state;
   const idempotencyBindingRef = useRef<{
     fingerprint: string;
     key: string;
   } | null>(null);
-  const requestPairRef = useRef(pairKey);
-  requestPairRef.current = pairKey;
-
-  useEffect(() => {
-    setTemplate("active_directory");
-    setDraft(createLdapProviderDraft("active_directory"));
-    setErrors([]);
-    setRequestError(null);
-    setSubmitting(false);
-    idempotencyBindingRef.current = null;
+  const requestPairRef = useRef<string | null>(pairKey);
+  useLayoutEffect(() => {
+    requestPairRef.current = pairKey;
+    return () => {
+      requestPairRef.current = null;
+    };
   }, [pairKey]);
 
   useEffect(() => {
@@ -561,10 +530,12 @@ function CreateLdapProviderDialog({
   }, [canManage, onOpenChange, open]);
 
   function changeTemplate(next: LdapTemplateKind): void {
-    setTemplate(next);
-    setDraft(createLdapProviderDraft(next));
-    setErrors([]);
-    setRequestError(null);
+    updateCreateState({
+      template: next,
+      draft: createLdapProviderDraft(next),
+      errors: [],
+      requestError: null,
+    });
     idempotencyBindingRef.current = null;
   }
 
@@ -574,8 +545,7 @@ function CreateLdapProviderDialog({
     event.preventDefault();
     if (!canManage || submitting) return;
     const validationErrors = validateLdapProviderDraft(draft);
-    setErrors(validationErrors);
-    setRequestError(null);
+    updateCreateState({ errors: validationErrors, requestError: null });
     if (validationErrors.length > 0) return;
     const input = toLdapProviderCreateInput(draft);
     const idempotencyKey = idempotencyKeyForPayload(idempotencyBindingRef, {
@@ -583,7 +553,7 @@ function CreateLdapProviderDialog({
       tenantId,
     });
     const expectedPair = pairKey;
-    setSubmitting(true);
+    updateCreateState({ submitting: true });
     try {
       const created = await api.createTenantLdapAuthProvider(
         csrfToken,
@@ -603,14 +573,16 @@ function CreateLdapProviderDialog({
       if (caught instanceof PhaseTwoApiError && caught.status === 403) {
         onPermissionError();
       }
-      setRequestError(
-        describePhaseTwoError(
+      updateCreateState({
+        requestError: describePhaseTwoError(
           caught,
           "The provider was not created. The same unchanged request can be retried safely.",
         ),
-      );
+      });
     } finally {
-      if (requestPairRef.current === expectedPair) setSubmitting(false);
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
+      if (requestPairRef.current === expectedPair)
+        updateCreateState({ submitting: false });
     }
   }
 
@@ -654,7 +626,11 @@ function CreateLdapProviderDialog({
           className="ldap-provider-form"
           onSubmit={(event) => void submit(event)}
         >
-          <LdapProviderEditor draft={draft} mode="create" onChange={setDraft} />
+          <LdapProviderEditor
+            draft={draft}
+            mode="create"
+            onChange={(nextDraft) => updateCreateState({ draft: nextDraft })}
+          />
           {errors.length > 0 ? <ValidationSummary errors={errors} /> : null}
           {requestError ? <FocusedError message={requestError} /> : null}
           <DialogFooter>
@@ -699,6 +675,11 @@ interface DetailDialogProps {
 }
 
 function LdapProviderDetailDialog(props: DetailDialogProps): React.JSX.Element {
+  const model = useLdapProviderDetailDialogModel(props);
+  return <LdapProviderDetailDialogView model={model.data} />;
+}
+
+function useLdapProviderDetailDialogModel(props: DetailDialogProps) {
   const {
     api,
     canManage,
@@ -719,29 +700,102 @@ function LdapProviderDetailDialog(props: DetailDialogProps): React.JSX.Element {
     providerId,
     tenantId,
   } = props;
-  const [state, setState] = useState<ProviderDetailState>({ kind: "loading" });
-  const [refreshRevision, setRefreshRevision] = useState(0);
-  const [editOpen, setEditOpen] = useState(false);
-  const [secretOpen, setSecretOpen] = useState(false);
-  const [clearOpen, setClearOpen] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [diagnostic, setDiagnostic] =
-    useState<TenantLdapAuthProviderDiagnosticView | null>(null);
-  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
-  const [testing, setTesting] = useState<"bind" | "connection" | null>(null);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<LdapProviderDetailDialogState>,
+    undefined,
+    (): LdapProviderDetailDialogState => ({
+      state: { kind: "loading" },
+      refreshRevision: 0,
+      editOpen: false,
+      secretOpen: false,
+      clearOpen: false,
+      archiveOpen: false,
+      diagnostic: null,
+      diagnosticError: null,
+      testing: null,
+    }),
+  );
+  const {
+    state,
+    refreshRevision,
+    editOpen,
+    secretOpen,
+    clearOpen,
+    archiveOpen,
+    diagnostic,
+    diagnosticError,
+    testing,
+  } = workspaceState;
+  const {
+    setState,
+    setRefreshRevision,
+    setEditOpen,
+    setSecretOpen,
+    setClearOpen,
+    setArchiveOpen,
+    setDiagnostic,
+    setDiagnosticError,
+    setTesting,
+  } = useMemo(
+    () => ({
+      setState: (
+        value: React.SetStateAction<LdapProviderDetailDialogState["state"]>,
+      ) => updateWorkspaceState({ state: value }),
+      setRefreshRevision: (
+        value: React.SetStateAction<
+          LdapProviderDetailDialogState["refreshRevision"]
+        >,
+      ) => updateWorkspaceState({ refreshRevision: value }),
+      setEditOpen: (
+        value: React.SetStateAction<LdapProviderDetailDialogState["editOpen"]>,
+      ) => updateWorkspaceState({ editOpen: value }),
+      setSecretOpen: (
+        value: React.SetStateAction<
+          LdapProviderDetailDialogState["secretOpen"]
+        >,
+      ) => updateWorkspaceState({ secretOpen: value }),
+      setClearOpen: (
+        value: React.SetStateAction<LdapProviderDetailDialogState["clearOpen"]>,
+      ) => updateWorkspaceState({ clearOpen: value }),
+      setArchiveOpen: (
+        value: React.SetStateAction<
+          LdapProviderDetailDialogState["archiveOpen"]
+        >,
+      ) => updateWorkspaceState({ archiveOpen: value }),
+      setDiagnostic: (
+        value: React.SetStateAction<
+          LdapProviderDetailDialogState["diagnostic"]
+        >,
+      ) => updateWorkspaceState({ diagnostic: value }),
+      setDiagnosticError: (
+        value: React.SetStateAction<
+          LdapProviderDetailDialogState["diagnosticError"]
+        >,
+      ) => updateWorkspaceState({ diagnosticError: value }),
+      setTesting: (
+        value: React.SetStateAction<LdapProviderDetailDialogState["testing"]>,
+      ) => updateWorkspaceState({ testing: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
   const testControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    setState({ kind: "loading" });
-    setEditOpen(false);
-    setSecretOpen(false);
-    setClearOpen(false);
-    setArchiveOpen(false);
-    setDiagnostic(null);
-    setDiagnosticError(null);
-    setTesting(null);
+    updateWorkspaceState({
+      state: { kind: "loading" },
+      editOpen: false,
+      secretOpen: false,
+      clearOpen: false,
+      archiveOpen: false,
+      diagnostic: null,
+      diagnosticError: null,
+      testing: null,
+    });
     testControllerRef.current?.abort();
     testControllerRef.current = null;
   }, [pairKey, providerId]);
@@ -801,6 +855,7 @@ function LdapProviderDetailDialog(props: DetailDialogProps): React.JSX.Element {
       });
     return () => controller.abort();
   }, [
+    setState,
     api,
     canRead,
     onPermissionError,
@@ -840,9 +895,11 @@ function LdapProviderDetailDialog(props: DetailDialogProps): React.JSX.Element {
     const controller = new AbortController();
     testControllerRef.current = controller;
     const expectedPair = pairKey;
-    setTesting(kind);
-    setDiagnostic(null);
-    setDiagnosticError(null);
+    updateWorkspaceState({
+      testing: kind,
+      diagnostic: null,
+      diagnosticError: null,
+    });
     try {
       const result =
         kind === "connection"
@@ -886,207 +943,54 @@ function LdapProviderDetailDialog(props: DetailDialogProps): React.JSX.Element {
     }
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="ldap-provider-detail-dialog">
-        <DialogHeader>
-          <DialogTitle>{provider?.displayName ?? "LDAP provider"}</DialogTitle>
-          <DialogDescription>
-            Current redacted configuration and dedicated operational actions.
-          </DialogDescription>
-        </DialogHeader>
-        {state.kind === "loading" && !provider ? <LdapDetailSkeleton /> : null}
-        {state.kind === "error" ? (
-          <div className="ldap-provider-detail-error">
-            <FocusedError message={state.message} />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRefreshRevision((value) => value + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Reload detail
-            </Button>
-          </div>
-        ) : null}
-        {provider && displayVersioned ? (
-          <div className="ldap-provider-detail-ready">
-            {state.kind !== "ready" ? (
-              <Alert>
-                <ShieldAlert aria-hidden="true" />
-                <AlertTitle>Showing the last confirmed projection</AlertTitle>
-                <AlertDescription>
-                  The preceding mutation succeeded, but the read refresh has not
-                  completed. The last confirmed body remains display-only with
-                  its original ETag; actions stay locked until a successful GET
-                  returns a new coherent body and ETag.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            <ProviderFacts provider={provider} />
-            <EndpointRail endpoints={provider.endpoints} />
-            {coherentVersioned ? (
-              <section
-                className="ldap-provider-actions"
-                aria-labelledby="ldap-actions-title"
-              >
-                <div className="ldap-provider-section-heading">
-                  <div>
-                    <h3 id="ldap-actions-title">Provider actions</h3>
-                    <p>Each action is re-authorized by the server.</p>
-                  </div>
-                </div>
-                <div className="ldap-provider-action-grid">
-                  {canManage && provider.archivedAt === null ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setEditOpen(true)}
-                      >
-                        <ServerCog aria-hidden="true" /> Edit configuration
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setSecretOpen(true)}
-                      >
-                        <KeyRound aria-hidden="true" />{" "}
-                        {provider.bindSecretConfigured
-                          ? "Replace bind secret"
-                          : "Set bind secret"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={
-                          provider.enabled || !provider.bindSecretConfigured
-                        }
-                        onClick={() => setClearOpen(true)}
-                      >
-                        <Trash2 aria-hidden="true" /> Clear bind secret
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={() => setArchiveOpen(true)}
-                      >
-                        <Archive aria-hidden="true" /> Archive provider
-                      </Button>
-                    </>
-                  ) : null}
-                  {canTest && provider.archivedAt === null ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={testing !== null}
-                        onClick={() => void runDiagnostic("connection")}
-                      >
-                        <Cable aria-hidden="true" />{" "}
-                        {testing === "connection"
-                          ? "Testing connection…"
-                          : "Test connection"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={
-                          testing !== null || !provider.bindSecretConfigured
-                        }
-                        onClick={() => void runDiagnostic("bind")}
-                      >
-                        <LockKeyhole aria-hidden="true" />{" "}
-                        {testing === "bind" ? "Testing bind…" : "Test bind"}
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-            {diagnostic ? <DiagnosticPanel diagnostic={diagnostic} /> : null}
-            {diagnosticError ? (
-              <FocusedError
-                message={diagnosticError}
-                title="Diagnostic request failed"
-              />
-            ) : null}
-            {coherentVersioned && provider.archivedAt === null ? (
-              <LdapAdministrationWorkspace
-                api={api}
-                canMappingManage={canMappingManage}
-                canMappingRead={canMappingRead}
-                canProviderManage={canManage}
-                canProviderTest={canTest}
-                canSync={canSync}
-                csrfToken={csrfToken}
-                onPermissionError={onPermissionError}
-                onUnauthenticated={onUnauthenticated}
-                pairKey={pairKey}
-                providerId={provider.id}
-                tenantId={tenantId}
-              />
-            ) : null}
-          </div>
-        ) : null}
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      archiveOpen,
+      canManage,
+      canMappingManage,
+      canMappingRead,
+      canSync,
+      canTest,
+      clearOpen,
+      coherentVersioned,
+      csrfToken,
+      diagnostic,
+      diagnosticError,
+      displayVersioned,
+      editOpen,
+      mutationSucceeded,
+      onArchived,
+      onOpenChange,
+      onPermissionError,
+      onUnauthenticated,
+      open,
+      pairKey,
+      provider,
+      runDiagnostic,
+      secretOpen,
+      setArchiveOpen,
+      setClearOpen,
+      setEditOpen,
+      setRefreshRevision,
+      setSecretOpen,
+      state,
+      tenantId,
+      testing,
+    },
+  };
+}
 
-        {provider && coherentVersioned ? (
-          <>
-            <EditProviderDialog
-              api={api}
-              csrfToken={csrfToken}
-              onMutation={mutationSucceeded}
-              onOpenChange={setEditOpen}
-              onPermissionError={onPermissionError}
-              onUnauthenticated={onUnauthenticated}
-              open={editOpen}
-              pairKey={pairKey}
-              tenantId={tenantId}
-              versioned={coherentVersioned}
-            />
-            <BindSecretDialog
-              api={api}
-              csrfToken={csrfToken}
-              onMutation={mutationSucceeded}
-              onOpenChange={setSecretOpen}
-              onPermissionError={onPermissionError}
-              onUnauthenticated={onUnauthenticated}
-              open={secretOpen}
-              pairKey={pairKey}
-              tenantId={tenantId}
-              versioned={coherentVersioned}
-            />
-            <ReasonMutationDialog
-              action="clear"
-              api={api}
-              csrfToken={csrfToken}
-              onMutation={mutationSucceeded}
-              onOpenChange={setClearOpen}
-              onPermissionError={onPermissionError}
-              onUnauthenticated={onUnauthenticated}
-              open={clearOpen}
-              pairKey={pairKey}
-              tenantId={tenantId}
-              versioned={coherentVersioned}
-            />
-            <ReasonMutationDialog
-              action="archive"
-              api={api}
-              csrfToken={csrfToken}
-              onArchived={onArchived}
-              onMutation={mutationSucceeded}
-              onOpenChange={setArchiveOpen}
-              onPermissionError={onPermissionError}
-              onUnauthenticated={onUnauthenticated}
-              open={archiveOpen}
-              pairKey={pairKey}
-              tenantId={tenantId}
-              versioned={coherentVersioned}
-            />
-          </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  );
+function LdapProviderDetailDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useLdapProviderDetailDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <LdapProviderDetailContent model={model} />;
 }
 
 interface MutationDialogBaseProps {
@@ -1115,22 +1019,43 @@ function EditProviderDialog(props: MutationDialogBaseProps): React.JSX.Element {
     tenantId,
     versioned,
   } = props;
-  const [draft, setDraft] = useState(() =>
-    draftFromLdapProvider(versioned.value),
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<EditProviderDialogState>,
+    undefined,
+    (): EditProviderDialogState => ({
+      draft: (() => draftFromLdapProvider(versioned.value))(),
+      errors: [],
+      requestError: null,
+      submitting: false,
+      stale: false,
+    }),
   );
-  const [errors, setErrors] = useState<readonly string[]>([]);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [stale, setStale] = useState(false);
+  const { draft, errors, requestError, submitting, stale } = workspaceState;
+  const { setDraft, setSubmitting } = useMemo(
+    () => ({
+      setDraft: (
+        value: React.SetStateAction<EditProviderDialogState["draft"]>,
+      ) => updateWorkspaceState({ draft: value }),
+      setSubmitting: (
+        value: React.SetStateAction<EditProviderDialogState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
 
   useEffect(() => {
     if (!open) return;
-    setDraft(draftFromLdapProvider(versioned.value));
-    setErrors([]);
-    setRequestError(null);
-    setStale(false);
+    updateWorkspaceState({
+      draft: draftFromLdapProvider(versioned.value),
+      errors: [],
+      requestError: null,
+      stale: false,
+    });
   }, [open, versioned]);
 
   async function submit(
@@ -1138,8 +1063,7 @@ function EditProviderDialog(props: MutationDialogBaseProps): React.JSX.Element {
   ): Promise<void> {
     event.preventDefault();
     const validationErrors = validateLdapProviderDraft(draft);
-    setErrors(validationErrors);
-    setRequestError(null);
+    updateWorkspaceState({ errors: validationErrors, requestError: null });
     if (validationErrors.length > 0 || submitting) return;
     const expectedPair = pairKey;
     setSubmitting(true);
@@ -1162,14 +1086,15 @@ function EditProviderDialog(props: MutationDialogBaseProps): React.JSX.Element {
       }
       if (caught instanceof PhaseTwoApiError && caught.status === 403)
         onPermissionError();
-      setStale(caught instanceof PhaseTwoApiError && caught.status === 412);
-      setRequestError(
-        describePhaseTwoError(
+      updateWorkspaceState({
+        stale: caught instanceof PhaseTwoApiError && caught.status === 412,
+        requestError: describePhaseTwoError(
           caught,
           "The provider configuration was not replaced.",
         ),
-      );
+      });
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairRef.current === expectedPair) setSubmitting(false);
     }
   }
@@ -1237,16 +1162,37 @@ function BindSecretDialog(props: MutationDialogBaseProps): React.JSX.Element {
     tenantId,
     versioned,
   } = props;
-  const [secret, setSecret] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<BindSecretDialogState>,
+    undefined,
+    (): BindSecretDialogState => ({
+      secret: "",
+      error: null,
+      submitting: false,
+    }),
+  );
+  const { secret, error, submitting } = workspaceState;
+  const { setSecret, setError, setSubmitting } = useMemo(
+    () => ({
+      setSecret: (
+        value: React.SetStateAction<BindSecretDialogState["secret"]>,
+      ) => updateWorkspaceState({ secret: value }),
+      setError: (value: React.SetStateAction<BindSecretDialogState["error"]>) =>
+        updateWorkspaceState({ error: value }),
+      setSubmitting: (
+        value: React.SetStateAction<BindSecretDialogState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
 
   useEffect(() => {
-    setSecret("");
-    setError(null);
-    setSubmitting(false);
+    updateWorkspaceState({ secret: "", error: null, submitting: false });
   }, [open, pairKey]);
 
   async function submit(
@@ -1285,6 +1231,7 @@ function BindSecretDialog(props: MutationDialogBaseProps): React.JSX.Element {
         describePhaseTwoError(caught, "The bind secret was not replaced."),
       );
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairRef.current === expectedPair) setSubmitting(false);
     }
   }
@@ -1366,16 +1313,38 @@ function ReasonMutationDialog({
   tenantId,
   versioned,
 }: ReasonMutationDialogProps): React.JSX.Element {
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<ReasonMutationDialogState>,
+    undefined,
+    (): ReasonMutationDialogState => ({
+      reason: "",
+      error: null,
+      submitting: false,
+    }),
+  );
+  const { reason, error, submitting } = workspaceState;
+  const { setReason, setError, setSubmitting } = useMemo(
+    () => ({
+      setReason: (
+        value: React.SetStateAction<ReasonMutationDialogState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setError: (
+        value: React.SetStateAction<ReasonMutationDialogState["error"]>,
+      ) => updateWorkspaceState({ error: value }),
+      setSubmitting: (
+        value: React.SetStateAction<ReasonMutationDialogState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
 
   useEffect(() => {
-    setReason("");
-    setError(null);
-    setSubmitting(false);
+    updateWorkspaceState({ reason: "", error: null, submitting: false });
   }, [open, pairKey]);
 
   async function submit(
@@ -1428,6 +1397,7 @@ function ReasonMutationDialog({
         ),
       );
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairRef.current === expectedPair) setSubmitting(false);
     }
   }
@@ -1506,15 +1476,58 @@ export interface LdapProviderEditorProps {
   policy?: "platform_global" | "tenant";
 }
 
-export function LdapProviderEditor({
+export function LdapProviderEditor(
+  props: LdapProviderEditorProps,
+): React.JSX.Element {
+  const model = useLdapProviderEditorModel(props);
+  return <LdapProviderEditorView model={model.data} />;
+}
+
+function useLdapProviderEditorModel({
   draft,
   manageEnabled = true,
   mode,
   onChange,
   policy = "tenant",
-}: LdapProviderEditorProps): React.JSX.Element {
+}: LdapProviderEditorProps) {
   const id = useId();
   const configuration = draft.configuration;
+  const [endpointState, setEndpointState] = useState(() => ({
+    source: draft.endpoints,
+    rows: draft.endpoints.map((endpoint, key) => ({ endpoint, key })),
+    nextKey: draft.endpoints.length,
+  }));
+  let endpointRows = endpointState.rows;
+  let nextEndpointKey = endpointState.nextKey;
+  if (endpointState.source !== draft.endpoints) {
+    const knownKeys = new Map(
+      endpointState.rows.map(({ endpoint, key }) => [endpoint, key]),
+    );
+    endpointRows = draft.endpoints.map((endpoint) => ({
+      endpoint,
+      key: knownKeys.get(endpoint) ?? nextEndpointKey++,
+    }));
+    setEndpointState({
+      source: draft.endpoints,
+      rows: endpointRows,
+      nextKey: nextEndpointKey,
+    });
+  }
+
+  function changeEndpoints(
+    rows: typeof endpointRows,
+    nextKey = nextEndpointKey,
+  ): void {
+    const endpoints = rows.map(({ endpoint }) => endpoint);
+    setEndpointState({ source: endpoints, rows, nextKey });
+    updateDraft({ endpoints });
+  }
+
+  function removeEndpoint(index: number): void {
+    changeEndpoints(
+      endpointRows.filter((_, endpointIndex) => endpointIndex !== index),
+    );
+  }
 
   function updateDraft(patch: Partial<LdapProviderDraft>): void {
     onChange({ ...draft, ...patch });
@@ -1530,616 +1543,81 @@ export function LdapProviderEditor({
     index: number,
     patch: Partial<TenantLdapAuthProviderEndpointView>,
   ): void {
-    updateDraft({
-      endpoints: draft.endpoints.map((endpoint, endpointIndex) =>
-        endpointIndex === index ? { ...endpoint, ...patch } : endpoint,
+    changeEndpoints(
+      endpointRows.map((row, endpointIndex) =>
+        endpointIndex === index
+          ? { ...row, endpoint: { ...row.endpoint, ...patch } }
+          : row,
       ),
-    });
+    );
   }
 
   function addEndpoint(): void {
     if (draft.endpoints.length >= 8) return;
     const nextPriority =
       Math.max(0, ...draft.endpoints.map((endpoint) => endpoint.priority)) + 1;
-    updateDraft({
-      endpoints: [
-        ...draft.endpoints,
+    changeEndpoints(
+      [
+        ...endpointRows,
         {
-          enabled: true,
-          host: "ldap.example.org",
-          port: 636,
-          priority: Math.min(nextPriority, 8),
-          referralAllowed: false,
-          tlsServerName: "ldap.example.org",
-          transport: "ldaps",
+          key: nextEndpointKey,
+          endpoint: {
+            enabled: true,
+            host: "ldap.example.org",
+            port: 636,
+            priority: Math.min(nextPriority, 8),
+            referralAllowed: false,
+            tlsServerName: "ldap.example.org",
+            transport: "ldaps",
+          },
         },
       ],
-    });
+      nextEndpointKey + 1,
+    );
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      addEndpoint,
+      endpointRows,
+      removeEndpoint,
+      configuration,
+      draft,
+      id,
+      manageEnabled,
+      mode,
+      policy,
+      updateConfiguration,
+      updateDraft,
+      updateEndpoint,
+    },
+  };
+}
+
+function LdapProviderEditorView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useLdapProviderEditorModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
   return (
     <div className="ldap-provider-editor">
-      <fieldset className="ldap-provider-fieldset">
-        <legend>Provider identity</legend>
-        <div className="ldap-provider-form-grid">
-          <FormField
-            htmlFor={`${id}-key`}
-            label="Key"
-            hint="Lowercase stable identifier, 3–64 characters."
-          >
-            <Input
-              id={`${id}-key`}
-              maxLength={64}
-              value={draft.key}
-              onChange={(event) =>
-                updateDraft({ key: event.currentTarget.value })
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${id}-display-name`} label="Display name">
-            <Input
-              id={`${id}-display-name`}
-              maxLength={120}
-              value={draft.displayName}
-              onChange={(event) =>
-                updateDraft({ displayName: event.currentTarget.value })
-              }
-            />
-          </FormField>
-        </div>
-        <FormField htmlFor={`${id}-description`} label="Description" optional>
-          <Textarea
-            id={`${id}-description`}
-            maxLength={1000}
-            value={draft.description}
-            onChange={(event) =>
-              updateDraft({ description: event.currentTarget.value })
-            }
-          />
-        </FormField>
-        {mode === "update" && manageEnabled ? (
-          <BooleanField
-            checked={draft.enabled}
-            id={`${id}-provider-enabled`}
-            label="Provider enabled"
-            onChange={(enabled) => updateDraft({ enabled })}
-            hint="Enabling remains subject to server-side readiness checks."
-          />
-        ) : mode === "create" ? (
-          <p className="ldap-provider-inline-note">
-            Creation is always disabled.
-          </p>
-        ) : null}
-      </fieldset>
+      <LdapProviderIdentity model={model} />
 
-      <fieldset className="ldap-provider-fieldset">
-        <legend>Directory and TLS</legend>
-        <div className="ldap-provider-form-grid">
-          <NativeSelectField
-            id={`${id}-configuration-template`}
-            label="Configuration template"
-            value={configuration.template}
-            options={[
-              ["active_directory", "Active Directory"],
-              ["openldap", "OpenLDAP"],
-              ["posix", "POSIX LDAP"],
-              ["custom", "Custom"],
-            ]}
-            onChange={(value) => updateConfiguration("template", value)}
-          />
-          <ReadOnlyPolicy label="Certificate verification" value="Required" />
-          <NumberField
-            id={`${id}-connect-timeout`}
-            label="Connect timeout (ms)"
-            min={100}
-            max={30000}
-            value={configuration.connectTimeoutMs}
-            onChange={(value) => updateConfiguration("connectTimeoutMs", value)}
-          />
-          <NumberField
-            id={`${id}-operation-timeout`}
-            label="Operation timeout (ms)"
-            min={100}
-            max={60000}
-            value={configuration.operationTimeoutMs}
-            onChange={(value) =>
-              updateConfiguration("operationTimeoutMs", value)
-            }
-          />
-        </div>
-        <FormField
-          htmlFor={`${id}-custom-ca`}
-          label="Custom CA PEM"
-          optional
-          hint="Appended to an isolated copy of system roots; CA certificates only."
-        >
-          <Textarea
-            id={`${id}-custom-ca`}
-            className="ldap-provider-code-input"
-            value={configuration.customCaPem ?? ""}
-            onChange={(event) =>
-              updateConfiguration(
-                "customCaPem",
-                nullable(event.currentTarget.value),
-              )
-            }
-          />
-        </FormField>
-        <div className="ldap-provider-form-grid">
-          <TextField
-            id={`${id}-bind-dn`}
-            label="Bind DN"
-            value={configuration.bindDn}
-            onChange={(value) => updateConfiguration("bindDn", value)}
-          />
-          <TextField
-            id={`${id}-user-base-dn`}
-            label="User base DN"
-            value={configuration.userBaseDn}
-            onChange={(value) => updateConfiguration("userBaseDn", value)}
-          />
-          <TextField
-            id={`${id}-group-base-dn`}
-            label="Group base DN"
-            optional
-            value={configuration.groupBaseDn ?? ""}
-            onChange={(value) =>
-              updateConfiguration("groupBaseDn", nullable(value))
-            }
-          />
-          <TextField
-            id={`${id}-user-dn-template`}
-            label="User DN template"
-            optional
-            value={configuration.userDnTemplate ?? ""}
-            onChange={(value) =>
-              updateConfiguration("userDnTemplate", nullable(value))
-            }
-          />
-        </div>
-        <FormField
-          htmlFor={`${id}-user-filter`}
-          label="User search filter"
-          hint="Must contain {username} exactly once."
-        >
-          <Input
-            id={`${id}-user-filter`}
-            className="ldap-provider-code-input"
-            value={configuration.userSearchFilter}
-            onChange={(event) =>
-              updateConfiguration("userSearchFilter", event.currentTarget.value)
-            }
-          />
-        </FormField>
-        <FormField
-          htmlFor={`${id}-group-filter`}
-          label="Group search filter"
-          optional
-          hint="Placeholder rules depend on nested-group mode."
-        >
-          <Input
-            id={`${id}-group-filter`}
-            className="ldap-provider-code-input"
-            value={configuration.groupSearchFilter ?? ""}
-            onChange={(event) =>
-              updateConfiguration(
-                "groupSearchFilter",
-                nullable(event.currentTarget.value),
-              )
-            }
-          />
-        </FormField>
-      </fieldset>
+      <LdapDirectoryAndTls model={model} />
 
-      <fieldset className="ldap-provider-fieldset">
-        <legend>Bounded directory work</legend>
-        <div className="ldap-provider-form-grid ldap-provider-form-grid--numeric">
-          <NumberField
-            id={`${id}-page-size`}
-            label="Page size"
-            min={1}
-            max={1000}
-            value={configuration.pageSize}
-            onChange={(value) => updateConfiguration("pageSize", value)}
-          />
-          <NumberField
-            id={`${id}-max-pages`}
-            label="Maximum pages"
-            min={1}
-            max={1000}
-            value={configuration.maxPages}
-            onChange={(value) => updateConfiguration("maxPages", value)}
-          />
-          <NumberField
-            id={`${id}-max-entries`}
-            label="Maximum entries"
-            min={1}
-            max={100000}
-            value={configuration.maxEntries}
-            onChange={(value) => updateConfiguration("maxEntries", value)}
-          />
-          <NumberField
-            id={`${id}-max-bytes`}
-            label="Maximum response bytes"
-            min={1024}
-            max={52428800}
-            value={configuration.maxResponseBytes}
-            onChange={(value) => updateConfiguration("maxResponseBytes", value)}
-          />
-          <NumberField
-            id={`${id}-max-groups`}
-            label="Maximum groups"
-            min={1}
-            max={10000}
-            value={configuration.maxGroups}
-            onChange={(value) => updateConfiguration("maxGroups", value)}
-          />
-        </div>
-        <div className="ldap-provider-form-grid">
-          <NativeSelectField
-            id={`${id}-referral-mode`}
-            label="Referral mode"
-            value={configuration.referralMode}
-            options={[
-              ["disabled", "Disabled"],
-              ["configured_endpoints", "Configured endpoints only"],
-            ]}
-            onChange={(value) => {
-              const referralMode = value;
-              updateDraft({
-                configuration: {
-                  ...configuration,
-                  referralMode,
-                  maxReferralHops:
-                    referralMode === "disabled"
-                      ? 0
-                      : Math.max(1, configuration.maxReferralHops),
-                },
-              });
-            }}
-          />
-          <NumberField
-            id={`${id}-referral-hops`}
-            label="Maximum referral hops"
-            min={configuration.referralMode === "disabled" ? 0 : 1}
-            max={3}
-            value={configuration.maxReferralHops}
-            disabled={configuration.referralMode === "disabled"}
-            onChange={(value) => updateConfiguration("maxReferralHops", value)}
-          />
-          <NativeSelectField
-            id={`${id}-nested-mode`}
-            label="Nested group mode"
-            value={configuration.nestedGroupMode}
-            options={[
-              ["disabled", "Disabled"],
-              ["active_directory", "Active Directory"],
-              ["reverse_search", "Reverse search"],
-              ["posix_member_uid", "POSIX memberUid"],
-            ]}
-            onChange={(value) => {
-              const nestedGroupMode = value;
-              updateDraft({
-                configuration: {
-                  ...configuration,
-                  nestedGroupMode,
-                  maxNestedGroupDepth:
-                    nestedGroupMode === "disabled"
-                      ? 0
-                      : Math.max(1, configuration.maxNestedGroupDepth),
-                  groupSearchFilter:
-                    nestedGroupMode === "disabled"
-                      ? null
-                      : configuration.groupSearchFilter,
-                },
-              });
-            }}
-          />
-          <NumberField
-            id={`${id}-nested-depth`}
-            label="Maximum nested depth"
-            min={configuration.nestedGroupMode === "disabled" ? 0 : 1}
-            max={20}
-            value={configuration.maxNestedGroupDepth}
-            disabled={configuration.nestedGroupMode === "disabled"}
-            onChange={(value) =>
-              updateConfiguration("maxNestedGroupDepth", value)
-            }
-          />
-        </div>
-      </fieldset>
+      <LdapDirectoryWorkLimits model={model} />
 
-      <fieldset className="ldap-provider-fieldset">
-        <legend>Attributes and immutable identity</legend>
-        <div className="ldap-provider-form-grid">
-          <TextField
-            id={`${id}-first-name-attribute`}
-            label="First-name attribute"
-            value={configuration.firstNameAttribute}
-            onChange={(value) =>
-              updateConfiguration("firstNameAttribute", value)
-            }
-          />
-          <TextField
-            id={`${id}-last-name-attribute`}
-            label="Last-name attribute"
-            value={configuration.lastNameAttribute}
-            onChange={(value) =>
-              updateConfiguration("lastNameAttribute", value)
-            }
-          />
-          <TextField
-            id={`${id}-display-name-attribute`}
-            label="Display-name attribute"
-            value={configuration.displayNameAttribute}
-            onChange={(value) =>
-              updateConfiguration("displayNameAttribute", value)
-            }
-          />
-          <TextField
-            id={`${id}-username-attribute`}
-            label="Username attribute"
-            value={configuration.usernameAttribute}
-            onChange={(value) =>
-              updateConfiguration("usernameAttribute", value)
-            }
-          />
-          <TextField
-            id={`${id}-alternate-username-attribute`}
-            label="Alternate username attribute"
-            optional
-            value={configuration.alternateUsernameAttribute ?? ""}
-            onChange={(value) =>
-              updateConfiguration("alternateUsernameAttribute", nullable(value))
-            }
-          />
-          <TextField
-            id={`${id}-email-attribute`}
-            label="Email attribute"
-            optional
-            value={configuration.emailAttribute ?? ""}
-            onChange={(value) =>
-              updateConfiguration("emailAttribute", nullable(value))
-            }
-          />
-          <TextField
-            id={`${id}-subject-attribute`}
-            label="Immutable subject attribute"
-            value={configuration.immutableSubjectAttribute}
-            onChange={(value) =>
-              updateConfiguration("immutableSubjectAttribute", value)
-            }
-          />
-          <NativeSelectField
-            id={`${id}-subject-format`}
-            label="Immutable subject format"
-            value={configuration.immutableSubjectFormat}
-            options={[
-              ["ad_object_guid", "AD objectGUID"],
-              ["entry_uuid", "entryUUID"],
-              ["utf8_exact", "UTF-8 exact"],
-              ["utf8_casefold", "UTF-8 Unicode casefold"],
-            ]}
-            onChange={(value) =>
-              updateConfiguration("immutableSubjectFormat", value)
-            }
-          />
-          <TextField
-            id={`${id}-membership-attribute`}
-            label="Group membership attribute"
-            optional
-            value={configuration.groupMembershipAttribute ?? ""}
-            onChange={(value) =>
-              updateConfiguration("groupMembershipAttribute", nullable(value))
-            }
-          />
-          <TextField
-            id={`${id}-member-uid-attribute`}
-            label="POSIX memberUid attribute"
-            optional
-            value={configuration.posixMemberUidAttribute ?? ""}
-            onChange={(value) =>
-              updateConfiguration("posixMemberUidAttribute", nullable(value))
-            }
-          />
-          <TextField
-            id={`${id}-gid-number-attribute`}
-            label="POSIX gidNumber attribute"
-            optional
-            value={configuration.posixGidNumberAttribute ?? ""}
-            onChange={(value) =>
-              updateConfiguration("posixGidNumberAttribute", nullable(value))
-            }
-          />
-        </div>
-      </fieldset>
+      <LdapIdentityAttributes model={model} />
 
-      <fieldset className="ldap-provider-fieldset">
-        <legend>Account status</legend>
-        <div className="ldap-provider-form-grid">
-          <NativeSelectField
-            id={`${id}-account-status-mode`}
-            label="Account status mode"
-            value={configuration.accountStatusMode}
-            options={[
-              ["none", "None"],
-              ["active_directory_uac", "Active Directory UAC"],
-              ["attribute_equals", "Attribute equals"],
-            ]}
-            onChange={(value) => {
-              updateDraft({
-                configuration: configurationWithAccountStatus(
-                  configuration,
-                  value,
-                ),
-              });
-            }}
-          />
-          <TextField
-            id={`${id}-account-status-attribute`}
-            label="Account status attribute"
-            optional
-            disabled={configuration.accountStatusMode === "none"}
-            value={configuration.accountStatusAttribute ?? ""}
-            onChange={(value) =>
-              updateConfiguration("accountStatusAttribute", nullable(value))
-            }
-          />
-          <TextField
-            id={`${id}-account-disabled-value`}
-            label="Disabled value"
-            optional
-            disabled={configuration.accountStatusMode !== "attribute_equals"}
-            value={configuration.accountDisabledValue ?? ""}
-            onChange={(value) =>
-              updateConfiguration("accountDisabledValue", nullable(value))
-            }
-          />
-        </div>
-      </fieldset>
+      <LdapAccountStatus model={model} />
 
-      <fieldset className="ldap-provider-fieldset ldap-provider-policy-fieldset">
-        <legend>
-          {policy === "platform_global"
-            ? "Platform login policy"
-            : "Foundation policy"}
-        </legend>
-        <p>
-          {policy === "platform_global"
-            ? "Global LDAP can link only an existing active user after directory authentication and mandatory local TOTP proof. It never creates users or grants super-admin."
-            : "These controls remain frozen until their dedicated identity contracts ship."}
-        </p>
-        <div className="ldap-provider-policy-grid">
-          <ReadOnlyPolicy
-            label="Account admission"
-            value={
-              policy === "platform_global"
-                ? "Existing identity + TOTP only"
-                : "Disabled"
-            }
-          />
-          <ReadOnlyPolicy label="No-match policy" value="Deny" />
-          <ReadOnlyPolicy label="Deprovision mode" value="Retain" />
-          <ReadOnlyPolicy label="Grace period" value="0 seconds" />
-          <ReadOnlyPolicy label="Scheduled sync" value="Unavailable" />
-        </div>
-      </fieldset>
+      <LdapAdmissionPolicy model={model} />
 
-      <fieldset className="ldap-provider-fieldset">
-        <div className="ldap-provider-section-heading">
-          <div>
-            <legend>Endpoints</legend>
-            <p>
-              Priority order is explicit; every resolved address is validated by
-              deployment egress policy.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={addEndpoint}
-            disabled={draft.endpoints.length >= 8}
-          >
-            <Plus aria-hidden="true" /> Add endpoint
-          </Button>
-        </div>
-        <div className="ldap-endpoint-editor-list">
-          {draft.endpoints.map((endpoint, index) => (
-            <div
-              className="ldap-endpoint-editor"
-              key={`${index}-${endpoint.priority}`}
-            >
-              <span className="ldap-endpoint-editor__index" aria-hidden="true">
-                {index + 1}
-              </span>
-              <div className="ldap-provider-form-grid ldap-provider-form-grid--endpoint">
-                <NumberField
-                  id={`${id}-endpoint-${index}-priority`}
-                  label="Priority"
-                  min={1}
-                  max={8}
-                  value={endpoint.priority}
-                  onChange={(priority) => updateEndpoint(index, { priority })}
-                />
-                <TextField
-                  id={`${id}-endpoint-${index}-host`}
-                  label="Host"
-                  value={endpoint.host}
-                  onChange={(host) => updateEndpoint(index, { host })}
-                />
-                <NumberField
-                  id={`${id}-endpoint-${index}-port`}
-                  label="Port"
-                  min={1}
-                  max={65535}
-                  value={endpoint.port}
-                  onChange={(port) => updateEndpoint(index, { port })}
-                />
-                <NativeSelectField
-                  id={`${id}-endpoint-${index}-transport`}
-                  label="Transport"
-                  value={endpoint.transport}
-                  options={[
-                    ["ldaps", "LDAPS"],
-                    ["starttls", "StartTLS"],
-                  ]}
-                  onChange={(value) =>
-                    updateEndpoint(index, {
-                      transport: value,
-                      port:
-                        value === "ldaps" && endpoint.port === 389
-                          ? 636
-                          : value === "starttls" && endpoint.port === 636
-                            ? 389
-                            : endpoint.port,
-                    })
-                  }
-                />
-                <TextField
-                  id={`${id}-endpoint-${index}-tls-name`}
-                  label="TLS server name"
-                  value={endpoint.tlsServerName}
-                  onChange={(tlsServerName) =>
-                    updateEndpoint(index, { tlsServerName })
-                  }
-                />
-              </div>
-              <div className="ldap-endpoint-flags">
-                <BooleanField
-                  id={`${id}-endpoint-${index}-enabled`}
-                  label="Endpoint enabled"
-                  checked={endpoint.enabled}
-                  onChange={(enabled) => updateEndpoint(index, { enabled })}
-                />
-                <BooleanField
-                  id={`${id}-endpoint-${index}-referral`}
-                  label="Explicit referral destination"
-                  checked={endpoint.referralAllowed}
-                  onChange={(referralAllowed) =>
-                    updateEndpoint(index, { referralAllowed })
-                  }
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={draft.endpoints.length === 1}
-                  onClick={() =>
-                    updateDraft({
-                      endpoints: draft.endpoints.filter(
-                        (_, endpointIndex) => endpointIndex !== index,
-                      ),
-                    })
-                  }
-                >
-                  <Trash2 aria-hidden="true" /> Remove endpoint
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </fieldset>
+      <LdapEndpointEditor model={model} />
     </div>
   );
 }
@@ -2556,12 +2034,1238 @@ function formatTimestamp(value: string): string {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed)
     ? value
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(parsed));
+    : dateTimeFormatter.format(new Date(parsed));
 }
 
 function isAbortError(caught: unknown): boolean {
   return caught instanceof DOMException && caught.name === "AbortError";
+}
+
+function LdapProvidersWorkspace({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantLdapProvidersPageView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    authority,
+    canManage,
+    canMappingManage,
+    canMappingRead,
+    canRead,
+    canSync,
+    canTest,
+    clearSession,
+    createOpen,
+    notice,
+    pairKey,
+    selectedProviderId,
+    session,
+    setCreateOpen,
+    setNotice,
+    setRevision,
+    setSelectedProviderId,
+    tenantId,
+  } = model;
+  return (
+    <div className="content ldap-provider-page">
+      <section className="page-heading ldap-provider-page__heading">
+        <div>
+          <p className="section-label">Tenant administration</p>
+          <h1>LDAP identity providers</h1>
+          <p>
+            Configure TLS-protected directory endpoints, redacted bind-secret
+            state, and bounded connection diagnostics. Visibility here is an
+            affordance; the API rechecks every permission.
+          </p>
+        </div>
+        {canManage ? (
+          <Button type="button" onClick={() => setCreateOpen(true)}>
+            <Plus aria-hidden="true" /> Create provider
+          </Button>
+        ) : null}
+      </section>
+
+      {notice ? (
+        <Alert className="ldap-provider-notice">
+          {notice.tone === "success" ? (
+            <CheckCircle2 aria-hidden="true" />
+          ) : (
+            <ShieldAlert aria-hidden="true" />
+          )}
+          <AlertTitle>
+            {notice.tone === "success" ? "Action completed" : "Review needed"}
+          </AlertTitle>
+          <AlertDescription>{notice.message}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {<LdapProviderInventory model={model} />}
+
+      <CreateLdapProviderDialog
+        api={api}
+        canManage={canManage}
+        csrfToken={session.csrfToken}
+        onCreated={(location) => {
+          setCreateOpen(false);
+          setNotice({
+            message:
+              "The provider was created disabled. Add a bind secret and review readiness before enabling it.",
+            tone: "success",
+          });
+          setRevision((value) => value + 1);
+          const providerId = providerIdFromLocation(location);
+          if (providerId) setSelectedProviderId(providerId);
+        }}
+        onOpenChange={setCreateOpen}
+        onPermissionError={authority.reload}
+        onUnauthenticated={() => clearSession(session.id)}
+        open={createOpen}
+        pairKey={pairKey}
+        tenantId={tenantId}
+      />
+
+      <LdapProviderDetailDialog
+        api={api}
+        canManage={canManage}
+        canMappingManage={canMappingManage}
+        canMappingRead={canMappingRead}
+        canRead={canRead}
+        canSync={canSync}
+        canTest={canTest}
+        csrfToken={session.csrfToken}
+        onArchived={() => {
+          setSelectedProviderId(null);
+          setNotice({
+            message: "The LDAP provider was archived and disabled.",
+            tone: "success",
+          });
+          setRevision((value) => value + 1);
+        }}
+        onListRefresh={() => setRevision((value) => value + 1)}
+        onNotice={setNotice}
+        onOpenChange={(open) => {
+          if (!open) setSelectedProviderId(null);
+        }}
+        onPermissionError={authority.reload}
+        onUnauthenticated={() => clearSession(session.id)}
+        open={selectedProviderId !== null}
+        pairKey={pairKey}
+        providerId={selectedProviderId}
+        tenantId={tenantId}
+      />
+    </div>
+  );
+}
+
+function LdapProviderDetailContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    canManage,
+    canMappingManage,
+    canMappingRead,
+    canSync,
+    canTest,
+    coherentVersioned,
+    csrfToken,
+    diagnostic,
+    diagnosticError,
+    displayVersioned,
+    onOpenChange,
+    onPermissionError,
+    onUnauthenticated,
+    open,
+    pairKey,
+    provider,
+    setRefreshRevision,
+    state,
+    tenantId,
+  } = model;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="ldap-provider-detail-dialog">
+        <DialogHeader>
+          <DialogTitle>{provider?.displayName ?? "LDAP provider"}</DialogTitle>
+          <DialogDescription>
+            Current redacted configuration and dedicated operational actions.
+          </DialogDescription>
+        </DialogHeader>
+        {state.kind === "loading" && !provider ? <LdapDetailSkeleton /> : null}
+        {state.kind === "error" ? (
+          <div className="ldap-provider-detail-error">
+            <FocusedError message={state.message} />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRefreshRevision((value) => value + 1)}
+            >
+              <RefreshCw aria-hidden="true" /> Reload detail
+            </Button>
+          </div>
+        ) : null}
+        {provider && displayVersioned ? (
+          <div className="ldap-provider-detail-ready">
+            {state.kind !== "ready" ? (
+              <Alert>
+                <ShieldAlert aria-hidden="true" />
+                <AlertTitle>Showing the last confirmed projection</AlertTitle>
+                <AlertDescription>
+                  The preceding mutation succeeded, but the read refresh has not
+                  completed. The last confirmed body remains display-only with
+                  its original ETag; actions stay locked until a successful GET
+                  returns a new coherent body and ETag.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            <ProviderFacts provider={provider} />
+            <EndpointRail endpoints={provider.endpoints} />
+            {<LdapProviderActions model={model} />}
+            {diagnostic ? <DiagnosticPanel diagnostic={diagnostic} /> : null}
+            {diagnosticError ? (
+              <FocusedError
+                message={diagnosticError}
+                title="Diagnostic request failed"
+              />
+            ) : null}
+            {coherentVersioned && provider.archivedAt === null ? (
+              <LdapAdministrationWorkspace
+                api={api}
+                canMappingManage={canMappingManage}
+                canMappingRead={canMappingRead}
+                canProviderManage={canManage}
+                canProviderTest={canTest}
+                canSync={canSync}
+                csrfToken={csrfToken}
+                onPermissionError={onPermissionError}
+                onUnauthenticated={onUnauthenticated}
+                pairKey={pairKey}
+                providerId={provider.id}
+                tenantId={tenantId}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
+        {<LdapProviderMutationDialogs model={model} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LdapDirectoryAndTls({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration } = model;
+  return (
+    <fieldset className="ldap-provider-fieldset">
+      <legend>Directory and TLS</legend>
+      <LdapConnectionSettings model={model} />
+      <FormField
+        htmlFor={`${id}-custom-ca`}
+        label="Custom CA PEM"
+        optional
+        hint="Appended to an isolated copy of system roots; CA certificates only."
+      >
+        <Textarea
+          id={`${id}-custom-ca`}
+          className="ldap-provider-code-input"
+          value={configuration.customCaPem ?? ""}
+          onChange={(event) =>
+            updateConfiguration(
+              "customCaPem",
+              nullable(event.currentTarget.value),
+            )
+          }
+        />
+      </FormField>
+      <LdapDirectoryLocations model={model} />
+      <FormField
+        htmlFor={`${id}-user-filter`}
+        label="User search filter"
+        hint="Must contain {username} exactly once."
+      >
+        <Input
+          id={`${id}-user-filter`}
+          className="ldap-provider-code-input"
+          value={configuration.userSearchFilter}
+          onChange={(event) =>
+            updateConfiguration("userSearchFilter", event.currentTarget.value)
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${id}-group-filter`}
+        label="Group search filter"
+        optional
+        hint="Placeholder rules depend on nested-group mode."
+      >
+        <Input
+          id={`${id}-group-filter`}
+          className="ldap-provider-code-input"
+          value={configuration.groupSearchFilter ?? ""}
+          onChange={(event) =>
+            updateConfiguration(
+              "groupSearchFilter",
+              nullable(event.currentTarget.value),
+            )
+          }
+        />
+      </FormField>
+    </fieldset>
+  );
+}
+
+function LdapDirectoryWorkLimits({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  return (
+    <fieldset className="ldap-provider-fieldset">
+      <legend>Bounded directory work</legend>
+      <LdapQueryLimits model={model} />
+      <LdapGroupTraversalLimits model={model} />
+    </fieldset>
+  );
+}
+
+function LdapIdentityAttributes({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration } = model;
+  return (
+    <fieldset className="ldap-provider-fieldset">
+      <legend>Attributes and immutable identity</legend>
+      <div className="ldap-provider-form-grid">
+        <TextField
+          id={`${id}-first-name-attribute`}
+          label="First-name attribute"
+          value={configuration.firstNameAttribute}
+          onChange={(value) => updateConfiguration("firstNameAttribute", value)}
+        />
+        <TextField
+          id={`${id}-last-name-attribute`}
+          label="Last-name attribute"
+          value={configuration.lastNameAttribute}
+          onChange={(value) => updateConfiguration("lastNameAttribute", value)}
+        />
+        <TextField
+          id={`${id}-display-name-attribute`}
+          label="Display-name attribute"
+          value={configuration.displayNameAttribute}
+          onChange={(value) =>
+            updateConfiguration("displayNameAttribute", value)
+          }
+        />
+        <TextField
+          id={`${id}-username-attribute`}
+          label="Username attribute"
+          value={configuration.usernameAttribute}
+          onChange={(value) => updateConfiguration("usernameAttribute", value)}
+        />
+        <TextField
+          id={`${id}-alternate-username-attribute`}
+          label="Alternate username attribute"
+          optional
+          value={configuration.alternateUsernameAttribute ?? ""}
+          onChange={(value) =>
+            updateConfiguration("alternateUsernameAttribute", nullable(value))
+          }
+        />
+        <TextField
+          id={`${id}-email-attribute`}
+          label="Email attribute"
+          optional
+          value={configuration.emailAttribute ?? ""}
+          onChange={(value) =>
+            updateConfiguration("emailAttribute", nullable(value))
+          }
+        />
+        <TextField
+          id={`${id}-subject-attribute`}
+          label="Immutable subject attribute"
+          value={configuration.immutableSubjectAttribute}
+          onChange={(value) =>
+            updateConfiguration("immutableSubjectAttribute", value)
+          }
+        />
+        <NativeSelectField
+          id={`${id}-subject-format`}
+          label="Immutable subject format"
+          value={configuration.immutableSubjectFormat}
+          options={[
+            ["ad_object_guid", "AD objectGUID"],
+            ["entry_uuid", "entryUUID"],
+            ["utf8_exact", "UTF-8 exact"],
+            ["utf8_casefold", "UTF-8 Unicode casefold"],
+          ]}
+          onChange={(value) =>
+            updateConfiguration("immutableSubjectFormat", value)
+          }
+        />
+        <TextField
+          id={`${id}-membership-attribute`}
+          label="Group membership attribute"
+          optional
+          value={configuration.groupMembershipAttribute ?? ""}
+          onChange={(value) =>
+            updateConfiguration("groupMembershipAttribute", nullable(value))
+          }
+        />
+        <TextField
+          id={`${id}-member-uid-attribute`}
+          label="POSIX memberUid attribute"
+          optional
+          value={configuration.posixMemberUidAttribute ?? ""}
+          onChange={(value) =>
+            updateConfiguration("posixMemberUidAttribute", nullable(value))
+          }
+        />
+        <TextField
+          id={`${id}-gid-number-attribute`}
+          label="POSIX gidNumber attribute"
+          optional
+          value={configuration.posixGidNumberAttribute ?? ""}
+          onChange={(value) =>
+            updateConfiguration("posixGidNumberAttribute", nullable(value))
+          }
+        />
+      </div>
+    </fieldset>
+  );
+}
+
+function LdapEndpointEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  const {
+    addEndpoint,
+    draft,
+    id,
+    endpointRows,
+    removeEndpoint,
+    updateEndpoint,
+  } = model;
+  return (
+    <fieldset className="ldap-provider-fieldset">
+      <div className="ldap-provider-section-heading">
+        <div>
+          <legend>Endpoints</legend>
+          <p>
+            Priority order is explicit; every resolved address is validated by
+            deployment egress policy.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addEndpoint}
+          disabled={draft.endpoints.length >= 8}
+        >
+          <Plus aria-hidden="true" /> Add endpoint
+        </Button>
+      </div>
+      <div className="ldap-endpoint-editor-list">
+        {endpointRows.map(({ endpoint, key }, index) => (
+          <div className="ldap-endpoint-editor" key={key}>
+            <span className="ldap-endpoint-editor__index" aria-hidden="true">
+              {index + 1}
+            </span>
+            <div className="ldap-provider-form-grid ldap-provider-form-grid--endpoint">
+              <NumberField
+                id={`${id}-endpoint-${index}-priority`}
+                label="Priority"
+                min={1}
+                max={8}
+                value={endpoint.priority}
+                onChange={(priority) => updateEndpoint(index, { priority })}
+              />
+              <TextField
+                id={`${id}-endpoint-${index}-host`}
+                label="Host"
+                value={endpoint.host}
+                onChange={(host) => updateEndpoint(index, { host })}
+              />
+              <NumberField
+                id={`${id}-endpoint-${index}-port`}
+                label="Port"
+                min={1}
+                max={65535}
+                value={endpoint.port}
+                onChange={(port) => updateEndpoint(index, { port })}
+              />
+              <NativeSelectField
+                id={`${id}-endpoint-${index}-transport`}
+                label="Transport"
+                value={endpoint.transport}
+                options={[
+                  ["ldaps", "LDAPS"],
+                  ["starttls", "StartTLS"],
+                ]}
+                onChange={(value) =>
+                  updateEndpoint(index, {
+                    transport: value,
+                    port:
+                      value === "ldaps" && endpoint.port === 389
+                        ? 636
+                        : value === "starttls" && endpoint.port === 636
+                          ? 389
+                          : endpoint.port,
+                  })
+                }
+              />
+              <TextField
+                id={`${id}-endpoint-${index}-tls-name`}
+                label="TLS server name"
+                value={endpoint.tlsServerName}
+                onChange={(tlsServerName) =>
+                  updateEndpoint(index, { tlsServerName })
+                }
+              />
+            </div>
+            <div className="ldap-endpoint-flags">
+              <BooleanField
+                id={`${id}-endpoint-${index}-enabled`}
+                label="Endpoint enabled"
+                checked={endpoint.enabled}
+                onChange={(enabled) => updateEndpoint(index, { enabled })}
+              />
+              <BooleanField
+                id={`${id}-endpoint-${index}-referral`}
+                label="Explicit referral destination"
+                checked={endpoint.referralAllowed}
+                onChange={(referralAllowed) =>
+                  updateEndpoint(index, { referralAllowed })
+                }
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={draft.endpoints.length === 1}
+                onClick={() => removeEndpoint(index)}
+              >
+                <Trash2 aria-hidden="true" /> Remove endpoint
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+interface TenantLdapProvidersPageState {
+  listState: ProviderListState;
+  revision: number;
+  selectedProviderId: string | null;
+  createOpen: boolean;
+  loadingMore: boolean;
+  paginationError: string | null;
+  notice: MutationNotice | null;
+}
+
+interface LdapProviderDetailDialogState {
+  state: ProviderDetailState;
+  refreshRevision: number;
+  editOpen: boolean;
+  secretOpen: boolean;
+  clearOpen: boolean;
+  archiveOpen: boolean;
+  diagnostic: TenantLdapAuthProviderDiagnosticView | null;
+  diagnosticError: string | null;
+  testing: "bind" | "connection" | null;
+}
+
+interface EditProviderDialogState {
+  draft: LdapProviderDraft;
+  errors: readonly string[];
+  requestError: string | null;
+  submitting: boolean;
+  stale: boolean;
+}
+
+interface BindSecretDialogState {
+  secret: string;
+  error: string | null;
+  submitting: boolean;
+}
+
+interface ReasonMutationDialogState {
+  reason: string;
+  error: string | null;
+  submitting: boolean;
+}
+
+function LdapProviderIdentity({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  const { draft, id, manageEnabled, mode, updateDraft } = model;
+  return (
+    <fieldset className="ldap-provider-fieldset">
+      <legend>Provider identity</legend>
+      <div className="ldap-provider-form-grid">
+        <FormField
+          htmlFor={`${id}-key`}
+          label="Key"
+          hint="Lowercase stable identifier, 3–64 characters."
+        >
+          <Input
+            id={`${id}-key`}
+            maxLength={64}
+            value={draft.key}
+            onChange={(event) =>
+              updateDraft({ key: event.currentTarget.value })
+            }
+          />
+        </FormField>
+        <FormField htmlFor={`${id}-display-name`} label="Display name">
+          <Input
+            id={`${id}-display-name`}
+            maxLength={120}
+            value={draft.displayName}
+            onChange={(event) =>
+              updateDraft({ displayName: event.currentTarget.value })
+            }
+          />
+        </FormField>
+      </div>
+      <FormField htmlFor={`${id}-description`} label="Description" optional>
+        <Textarea
+          id={`${id}-description`}
+          maxLength={1000}
+          value={draft.description}
+          onChange={(event) =>
+            updateDraft({ description: event.currentTarget.value })
+          }
+        />
+      </FormField>
+      {mode === "update" && manageEnabled ? (
+        <BooleanField
+          checked={draft.enabled}
+          id={`${id}-provider-enabled`}
+          label="Provider enabled"
+          onChange={(enabled) => updateDraft({ enabled })}
+          hint="Enabling remains subject to server-side readiness checks."
+        />
+      ) : mode === "create" ? (
+        <p className="ldap-provider-inline-note">
+          Creation is always disabled.
+        </p>
+      ) : null}
+    </fieldset>
+  );
+}
+
+function LdapAccountStatus({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration, updateDraft } = model;
+  return (
+    <fieldset className="ldap-provider-fieldset">
+      <legend>Account status</legend>
+      <div className="ldap-provider-form-grid">
+        <NativeSelectField
+          id={`${id}-account-status-mode`}
+          label="Account status mode"
+          value={configuration.accountStatusMode}
+          options={[
+            ["none", "None"],
+            ["active_directory_uac", "Active Directory UAC"],
+            ["attribute_equals", "Attribute equals"],
+          ]}
+          onChange={(value) => {
+            updateDraft({
+              configuration: configurationWithAccountStatus(
+                configuration,
+                value,
+              ),
+            });
+          }}
+        />
+        <TextField
+          id={`${id}-account-status-attribute`}
+          label="Account status attribute"
+          optional
+          disabled={configuration.accountStatusMode === "none"}
+          value={configuration.accountStatusAttribute ?? ""}
+          onChange={(value) =>
+            updateConfiguration("accountStatusAttribute", nullable(value))
+          }
+        />
+        <TextField
+          id={`${id}-account-disabled-value`}
+          label="Disabled value"
+          optional
+          disabled={configuration.accountStatusMode !== "attribute_equals"}
+          value={configuration.accountDisabledValue ?? ""}
+          onChange={(value) =>
+            updateConfiguration("accountDisabledValue", nullable(value))
+          }
+        />
+      </div>
+    </fieldset>
+  );
+}
+
+function LdapAdmissionPolicy({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderEditorView>["model"];
+}): React.ReactNode {
+  const { policy } = model;
+  return (
+    <fieldset className="ldap-provider-fieldset ldap-provider-policy-fieldset">
+      <legend>
+        {policy === "platform_global"
+          ? "Platform login policy"
+          : "Foundation policy"}
+      </legend>
+      <p>
+        {policy === "platform_global"
+          ? "Global LDAP can link only an existing active user after directory authentication and mandatory local TOTP proof. It never creates users or grants super-admin."
+          : "These controls remain frozen until their dedicated identity contracts ship."}
+      </p>
+      <div className="ldap-provider-policy-grid">
+        <ReadOnlyPolicy
+          label="Account admission"
+          value={
+            policy === "platform_global"
+              ? "Existing identity + TOTP only"
+              : "Disabled"
+          }
+        />
+        <ReadOnlyPolicy label="No-match policy" value="Deny" />
+        <ReadOnlyPolicy label="Deprovision mode" value="Retain" />
+        <ReadOnlyPolicy label="Grace period" value="0 seconds" />
+        <ReadOnlyPolicy label="Scheduled sync" value="Unavailable" />
+      </div>
+    </fieldset>
+  );
+}
+
+function LdapProviderInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProvidersWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    listState,
+    loadMore,
+    loadingMore,
+    paginationError,
+    setRevision,
+    setSelectedProviderId,
+  } = model;
+  return listState.kind === "error" ? (
+    <div className="ldap-provider-list-error">
+      <FocusedError message={listState.message} />
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setRevision((value) => value + 1)}
+      >
+        <RefreshCw aria-hidden="true" /> Retry inventory
+      </Button>
+    </div>
+  ) : (
+    <Card className="ldap-provider-table-card">
+      <CardHeader>
+        <CardTitle>Provider inventory</CardTitle>
+        <CardDescription>
+          Bind secrets are represented only by configured/rotated metadata.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table className="ldap-provider-table">
+          <TableCaption>
+            {listState.items.length === 0
+              ? "No LDAP providers are configured for this tenant."
+              : `${listState.items.length} LDAP provider${listState.items.length === 1 ? "" : "s"} loaded.`}
+          </TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Template</TableHead>
+              <TableHead>Endpoints</TableHead>
+              <TableHead>Bind secret</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {listState.items.map((provider) => (
+              <TableRow key={provider.id}>
+                <TableCell>
+                  <div className="ldap-provider-name-cell">
+                    <strong>{provider.displayName}</strong>
+                    <small>{provider.key}</small>
+                  </div>
+                </TableCell>
+                <TableCell>{templateLabel(provider.template)}</TableCell>
+                <TableCell>{provider.enabledEndpointCount} enabled</TableCell>
+                <TableCell>
+                  {provider.bindSecretConfigured ? "Configured" : "Not set"}
+                </TableCell>
+                <TableCell>
+                  <ProviderStateBadge provider={provider} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelectedProviderId(provider.id)}
+                  >
+                    Inspect
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {listState.nextCursor ? (
+          <div className="ldap-provider-pagination">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+            >
+              <ArrowDown aria-hidden="true" />
+              {loadingMore ? "Loading…" : "Load more providers"}
+            </Button>
+            {paginationError ? (
+              <FocusedError message={paginationError} />
+            ) : null}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+type LdapDetailModel = React.ComponentProps<
+  typeof LdapProviderDetailContent
+>["model"];
+
+function LdapProviderActions({
+  model,
+}: {
+  model: LdapDetailModel;
+}): React.ReactNode {
+  const { coherentVersioned, provider } = model;
+  if (!provider || !coherentVersioned) return null;
+  return (
+    <section
+      className="ldap-provider-actions"
+      aria-labelledby="ldap-actions-title"
+    >
+      <div className="ldap-provider-section-heading">
+        <div>
+          <h3 id="ldap-actions-title">Provider actions</h3>
+          <p>Each action is re-authorized by the server.</p>
+        </div>
+      </div>
+      <div className="ldap-provider-action-grid">
+        {provider.archivedAt === null ? (
+          <>
+            <LdapConfigurationActions model={model} />
+            <LdapDiagnosticActions model={model} />
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function LdapConfigurationActions({
+  model,
+}: {
+  model: LdapDetailModel;
+}): React.ReactNode {
+  const {
+    canManage,
+    provider,
+    setEditOpen,
+    setSecretOpen,
+    setClearOpen,
+    setArchiveOpen,
+  } = model;
+  if (!canManage || !provider) return null;
+  return (
+    <>
+      <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
+        <ServerCog aria-hidden="true" /> Edit configuration
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setSecretOpen(true)}
+      >
+        <KeyRound aria-hidden="true" />{" "}
+        {provider.bindSecretConfigured
+          ? "Replace bind secret"
+          : "Set bind secret"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={provider.enabled || !provider.bindSecretConfigured}
+        onClick={() => setClearOpen(true)}
+      >
+        <Trash2 aria-hidden="true" /> Clear bind secret
+      </Button>
+      <Button
+        type="button"
+        variant="destructive"
+        onClick={() => setArchiveOpen(true)}
+      >
+        <Archive aria-hidden="true" /> Archive provider
+      </Button>
+    </>
+  );
+}
+
+function LdapDiagnosticActions({
+  model,
+}: {
+  model: LdapDetailModel;
+}): React.ReactNode {
+  const { canTest, provider, testing, runDiagnostic } = model;
+  if (!canTest || !provider) return null;
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={testing !== null}
+        onClick={() => void runDiagnostic("connection")}
+      >
+        <Cable aria-hidden="true" />{" "}
+        {testing === "connection" ? "Testing connection…" : "Test connection"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={testing !== null || !provider.bindSecretConfigured}
+        onClick={() => void runDiagnostic("bind")}
+      >
+        <LockKeyhole aria-hidden="true" />{" "}
+        {testing === "bind" ? "Testing bind…" : "Test bind"}
+      </Button>
+    </>
+  );
+}
+
+function LdapProviderMutationDialogs({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapProviderDetailContent>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    archiveOpen,
+    clearOpen,
+    coherentVersioned,
+    csrfToken,
+    editOpen,
+    mutationSucceeded,
+    onArchived,
+    onPermissionError,
+    onUnauthenticated,
+    pairKey,
+    provider,
+    secretOpen,
+    setArchiveOpen,
+    setClearOpen,
+    setEditOpen,
+    setSecretOpen,
+    tenantId,
+  } = model;
+  return provider && coherentVersioned ? (
+    <>
+      <EditProviderDialog
+        api={api}
+        csrfToken={csrfToken}
+        onMutation={mutationSucceeded}
+        onOpenChange={setEditOpen}
+        onPermissionError={onPermissionError}
+        onUnauthenticated={onUnauthenticated}
+        open={editOpen}
+        pairKey={pairKey}
+        tenantId={tenantId}
+        versioned={coherentVersioned}
+      />
+      <BindSecretDialog
+        api={api}
+        csrfToken={csrfToken}
+        onMutation={mutationSucceeded}
+        onOpenChange={setSecretOpen}
+        onPermissionError={onPermissionError}
+        onUnauthenticated={onUnauthenticated}
+        open={secretOpen}
+        pairKey={pairKey}
+        tenantId={tenantId}
+        versioned={coherentVersioned}
+      />
+      <ReasonMutationDialog
+        action="clear"
+        api={api}
+        csrfToken={csrfToken}
+        onMutation={mutationSucceeded}
+        onOpenChange={setClearOpen}
+        onPermissionError={onPermissionError}
+        onUnauthenticated={onUnauthenticated}
+        open={clearOpen}
+        pairKey={pairKey}
+        tenantId={tenantId}
+        versioned={coherentVersioned}
+      />
+      <ReasonMutationDialog
+        action="archive"
+        api={api}
+        csrfToken={csrfToken}
+        onArchived={onArchived}
+        onMutation={mutationSucceeded}
+        onOpenChange={setArchiveOpen}
+        onPermissionError={onPermissionError}
+        onUnauthenticated={onUnauthenticated}
+        open={archiveOpen}
+        pairKey={pairKey}
+        tenantId={tenantId}
+        versioned={coherentVersioned}
+      />
+    </>
+  ) : null;
+}
+
+function LdapConnectionSettings({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapDirectoryAndTls>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration } = model;
+  return (
+    <div className="ldap-provider-form-grid">
+      <NativeSelectField
+        id={`${id}-configuration-template`}
+        label="Configuration template"
+        value={configuration.template}
+        options={[
+          ["active_directory", "Active Directory"],
+          ["openldap", "OpenLDAP"],
+          ["posix", "POSIX LDAP"],
+          ["custom", "Custom"],
+        ]}
+        onChange={(value) => updateConfiguration("template", value)}
+      />
+      <ReadOnlyPolicy label="Certificate verification" value="Required" />
+      <NumberField
+        id={`${id}-connect-timeout`}
+        label="Connect timeout (ms)"
+        min={100}
+        max={30000}
+        value={configuration.connectTimeoutMs}
+        onChange={(value) => updateConfiguration("connectTimeoutMs", value)}
+      />
+      <NumberField
+        id={`${id}-operation-timeout`}
+        label="Operation timeout (ms)"
+        min={100}
+        max={60000}
+        value={configuration.operationTimeoutMs}
+        onChange={(value) => updateConfiguration("operationTimeoutMs", value)}
+      />
+    </div>
+  );
+}
+
+function LdapDirectoryLocations({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapDirectoryAndTls>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration } = model;
+  return (
+    <div className="ldap-provider-form-grid">
+      <TextField
+        id={`${id}-bind-dn`}
+        label="Bind DN"
+        value={configuration.bindDn}
+        onChange={(value) => updateConfiguration("bindDn", value)}
+      />
+      <TextField
+        id={`${id}-user-base-dn`}
+        label="User base DN"
+        value={configuration.userBaseDn}
+        onChange={(value) => updateConfiguration("userBaseDn", value)}
+      />
+      <TextField
+        id={`${id}-group-base-dn`}
+        label="Group base DN"
+        optional
+        value={configuration.groupBaseDn ?? ""}
+        onChange={(value) =>
+          updateConfiguration("groupBaseDn", nullable(value))
+        }
+      />
+      <TextField
+        id={`${id}-user-dn-template`}
+        label="User DN template"
+        optional
+        value={configuration.userDnTemplate ?? ""}
+        onChange={(value) =>
+          updateConfiguration("userDnTemplate", nullable(value))
+        }
+      />
+    </div>
+  );
+}
+
+function LdapQueryLimits({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapDirectoryWorkLimits>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration } = model;
+  return (
+    <div className="ldap-provider-form-grid ldap-provider-form-grid--numeric">
+      <NumberField
+        id={`${id}-page-size`}
+        label="Page size"
+        min={1}
+        max={1000}
+        value={configuration.pageSize}
+        onChange={(value) => updateConfiguration("pageSize", value)}
+      />
+      <NumberField
+        id={`${id}-max-pages`}
+        label="Maximum pages"
+        min={1}
+        max={1000}
+        value={configuration.maxPages}
+        onChange={(value) => updateConfiguration("maxPages", value)}
+      />
+      <NumberField
+        id={`${id}-max-entries`}
+        label="Maximum entries"
+        min={1}
+        max={100000}
+        value={configuration.maxEntries}
+        onChange={(value) => updateConfiguration("maxEntries", value)}
+      />
+      <NumberField
+        id={`${id}-max-bytes`}
+        label="Maximum response bytes"
+        min={1024}
+        max={52428800}
+        value={configuration.maxResponseBytes}
+        onChange={(value) => updateConfiguration("maxResponseBytes", value)}
+      />
+      <NumberField
+        id={`${id}-max-groups`}
+        label="Maximum groups"
+        min={1}
+        max={10000}
+        value={configuration.maxGroups}
+        onChange={(value) => updateConfiguration("maxGroups", value)}
+      />
+    </div>
+  );
+}
+
+function LdapGroupTraversalLimits({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapDirectoryWorkLimits>["model"];
+}): React.ReactNode {
+  const { configuration, id, updateConfiguration, updateDraft } = model;
+  return (
+    <div className="ldap-provider-form-grid">
+      <NativeSelectField
+        id={`${id}-referral-mode`}
+        label="Referral mode"
+        value={configuration.referralMode}
+        options={[
+          ["disabled", "Disabled"],
+          ["configured_endpoints", "Configured endpoints only"],
+        ]}
+        onChange={(value) => {
+          const referralMode = value;
+          updateDraft({
+            configuration: {
+              ...configuration,
+              referralMode,
+              maxReferralHops:
+                referralMode === "disabled"
+                  ? 0
+                  : Math.max(1, configuration.maxReferralHops),
+            },
+          });
+        }}
+      />
+      <NumberField
+        id={`${id}-referral-hops`}
+        label="Maximum referral hops"
+        min={configuration.referralMode === "disabled" ? 0 : 1}
+        max={3}
+        value={configuration.maxReferralHops}
+        disabled={configuration.referralMode === "disabled"}
+        onChange={(value) => updateConfiguration("maxReferralHops", value)}
+      />
+      <NativeSelectField
+        id={`${id}-nested-mode`}
+        label="Nested group mode"
+        value={configuration.nestedGroupMode}
+        options={[
+          ["disabled", "Disabled"],
+          ["active_directory", "Active Directory"],
+          ["reverse_search", "Reverse search"],
+          ["posix_member_uid", "POSIX memberUid"],
+        ]}
+        onChange={(value) => {
+          const nestedGroupMode = value;
+          updateDraft({
+            configuration: {
+              ...configuration,
+              nestedGroupMode,
+              maxNestedGroupDepth:
+                nestedGroupMode === "disabled"
+                  ? 0
+                  : Math.max(1, configuration.maxNestedGroupDepth),
+              groupSearchFilter:
+                nestedGroupMode === "disabled"
+                  ? null
+                  : configuration.groupSearchFilter,
+            },
+          });
+        }}
+      />
+      <NumberField
+        id={`${id}-nested-depth`}
+        label="Maximum nested depth"
+        min={configuration.nestedGroupMode === "disabled" ? 0 : 1}
+        max={20}
+        value={configuration.maxNestedGroupDepth}
+        disabled={configuration.nestedGroupMode === "disabled"}
+        onChange={(value) => updateConfiguration("maxNestedGroupDepth", value)}
+      />
+    </div>
+  );
 }

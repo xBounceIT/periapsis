@@ -16,7 +16,8 @@ import {
   Save,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
@@ -34,8 +35,8 @@ import {
   validateLdapProviderDraft,
   type LdapProviderDraft,
 } from "./ldap-provider-model";
-import { LdapProviderEditor } from "./tenant-ldap-providers";
 import { validatePlatformAuthProviderAuditReason } from "./platform-auth-provider-model";
+import { LdapProviderEditor } from "./tenant-ldap-providers";
 
 interface Notice {
   message: string;
@@ -82,7 +83,14 @@ type BusyKind = "configuration" | "diagnostic" | "login" | "mapping" | "secret";
 type TestKind =
   "bind" | "connection" | "filter" | "mapping_dry_run" | "search_user";
 
-export function PlatformLdapProviderAdministration({
+export function PlatformLdapProviderAdministration(
+  props: Props,
+): React.JSX.Element {
+  const model = usePlatformLdapProviderAdministrationModel(props);
+  return <PlatformLdapProviderAdministrationView model={model.data} />;
+}
+
+function usePlatformLdapProviderAdministrationModel({
   api,
   canManageConfiguration,
   canManagePolicy,
@@ -97,29 +105,140 @@ export function PlatformLdapProviderAdministration({
   onUnauthenticated,
   providerMutationBusy,
   sessionId,
-}: Props): React.JSX.Element {
-  const [configurationDraft, setConfigurationDraft] = useState(() =>
-    draftFromProvider(current.value),
+}: Props) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<PlatformLdapProviderAdministrationState>,
+    undefined,
+    (): PlatformLdapProviderAdministrationState => ({
+      configurationDraft: (() => draftFromProvider(current.value))(),
+      configurationReason: "",
+      bindSecret: "",
+      secretReason: "",
+      mappingDraft: newMappingDraft(),
+      mappingReason: "",
+      testKind: "connection",
+      testUsername: "",
+      testReason: "",
+      diagnostic: null,
+      loginReason: "",
+      loginConfirmation: "",
+      busy: null,
+      error: null,
+    }),
   );
-  const [configurationReason, setConfigurationReason] = useState("");
-  const [bindSecret, setBindSecret] = useState("");
-  const [secretReason, setSecretReason] = useState("");
-  const [mappingDraft, setMappingDraft] =
-    useState<MappingDraft>(newMappingDraft);
-  const [mappingReason, setMappingReason] = useState("");
-  const [testKind, setTestKind] = useState<TestKind>("connection");
-  const [testUsername, setTestUsername] = useState("");
-  const [testReason, setTestReason] = useState("");
-  const [diagnostic, setDiagnostic] =
-    useState<PlatformLdapDiagnosticView | null>(null);
-  const [loginReason, setLoginReason] = useState("");
-  const [loginConfirmation, setLoginConfirmation] = useState("");
-  const [busy, setBusy] = useState<BusyKind | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    configurationDraft,
+    configurationReason,
+    bindSecret,
+    secretReason,
+    mappingDraft,
+    mappingReason,
+    testKind,
+    testUsername,
+    testReason,
+    diagnostic,
+    loginReason,
+    loginConfirmation,
+    busy,
+    error,
+  } = workspaceState;
+  const {
+    setConfigurationDraft,
+    setConfigurationReason,
+    setBindSecret,
+    setSecretReason,
+    setMappingDraft,
+    setMappingReason,
+    setTestKind,
+    setTestUsername,
+    setTestReason,
+    setDiagnostic,
+    setLoginReason,
+    setLoginConfirmation,
+    setBusy,
+    setError,
+  } = useMemo(
+    () => ({
+      setConfigurationDraft: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["configurationDraft"]
+        >,
+      ) => updateWorkspaceState({ configurationDraft: value }),
+      setConfigurationReason: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["configurationReason"]
+        >,
+      ) => updateWorkspaceState({ configurationReason: value }),
+      setBindSecret: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["bindSecret"]
+        >,
+      ) => updateWorkspaceState({ bindSecret: value }),
+      setSecretReason: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["secretReason"]
+        >,
+      ) => updateWorkspaceState({ secretReason: value }),
+      setMappingDraft: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["mappingDraft"]
+        >,
+      ) => updateWorkspaceState({ mappingDraft: value }),
+      setMappingReason: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["mappingReason"]
+        >,
+      ) => updateWorkspaceState({ mappingReason: value }),
+      setTestKind: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["testKind"]
+        >,
+      ) => updateWorkspaceState({ testKind: value }),
+      setTestUsername: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["testUsername"]
+        >,
+      ) => updateWorkspaceState({ testUsername: value }),
+      setTestReason: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["testReason"]
+        >,
+      ) => updateWorkspaceState({ testReason: value }),
+      setDiagnostic: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["diagnostic"]
+        >,
+      ) => updateWorkspaceState({ diagnostic: value }),
+      setLoginReason: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["loginReason"]
+        >,
+      ) => updateWorkspaceState({ loginReason: value }),
+      setLoginConfirmation: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["loginConfirmation"]
+        >,
+      ) => updateWorkspaceState({ loginConfirmation: value }),
+      setBusy: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["busy"]
+        >,
+      ) => updateWorkspaceState({ busy: value }),
+      setError: (
+        value: React.SetStateAction<
+          PlatformLdapProviderAdministrationState["error"]
+        >,
+      ) => updateWorkspaceState({ error: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const mountedRef = useRef(true);
   const sessionRef = useRef(sessionId);
   const testAbortRef = useRef<AbortController | null>(null);
-  sessionRef.current = sessionId;
+  useLayoutEffect(() => {
+    sessionRef.current = sessionId;
+  }, [sessionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -133,19 +252,21 @@ export function PlatformLdapProviderAdministration({
   useEffect(() => {
     testAbortRef.current?.abort();
     testAbortRef.current = null;
-    setConfigurationDraft(draftFromProvider(current.value));
-    setConfigurationReason("");
-    setBindSecret("");
-    setSecretReason("");
-    setMappingDraft(newMappingDraft());
-    setMappingReason("");
-    setTestKind("connection");
-    setTestUsername("");
-    setTestReason("");
-    setDiagnostic(null);
-    setLoginReason("");
-    setLoginConfirmation("");
-    setError(null);
+    updateWorkspaceState({
+      configurationDraft: draftFromProvider(current.value),
+      configurationReason: "",
+      bindSecret: "",
+      secretReason: "",
+      mappingDraft: newMappingDraft(),
+      mappingReason: "",
+      testKind: "connection",
+      testUsername: "",
+      testReason: "",
+      diagnostic: null,
+      loginReason: "",
+      loginConfirmation: "",
+      error: null,
+    });
   }, [current.value, sessionId]);
 
   const actionBlocked = providerMutationBusy || busy !== null;
@@ -158,8 +279,7 @@ export function PlatformLdapProviderAdministration({
 
   function begin(kind: BusyKind): boolean {
     if (actionBlocked) return false;
-    setBusy(kind);
-    setError(null);
+    updateWorkspaceState({ busy: kind, error: null });
     onMutationBusyChange(true);
     return true;
   }
@@ -412,6 +532,82 @@ export function PlatformLdapProviderAdministration({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      actionBlocked,
+      activeMappings,
+      bindSecret,
+      busy,
+      canManageConfiguration,
+      canManagePolicy,
+      canTest,
+      changeLoginState,
+      configurationDraft,
+      configurationReason,
+      current,
+      diagnostic,
+      error,
+      loginConfirmation,
+      loginReason,
+      mappingDraft,
+      mappingReason,
+      replaceSecret,
+      requiresUsername,
+      runDiagnostic,
+      saveConfiguration,
+      saveMapping,
+      secretReason,
+      setBindSecret,
+      setConfigurationDraft,
+      setConfigurationReason,
+      setDiagnostic,
+      setLoginConfirmation,
+      setLoginReason,
+      setMappingDraft,
+      setMappingReason,
+      setSecretReason,
+      setTestKind,
+      setTestReason,
+      setTestUsername,
+      testKind,
+      testReason,
+      testUsername,
+    },
+  };
+}
+
+function PlatformLdapProviderAdministrationView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformLdapProviderAdministrationModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    actionBlocked,
+    bindSecret,
+    busy,
+    canManageConfiguration,
+    canManagePolicy,
+    changeLoginState,
+    configurationDraft,
+    configurationReason,
+    current,
+    error,
+    loginConfirmation,
+    loginReason,
+    replaceSecret,
+    saveConfiguration,
+    secretReason,
+    setBindSecret,
+    setConfigurationDraft,
+    setConfigurationReason,
+    setLoginConfirmation,
+    setLoginReason,
+    setSecretReason,
+  } = model;
   return (
     <section
       className="platform-idp-actions"
@@ -499,273 +695,9 @@ export function PlatformLdapProviderAdministration({
         </Button>
       </form>
 
-      <div>
-        <h4>Source-owned platform role mappings</h4>
-        {activeMappings.length === 0 ? (
-          <p>No live mappings are configured.</p>
-        ) : (
-          <div className="platform-idp-account-list">
-            {activeMappings.map((mapping) => (
-              <div key={mapping.id} className="platform-idp-account-row">
-                <span>
-                  <strong>{mapping.matcherType}</strong>
-                  <code>{mapping.matcherValue}</code>
-                </span>
-                <span>
-                  <small>Role</small>
-                  <code>{mapping.platformRoleId}</code>
-                </span>
-                <Badge variant="outline">
-                  {mapping.enabled ? "Enabled" : "Disabled"}
-                </Badge>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={actionBlocked || !canManagePolicy}
-                  onClick={() =>
-                    setMappingDraft({
-                      caseSensitive: mapping.caseSensitive,
-                      enabled: mapping.enabled,
-                      expectedVersion: mapping.version,
-                      id: mapping.id,
-                      matcherType: mapping.matcherType,
-                      matcherValue: mapping.matcherValue,
-                      notes: mapping.notes,
-                      platformRoleId: mapping.platformRoleId,
-                      priority: mapping.priority,
-                      reconciliationMode: mapping.reconciliationMode,
-                    })
-                  }
-                >
-                  Edit
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-        <form
-          className="platform-idp-form"
-          onSubmit={(event) => void saveMapping(event)}
-        >
-          <div className="platform-idp-form-grid">
-            <FormField
-              htmlFor="platform-ldap-mapping-id"
-              label="Mapping UUIDv7"
-            >
-              <Input
-                id="platform-ldap-mapping-id"
-                readOnly
-                value={mappingDraft.id}
-              />
-            </FormField>
-            <FormField
-              htmlFor="platform-ldap-role-id"
-              label="Platform role UUIDv7"
-              hint="The server denies platform_super_admin even when its ID is supplied."
-            >
-              <Input
-                id="platform-ldap-role-id"
-                value={mappingDraft.platformRoleId}
-                onChange={(event) =>
-                  setMappingDraft({
-                    ...mappingDraft,
-                    platformRoleId: event.currentTarget.value,
-                  })
-                }
-              />
-            </FormField>
-            <SelectField
-              id="platform-ldap-matcher-type"
-              label="Matcher"
-              value={mappingDraft.matcherType}
-              onChange={(matcherType) =>
-                setMappingDraft({ ...mappingDraft, matcherType })
-              }
-              options={[
-                ["exact_dn", "Exact DN"],
-                ["exact_cn", "Exact CN"],
-                ["regex", "Regular expression"],
-              ]}
-            />
-            <FormField
-              htmlFor="platform-ldap-matcher-value"
-              label="Matcher value"
-            >
-              <Input
-                id="platform-ldap-matcher-value"
-                value={mappingDraft.matcherValue}
-                onChange={(event) =>
-                  setMappingDraft({
-                    ...mappingDraft,
-                    matcherValue: event.currentTarget.value,
-                  })
-                }
-              />
-            </FormField>
-            <FormField
-              htmlFor="platform-ldap-mapping-priority"
-              label="Priority"
-            >
-              <Input
-                id="platform-ldap-mapping-priority"
-                type="number"
-                min={0}
-                max={1_000_000}
-                value={mappingDraft.priority}
-                onChange={(event) =>
-                  setMappingDraft({
-                    ...mappingDraft,
-                    priority: Number(event.currentTarget.value),
-                  })
-                }
-              />
-            </FormField>
-            <SelectField
-              id="platform-ldap-reconciliation"
-              label="Reconciliation"
-              value={mappingDraft.reconciliationMode}
-              onChange={(reconciliationMode) =>
-                setMappingDraft({ ...mappingDraft, reconciliationMode })
-              }
-              options={[
-                ["authoritative", "Authoritative"],
-                ["additive", "Additive"],
-              ]}
-            />
-          </div>
-          <label className="platform-idp-checkbox-row">
-            <Checkbox
-              checked={mappingDraft.caseSensitive}
-              onCheckedChange={(value) =>
-                setMappingDraft({
-                  ...mappingDraft,
-                  caseSensitive: value === true,
-                })
-              }
-            />{" "}
-            Case-sensitive match
-          </label>
-          <label className="platform-idp-checkbox-row">
-            <Checkbox
-              checked={mappingDraft.enabled}
-              onCheckedChange={(value) =>
-                setMappingDraft({ ...mappingDraft, enabled: value === true })
-              }
-            />{" "}
-            Mapping enabled
-          </label>
-          <FormField
-            htmlFor="platform-ldap-mapping-notes"
-            label="Notes"
-            optional
-          >
-            <Textarea
-              id="platform-ldap-mapping-notes"
-              maxLength={1000}
-              value={mappingDraft.notes}
-              onChange={(event) =>
-                setMappingDraft({
-                  ...mappingDraft,
-                  notes: event.currentTarget.value,
-                })
-              }
-            />
-          </FormField>
-          <ReasonField
-            id="platform-ldap-mapping-reason"
-            value={mappingReason}
-            onChange={setMappingReason}
-          />
-          <div className="platform-idp-action-row">
-            <Button type="submit" disabled={!canManagePolicy || actionBlocked}>
-              <Save aria-hidden="true" />{" "}
-              {busy === "mapping"
-                ? "Saving…"
-                : mappingDraft.expectedVersion
-                  ? "Replace mapping"
-                  : "Create mapping"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={actionBlocked}
-              onClick={() => setMappingDraft(newMappingDraft())}
-            >
-              New mapping
-            </Button>
-          </div>
-        </form>
-      </div>
+      <PlatformLdapRoleMappings model={model} />
 
-      <form
-        className="platform-idp-form"
-        onSubmit={(event) => void runDiagnostic(event)}
-      >
-        <h4>Redacted live diagnostic</h4>
-        <div className="platform-idp-form-grid">
-          <SelectField
-            id="platform-ldap-test-kind"
-            label="Test"
-            value={testKind}
-            onChange={(value) => {
-              setTestKind(value);
-              setDiagnostic(null);
-            }}
-            options={[
-              ["connection", "Connection"],
-              ["bind", "Bind"],
-              ["search_user", "User search"],
-              ["filter", "Filter"],
-              ["mapping_dry_run", "Mapping dry run"],
-            ]}
-          />
-          {requiresUsername ? (
-            <FormField
-              htmlFor="platform-ldap-test-username"
-              label="Directory username"
-            >
-              <Input
-                id="platform-ldap-test-username"
-                maxLength={512}
-                value={testUsername}
-                onChange={(event) => setTestUsername(event.currentTarget.value)}
-              />
-            </FormField>
-          ) : null}
-        </div>
-        <ReasonField
-          id="platform-ldap-test-reason"
-          value={testReason}
-          onChange={setTestReason}
-        />
-        <Button type="submit" disabled={!canTest || actionBlocked}>
-          <FlaskConical aria-hidden="true" />{" "}
-          {busy === "diagnostic" ? "Testing…" : "Run live test"}
-        </Button>
-        {diagnostic ? (
-          <Alert>
-            <AlertTitle>
-              {diagnostic.outcome === "success"
-                ? "Test succeeded"
-                : "Test failed"}
-            </AlertTitle>
-            <AlertDescription>
-              {diagnostic.category} · {diagnostic.durationMs} ms
-              {diagnostic.endpointPriority
-                ? ` · endpoint ${diagnostic.endpointPriority}`
-                : ""}
-              {diagnostic.matchedEntryCount !== undefined &&
-              diagnostic.matchedEntryCount !== null
-                ? ` · ${diagnostic.matchedEntryCount} entries`
-                : ""}
-              {diagnostic.attributes.length > 0
-                ? ` · attributes: ${diagnostic.attributes.join(", ")}`
-                : ""}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </form>
+      <PlatformLdapDiagnosticForm model={model} />
 
       <form
         className="platform-idp-form"
@@ -916,4 +848,325 @@ function SelectField<T extends string>({
       </select>
     </div>
   );
+}
+
+function PlatformLdapRoleMappings({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformLdapProviderAdministrationView
+  >["model"];
+}): React.ReactNode {
+  const {
+    actionBlocked,
+    activeMappings,
+    busy,
+    canManagePolicy,
+    mappingDraft,
+    mappingReason,
+    saveMapping,
+    setMappingDraft,
+    setMappingReason,
+  } = model;
+  return (
+    <div>
+      <h4>Source-owned platform role mappings</h4>
+      {activeMappings.length === 0 ? (
+        <p>No live mappings are configured.</p>
+      ) : (
+        <div className="platform-idp-account-list">
+          {activeMappings.map((mapping) => (
+            <div key={mapping.id} className="platform-idp-account-row">
+              <span>
+                <strong>{mapping.matcherType}</strong>
+                <code>{mapping.matcherValue}</code>
+              </span>
+              <span>
+                <small>Role</small>
+                <code>{mapping.platformRoleId}</code>
+              </span>
+              <Badge variant="outline">
+                {mapping.enabled ? "Enabled" : "Disabled"}
+              </Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={actionBlocked || !canManagePolicy}
+                onClick={() =>
+                  setMappingDraft({
+                    caseSensitive: mapping.caseSensitive,
+                    enabled: mapping.enabled,
+                    expectedVersion: mapping.version,
+                    id: mapping.id,
+                    matcherType: mapping.matcherType,
+                    matcherValue: mapping.matcherValue,
+                    notes: mapping.notes,
+                    platformRoleId: mapping.platformRoleId,
+                    priority: mapping.priority,
+                    reconciliationMode: mapping.reconciliationMode,
+                  })
+                }
+              >
+                Edit
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <form
+        className="platform-idp-form"
+        onSubmit={(event) => void saveMapping(event)}
+      >
+        <div className="platform-idp-form-grid">
+          <FormField htmlFor="platform-ldap-mapping-id" label="Mapping UUIDv7">
+            <Input
+              id="platform-ldap-mapping-id"
+              readOnly
+              value={mappingDraft.id}
+            />
+          </FormField>
+          <FormField
+            htmlFor="platform-ldap-role-id"
+            label="Platform role UUIDv7"
+            hint="The server denies platform_super_admin even when its ID is supplied."
+          >
+            <Input
+              id="platform-ldap-role-id"
+              value={mappingDraft.platformRoleId}
+              onChange={(event) =>
+                setMappingDraft({
+                  ...mappingDraft,
+                  platformRoleId: event.currentTarget.value,
+                })
+              }
+            />
+          </FormField>
+          <SelectField
+            id="platform-ldap-matcher-type"
+            label="Matcher"
+            value={mappingDraft.matcherType}
+            onChange={(matcherType) =>
+              setMappingDraft({ ...mappingDraft, matcherType })
+            }
+            options={[
+              ["exact_dn", "Exact DN"],
+              ["exact_cn", "Exact CN"],
+              ["regex", "Regular expression"],
+            ]}
+          />
+          <FormField
+            htmlFor="platform-ldap-matcher-value"
+            label="Matcher value"
+          >
+            <Input
+              id="platform-ldap-matcher-value"
+              value={mappingDraft.matcherValue}
+              onChange={(event) =>
+                setMappingDraft({
+                  ...mappingDraft,
+                  matcherValue: event.currentTarget.value,
+                })
+              }
+            />
+          </FormField>
+          <FormField htmlFor="platform-ldap-mapping-priority" label="Priority">
+            <Input
+              id="platform-ldap-mapping-priority"
+              type="number"
+              min={0}
+              max={1_000_000}
+              value={mappingDraft.priority}
+              onChange={(event) =>
+                setMappingDraft({
+                  ...mappingDraft,
+                  priority: Number(event.currentTarget.value),
+                })
+              }
+            />
+          </FormField>
+          <SelectField
+            id="platform-ldap-reconciliation"
+            label="Reconciliation"
+            value={mappingDraft.reconciliationMode}
+            onChange={(reconciliationMode) =>
+              setMappingDraft({ ...mappingDraft, reconciliationMode })
+            }
+            options={[
+              ["authoritative", "Authoritative"],
+              ["additive", "Additive"],
+            ]}
+          />
+        </div>
+        <label className="platform-idp-checkbox-row">
+          <Checkbox
+            checked={mappingDraft.caseSensitive}
+            onCheckedChange={(value) =>
+              setMappingDraft({
+                ...mappingDraft,
+                caseSensitive: value === true,
+              })
+            }
+          />{" "}
+          Case-sensitive match
+        </label>
+        <label className="platform-idp-checkbox-row">
+          <Checkbox
+            checked={mappingDraft.enabled}
+            onCheckedChange={(value) =>
+              setMappingDraft({ ...mappingDraft, enabled: value === true })
+            }
+          />{" "}
+          Mapping enabled
+        </label>
+        <FormField htmlFor="platform-ldap-mapping-notes" label="Notes" optional>
+          <Textarea
+            id="platform-ldap-mapping-notes"
+            maxLength={1000}
+            value={mappingDraft.notes}
+            onChange={(event) =>
+              setMappingDraft({
+                ...mappingDraft,
+                notes: event.currentTarget.value,
+              })
+            }
+          />
+        </FormField>
+        <ReasonField
+          id="platform-ldap-mapping-reason"
+          value={mappingReason}
+          onChange={setMappingReason}
+        />
+        <div className="platform-idp-action-row">
+          <Button type="submit" disabled={!canManagePolicy || actionBlocked}>
+            <Save aria-hidden="true" />{" "}
+            {busy === "mapping"
+              ? "Saving…"
+              : mappingDraft.expectedVersion
+                ? "Replace mapping"
+                : "Create mapping"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={actionBlocked}
+            onClick={() => setMappingDraft(newMappingDraft())}
+          >
+            New mapping
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PlatformLdapDiagnosticForm({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformLdapProviderAdministrationView
+  >["model"];
+}): React.ReactNode {
+  const {
+    actionBlocked,
+    busy,
+    canTest,
+    diagnostic,
+    requiresUsername,
+    runDiagnostic,
+    setDiagnostic,
+    setTestKind,
+    setTestReason,
+    setTestUsername,
+    testKind,
+    testReason,
+    testUsername,
+  } = model;
+  return (
+    <form
+      className="platform-idp-form"
+      onSubmit={(event) => void runDiagnostic(event)}
+    >
+      <h4>Redacted live diagnostic</h4>
+      <div className="platform-idp-form-grid">
+        <SelectField
+          id="platform-ldap-test-kind"
+          label="Test"
+          value={testKind}
+          onChange={(value) => {
+            setTestKind(value);
+            setDiagnostic(null);
+          }}
+          options={[
+            ["connection", "Connection"],
+            ["bind", "Bind"],
+            ["search_user", "User search"],
+            ["filter", "Filter"],
+            ["mapping_dry_run", "Mapping dry run"],
+          ]}
+        />
+        {requiresUsername ? (
+          <FormField
+            htmlFor="platform-ldap-test-username"
+            label="Directory username"
+          >
+            <Input
+              id="platform-ldap-test-username"
+              maxLength={512}
+              value={testUsername}
+              onChange={(event) => setTestUsername(event.currentTarget.value)}
+            />
+          </FormField>
+        ) : null}
+      </div>
+      <ReasonField
+        id="platform-ldap-test-reason"
+        value={testReason}
+        onChange={setTestReason}
+      />
+      <Button type="submit" disabled={!canTest || actionBlocked}>
+        <FlaskConical aria-hidden="true" />{" "}
+        {busy === "diagnostic" ? "Testing…" : "Run live test"}
+      </Button>
+      {diagnostic ? (
+        <Alert>
+          <AlertTitle>
+            {diagnostic.outcome === "success"
+              ? "Test succeeded"
+              : "Test failed"}
+          </AlertTitle>
+          <AlertDescription>
+            {diagnostic.category} · {diagnostic.durationMs} ms
+            {diagnostic.endpointPriority
+              ? ` · endpoint ${diagnostic.endpointPriority}`
+              : ""}
+            {diagnostic.matchedEntryCount !== undefined &&
+            diagnostic.matchedEntryCount !== null
+              ? ` · ${diagnostic.matchedEntryCount} entries`
+              : ""}
+            {diagnostic.attributes.length > 0
+              ? ` · attributes: ${diagnostic.attributes.join(", ")}`
+              : ""}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+    </form>
+  );
+}
+
+interface PlatformLdapProviderAdministrationState {
+  configurationDraft: PlatformLdapDraft;
+  configurationReason: string;
+  bindSecret: string;
+  secretReason: string;
+  mappingDraft: MappingDraft;
+  mappingReason: string;
+  testKind: TestKind;
+  testUsername: string;
+  testReason: string;
+  diagnostic: PlatformLdapDiagnosticView | null;
+  loginReason: string;
+  loginConfirmation: string;
+  busy: BusyKind | null;
+  error: string | null;
 }

@@ -23,8 +23,14 @@ import {
   Search,
   ShieldX,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { RouteObject } from "react-router";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -53,7 +59,6 @@ import {
   type CustomFieldDefinitionDraft,
 } from "./definition-editor-model";
 import {
-  customFieldAdministrationRouteDescriptor,
   customFieldDataTypes,
   type CustomFieldDefinitionView,
   type CustomFieldObjectType,
@@ -72,9 +77,17 @@ interface EditorState {
   etag?: string;
 }
 
-export function TenantCustomFieldAdministrationPage({
+export function TenantCustomFieldAdministrationPage(
+  props: CustomFieldAdministrationPageProps = {},
+): React.JSX.Element {
+  const model = useTenantCustomFieldAdministrationPageModel(props);
+  if (model.kind === "content") return model.content;
+  return <TenantCustomFieldAdministrationPageView model={model.data} />;
+}
+
+function useTenantCustomFieldAdministrationPageModel({
   api = customFieldAdministrationApi,
-}: CustomFieldAdministrationPageProps = {}): React.JSX.Element {
+}: CustomFieldAdministrationPageProps = {}) {
   const { session } = useSession();
   const authority = useTenantAuthority();
   const queryClient = useQueryClient();
@@ -101,9 +114,11 @@ export function TenantCustomFieldAdministrationPage({
     ready && authority.hasPermission("custom_field.manage", "tenant");
   const authorizationKey = `${session.id}:${tenantId}:${objectType}:${canRead}:${canManage}`;
   const authorizationContext = useRef({ key: authorizationKey, token: {} });
-  if (authorizationContext.current.key !== authorizationKey) {
-    authorizationContext.current = { key: authorizationKey, token: {} };
-  }
+  useLayoutEffect(() => {
+    if (authorizationContext.current.key !== authorizationKey) {
+      authorizationContext.current = { key: authorizationKey, token: {} };
+    }
+  }, [authorizationKey]);
   const query = useQuery({
     enabled: canRead,
     gcTime: 0,
@@ -171,9 +186,13 @@ export function TenantCustomFieldAdministrationPage({
   );
 
   if (tenantId && authority.status === "loading") {
-    return <CustomFieldBoundary loading />;
+    return {
+      kind: "content" as const,
+      content: <CustomFieldBoundary loading />,
+    };
   }
-  if (!canRead) return <CustomFieldBoundary />;
+  if (!canRead)
+    return { kind: "content" as const, content: <CustomFieldBoundary /> };
 
   function beginCreate(): void {
     if (!canManage) return;
@@ -300,6 +319,7 @@ export function TenantCustomFieldAdministrationPage({
     } finally {
       if (activeMutation.current === mutation) {
         activeMutation.current = null;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This finally runs on success and failure; its request-ownership guard prevents an older request clearing a newer loading flag.
         setSaving(false);
       }
     }
@@ -356,6 +376,7 @@ export function TenantCustomFieldAdministrationPage({
     } finally {
       if (activeMutation.current === mutation) {
         activeMutation.current = null;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This finally runs on success and failure; its request-ownership guard prevents an older request clearing a newer loading flag.
         setSaving(false);
       }
     }
@@ -369,6 +390,69 @@ export function TenantCustomFieldAdministrationPage({
     archiveAttempt.current = null;
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      archiveDefinition,
+      archiveReason,
+      beginCreate,
+      beginEdit,
+      canManage,
+      definitions,
+      editor,
+      editorErrors,
+      editorProblem,
+      loadingDefinitionId,
+      objectType,
+      query,
+      saveDefinition,
+      saving,
+      search,
+      setArchiveReason,
+      setEditor,
+      setEditorErrors,
+      setEditorProblem,
+      setObjectType,
+      setSearch,
+      setShowArchived,
+      showArchived,
+    },
+  };
+}
+
+function TenantCustomFieldAdministrationPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantCustomFieldAdministrationPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    archiveDefinition,
+    archiveReason,
+    beginCreate,
+    beginEdit,
+    canManage,
+    definitions,
+    editor,
+    editorErrors,
+    editorProblem,
+    loadingDefinitionId,
+    objectType,
+    query,
+    saveDefinition,
+    saving,
+    search,
+    setArchiveReason,
+    setEditor,
+    setEditorErrors,
+    setEditorProblem,
+    setObjectType,
+    setSearch,
+    setShowArchived,
+    showArchived,
+  } = model;
   return (
     <div className="content custom-field-admin">
       <header className="custom-field-admin__hero">
@@ -1007,10 +1091,3 @@ async function invalidateCatalog(
     }),
   ]);
 }
-
-export const customFieldAdministrationRoutes = [
-  {
-    path: customFieldAdministrationRouteDescriptor.path.slice(1),
-    Component: TenantCustomFieldAdministrationPage,
-  },
-] satisfies RouteObject[];

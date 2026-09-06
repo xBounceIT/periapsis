@@ -633,12 +633,13 @@ function validatePlaceholders(
 ): void {
   const placeholders =
     value.match(placeholderPattern)?.map((match) => match.slice(1, -1)) ?? [];
+  const allowedNames = new Set(allowed);
   if (
     required.some(
       (name) =>
         placeholders.filter((candidate) => candidate === name).length !== 1,
     ) ||
-    placeholders.some((name) => !allowed.includes(name)) ||
+    placeholders.some((name) => !allowedNames.has(name)) ||
     new Set(placeholders).size !== placeholders.length
   ) {
     errors.push(`${label} uses an invalid or repeated placeholder.`);

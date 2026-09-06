@@ -392,6 +392,45 @@ describe("TicketMetadataPanel", () => {
       screen.queryByRole("button", { name: "Edit core details" }),
     ).not.toBeInTheDocument();
   });
+  it("keeps a newer reload failure when an older reload succeeds later", async () => {
+    const older = Promise.withResolvers<boolean>();
+    const newer = Promise.withResolvers<boolean>();
+    const onReloadLatest = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValueOnce(false)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    render(
+      <TicketMetadataPanel
+        api={{ replace: async (input) => metadataResult(input) }}
+        canEdit
+        csrfToken={sessionFixture.csrfToken}
+        kind="alert"
+        onReloadLatest={onReloadLatest}
+        sessionId={sessionFixture.id}
+        tenantId={tenantId}
+        ticket={{ etag: '"v1"', value: operatorAlert }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit core details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save core details" }));
+    const reload = await screen.findByRole("button", { name: "Reload latest" });
+    fireEvent.click(reload);
+    fireEvent.click(reload);
+    await act(async () => {
+      newer.resolve(false);
+    });
+    expect(
+      screen.getByText("The latest ticket snapshot could not be loaded."),
+    ).toBeVisible();
+    await act(async () => {
+      older.resolve(true);
+    });
+    expect(screen.getByRole("button", { name: "Reload latest" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Edit core details" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 function metadataResult(

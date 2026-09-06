@@ -1,9 +1,11 @@
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import type {
+  AlertCustomerProjection,
+  CaseCustomerProjection,
+  CustomerActivity,
+  CustomerPortalAttachment,
+  CustomerPortalContact,
+  CustomerPortalPreparedAttachmentDownload,
+} from "@periapsis/contracts";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -16,15 +18,12 @@ import {
 import { Input } from "@periapsis/ui/components/ui/input";
 import { Label } from "@periapsis/ui/components/ui/label";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
-import type {
-  AlertCustomerProjection,
-  CaseCustomerProjection,
-  ContactNotificationWindow,
-  CustomerActivity,
-  CustomerPortalAttachment,
-  CustomerPortalContact,
-  CustomerPortalPreparedAttachmentDownload,
-} from "@periapsis/contracts";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Activity,
   BellRing,
@@ -43,6 +42,11 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import {
+  formatNotificationWindows,
+  parseNotificationWindows,
+  saveCustomerPortalExport,
+} from "./customer-portal-page-model";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -51,7 +55,6 @@ import {
   ContactApiError,
   contactPortalApi,
   type ContactPortalApi,
-  type CustomerPortalExportFile,
   type Versioned,
 } from "../contacts/contact-api";
 import {
@@ -108,13 +111,15 @@ export function CustomerPortalPage({
     <div className="content customer-portal">
       <CustomerPortalWorkspace
         api={api}
-        canComment={canComment}
-        canManagePreferences={canManagePreferences}
-        canReadAttachments={canReadAttachments}
-        canReadAlerts={canReadAlerts}
-        canReadCases={canReadCases}
         csrfToken={session.csrfToken}
         tenantId={tenantId}
+        permissions={{
+          canComment: canComment,
+          canManagePreferences: canManagePreferences,
+          canReadAttachments: canReadAttachments,
+          canReadAlerts: canReadAlerts,
+          canReadCases: canReadCases,
+        }}
       />
     </div>
   );
@@ -122,35 +127,33 @@ export function CustomerPortalPage({
 
 interface CustomerPortalWorkspaceProps {
   api: ContactPortalApi;
-  canComment: boolean;
-  canManagePreferences: boolean;
-  canReadAttachments: boolean;
-  canReadAlerts: boolean;
-  canReadCases: boolean;
+  permissions: {
+    canComment: boolean;
+    canManagePreferences: boolean;
+    canReadAttachments: boolean;
+    canReadAlerts: boolean;
+    canReadCases: boolean;
+  };
   csrfToken: string;
   tenantId: string;
 }
 
 export function CustomerPortalWorkspace({
   api,
-  canComment,
-  canManagePreferences,
-  canReadAttachments,
-  canReadAlerts,
-  canReadCases,
+  permissions,
   csrfToken,
   tenantId,
 }: CustomerPortalWorkspaceProps): React.JSX.Element {
+  const {
+    canComment,
+    canManagePreferences,
+    canReadAttachments,
+    canReadAlerts,
+    canReadCases,
+  } = permissions;
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedKind = searchParams.get("kind");
-  const kind: PortalKind =
-    requestedKind === "case" && canReadCases
-      ? "case"
-      : requestedKind === "alert" && canReadAlerts
-        ? "alert"
-        : canReadAlerts
-          ? "alert"
-          : "case";
+  const kind = preferredPortalKind(requestedKind, canReadAlerts, canReadCases);
   const requestedTicketId = searchParams.get("ticket");
   const selectedTicketId =
     requestedTicketId && uuidV7Pattern.test(requestedTicketId)
@@ -203,28 +206,13 @@ export function CustomerPortalWorkspace({
         </div>
       </header>
 
-      <div
-        className="customer-portal__view-switch"
-        role="group"
-        aria-label="Portal view"
-      >
-        {canReadAlerts || canReadCases ? (
-          <Button
-            variant={view === "incidents" ? "default" : "outline"}
-            onClick={() => setView("incidents")}
-          >
-            <Activity aria-hidden="true" /> Shared incidents
-          </Button>
-        ) : null}
-        {canManagePreferences ? (
-          <Button
-            variant={view === "preferences" ? "default" : "outline"}
-            onClick={() => setView("preferences")}
-          >
-            <CalendarClock aria-hidden="true" /> Contact preferences
-          </Button>
-        ) : null}
-      </div>
+      <PortalViewSwitch
+        canManagePreferences={canManagePreferences}
+        canReadAlerts={canReadAlerts}
+        canReadCases={canReadCases}
+        setView={setView}
+        view={view}
+      />
 
       {view === "incidents" ? (
         selectedTicketId ? (
@@ -311,59 +299,15 @@ function PortalIncidentInventory({
       className="portal-inventory"
       aria-labelledby="shared-incidents-title"
     >
-      <div className="portal-inventory__toolbar">
-        <div>
-          <p className="section-label">Exact contact links</p>
-          <h2 id="shared-incidents-title">Shared incidents</h2>
-        </div>
-        <div className="portal-inventory__controls">
-          <div
-            className="portal-kind-switch"
-            role="group"
-            aria-label="Incident kind"
-          >
-            {canReadAlerts ? (
-              <Button
-                size="sm"
-                variant={kind === "alert" ? "default" : "outline"}
-                onClick={() => onKindChange("alert")}
-              >
-                <BellRing aria-hidden="true" /> Alerts
-              </Button>
-            ) : null}
-            {canReadCases ? (
-              <Button
-                size="sm"
-                variant={kind === "case" ? "default" : "outline"}
-                onClick={() => onKindChange("case")}
-              >
-                <BriefcaseBusiness aria-hidden="true" /> Cases
-              </Button>
-            ) : null}
-          </div>
-          <Label className="portal-search">
-            <Search aria-hidden="true" />
-            <span className="sr-only">Search shared incidents</span>
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.currentTarget.value)}
-              placeholder="Search shared incidents…"
-            />
-          </Label>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={tickets.isFetching}
-            onClick={() => void tickets.refetch()}
-          >
-            <RefreshCw
-              className={tickets.isFetching ? "is-spinning" : undefined}
-              aria-hidden="true"
-            />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PortalInventoryFilters
+        canReadAlerts={canReadAlerts}
+        canReadCases={canReadCases}
+        kind={kind}
+        onKindChange={onKindChange}
+        search={search}
+        setSearch={setSearch}
+        tickets={tickets}
+      />
 
       {tickets.isPending ? (
         <PortalLoading label="Loading shared incidents" />
@@ -586,6 +530,7 @@ function PortalAttachments({
     getNextPageParam: (lastPage, pages) =>
       unseenNextCursor(lastPage.nextCursor, pages),
   });
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation -- Preparing a short-lived download capability does not mutate the attachment inventory; invalidation would discard the capability immediately.
   const prepare = useMutation({
     mutationFn: (attachment: CustomerPortalAttachment) => {
       prepareController.current?.abort();
@@ -755,22 +700,6 @@ function PortalAttachments({
   );
 }
 
-export function saveCustomerPortalExport(file: CustomerPortalExportFile): void {
-  const objectURL = URL.createObjectURL(file.blob);
-  const anchor = document.createElement("a");
-  try {
-    anchor.download = file.filename;
-    anchor.href = objectURL;
-    anchor.rel = "noopener";
-    anchor.hidden = true;
-    document.body.append(anchor);
-    anchor.click();
-  } finally {
-    anchor.remove();
-    globalThis.setTimeout(() => URL.revokeObjectURL(objectURL), 0);
-  }
-}
-
 function PortalActivityFeed({
   api,
   kind,
@@ -908,11 +837,13 @@ function PortalPreferenceForm({
 }): React.JSX.Element {
   const client = useQueryClient();
   const preferenceAttempt = useRef<IdempotencyReference>({ current: null });
-  const [categories, setCategories] = useState(
+  const [categories, setCategories] = useState(() =>
     contact.value.notificationCategories.join(", "),
   );
-  const [emailAllowed, setEmailAllowed] = useState(contact.value.emailAllowed);
-  const [windowText, setWindowText] = useState(
+  const [emailAllowed, setEmailAllowed] = useState(
+    () => contact.value.emailAllowed,
+  );
+  const [windowText, setWindowText] = useState(() =>
     formatNotificationWindows(contact.value.notificationWindows),
   );
   const mutation = useMutation({
@@ -1023,85 +954,6 @@ function PortalPreferenceForm({
   );
 }
 
-export function parseNotificationWindows(
-  value: string,
-): ContactNotificationWindow[] {
-  if (!value.trim()) return [];
-  const windows = value
-    .split(/\r?\n/u)
-    .map((line, index) => {
-      const match = /^([1-7])\s+([0-2]\d:[0-5]\d)-([0-2]\d:[0-5]\d)$/u.exec(
-        line.trim(),
-      );
-      if (!match) {
-        throw new ContactApiError(
-          `Window line ${index + 1} must use “weekday HH:MM-HH:MM”.`,
-        );
-      }
-      const isoWeekday = Number(match[1]);
-      const startMinute = minuteOfDay(match[2] ?? "");
-      const endMinute = minuteOfDay(match[3] ?? "");
-      if (startMinute >= endMinute) {
-        throw new ContactApiError(
-          `Window line ${index + 1} must end after it starts.`,
-        );
-      }
-      return { endMinute, isoWeekday, startMinute };
-    })
-    .toSorted(
-      (left, right) =>
-        left.isoWeekday - right.isoWeekday ||
-        left.startMinute - right.startMinute ||
-        left.endMinute - right.endMinute,
-    );
-  for (let index = 1; index < windows.length; index += 1) {
-    const previous = windows[index - 1];
-    const current = windows[index];
-    if (
-      previous &&
-      current &&
-      previous.isoWeekday === current.isoWeekday &&
-      current.startMinute < previous.endMinute
-    ) {
-      throw new ContactApiError(
-        `Notification windows overlap on ISO weekday ${current.isoWeekday}.`,
-      );
-    }
-  }
-  return windows;
-}
-
-export function formatNotificationWindows(
-  windows: ContactNotificationWindow[],
-): string {
-  return windows
-    .map(
-      (window) =>
-        `${window.isoWeekday} ${clock(window.startMinute)}-${clock(window.endMinute)}`,
-    )
-    .join("\n");
-}
-
-function minuteOfDay(value: string): number {
-  const [hourText, minuteText] = value.split(":");
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour > 23) {
-    throw new ContactApiError(
-      "Notification window times must be valid local wall-clock times.",
-    );
-  }
-  return hour * 60 + minute;
-}
-
-function clock(value: number): string {
-  const hours = Math.floor(value / 60)
-    .toString()
-    .padStart(2, "0");
-  const minutes = (value % 60).toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
 function ticketNumber(ticket: PortalTicket): string {
   return "alertNumber" in ticket ? ticket.alertNumber : ticket.caseNumber;
 }
@@ -1145,14 +997,7 @@ function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? "unknown time"
-    : new Intl.DateTimeFormat(undefined, {
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZoneName: "short",
-        year: "numeric",
-      }).format(date);
+    : portalDateFormatter.format(date);
 }
 
 function PortalLoading({ label }: { label: string }): React.JSX.Element {
@@ -1216,3 +1061,139 @@ function describePortalError(error: unknown): string {
 
 const uuidV7Pattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+const portalDateFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZoneName: "short",
+  year: "numeric",
+});
+
+function preferredPortalKind(
+  requested: string | null,
+  canReadAlerts: boolean,
+  canReadCases: boolean,
+): PortalKind {
+  if (requested === "case" && canReadCases) return "case";
+  if (requested === "alert" && canReadAlerts) return "alert";
+  return canReadAlerts ? "alert" : "case";
+}
+
+interface PortalInventoryFiltersProps {
+  canReadAlerts: boolean;
+  canReadCases: boolean;
+  kind: PortalKind;
+  onKindChange: (kind: PortalKind) => void;
+  search: string;
+  setSearch: React.Dispatch<React.SetStateAction<string>>;
+  tickets: { isFetching: boolean; refetch: () => Promise<unknown> };
+}
+
+function PortalInventoryFilters({
+  canReadAlerts,
+  canReadCases,
+  kind,
+  onKindChange,
+  search,
+  setSearch,
+  tickets,
+}: PortalInventoryFiltersProps): React.JSX.Element {
+  return (
+    <div className="portal-inventory__toolbar">
+      <div>
+        <p className="section-label">Exact contact links</p>
+        <h2 id="shared-incidents-title">Shared incidents</h2>
+      </div>
+      <div className="portal-inventory__controls">
+        <div
+          className="portal-kind-switch"
+          role="group"
+          aria-label="Incident kind"
+        >
+          {canReadAlerts ? (
+            <Button
+              size="sm"
+              variant={kind === "alert" ? "default" : "outline"}
+              onClick={() => onKindChange("alert")}
+            >
+              <BellRing aria-hidden="true" /> Alerts
+            </Button>
+          ) : null}
+          {canReadCases ? (
+            <Button
+              size="sm"
+              variant={kind === "case" ? "default" : "outline"}
+              onClick={() => onKindChange("case")}
+            >
+              <BriefcaseBusiness aria-hidden="true" /> Cases
+            </Button>
+          ) : null}
+        </div>
+        <Label className="portal-search">
+          <Search aria-hidden="true" />
+          <span className="sr-only">Search shared incidents</span>
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            placeholder="Search shared incidents…"
+          />
+        </Label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={tickets.isFetching}
+          onClick={() => void tickets.refetch()}
+        >
+          <RefreshCw
+            className={tickets.isFetching ? "is-spinning" : undefined}
+            aria-hidden="true"
+          />
+          Refresh
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface PortalViewSwitchProps {
+  canManagePreferences: boolean;
+  canReadAlerts: boolean;
+  canReadCases: boolean;
+  setView: React.Dispatch<React.SetStateAction<"incidents" | "preferences">>;
+  view: "incidents" | "preferences";
+}
+
+function PortalViewSwitch({
+  canManagePreferences,
+  canReadAlerts,
+  canReadCases,
+  setView,
+  view,
+}: PortalViewSwitchProps): React.JSX.Element {
+  return (
+    <div
+      className="customer-portal__view-switch"
+      role="group"
+      aria-label="Portal view"
+    >
+      {canReadAlerts || canReadCases ? (
+        <Button
+          variant={view === "incidents" ? "default" : "outline"}
+          onClick={() => setView("incidents")}
+        >
+          <Activity aria-hidden="true" /> Shared incidents
+        </Button>
+      ) : null}
+      {canManagePreferences ? (
+        <Button
+          variant={view === "preferences" ? "default" : "outline"}
+          onClick={() => setView("preferences")}
+        >
+          <CalendarClock aria-hidden="true" /> Contact preferences
+        </Button>
+      ) : null}
+    </div>
+  );
+}

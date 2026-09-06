@@ -10,13 +10,13 @@ export {
   type AuditOperationsApi,
   type AuditOperationsScope,
 } from "./audit-operations-api";
+export { PlatformAuditPage, TenantAuditPage } from "./audit-pages";
 export {
   PlatformAuditWorkspace,
   TenantAuditWorkspace,
   type PlatformAuditWorkspaceProps,
   type TenantAuditWorkspaceProps,
 } from "./audit-workspace";
-export { PlatformAuditPage, TenantAuditPage } from "./audit-pages";
 export {
   AuditFilterError,
   auditInstantFromLocalValue,

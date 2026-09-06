@@ -1,5 +1,5 @@
-import { useQueries } from "@tanstack/react-query";
 import { Button } from "@periapsis/ui/components/ui/button";
+import { useQueries } from "@tanstack/react-query";
 import {
   BellRing,
   BriefcaseBusiness,
@@ -206,21 +206,18 @@ function QueueKindSummary({
   const Icon = kind === "alert" ? BellRing : BriefcaseBusiness;
   const label = kind === "alert" ? "Alerts" : "Cases";
   const target = `/${label.toLowerCase()}?queue=${queue}`;
+  const ready = !pending && !error;
 
   return (
     <div className="operator-queue-kind" data-kind={kind}>
-      <div className="operator-queue-kind__summary">
-        <span>
-          <Icon aria-hidden="true" /> {label}
-        </span>
-        {pending ? <small role="status">Loading…</small> : null}
-        {!pending && !error && page ? (
-          <strong aria-label={`${queue} ${label.toLowerCase()} visible`}>
-            {page.items.length}
-            {page.nextCursor ? "+" : ""}
-          </strong>
-        ) : null}
-      </div>
+      <QueueKindHeader
+        Icon={Icon}
+        label={label}
+        page={page}
+        pending={pending}
+        queue={queue}
+        ready={ready}
+      />
       {error ? (
         <p className="operator-queue-kind__error" role="status">
           {error instanceof TicketingApiError && error.status === 403
@@ -228,12 +225,12 @@ function QueueKindSummary({
             : `${label} are unavailable.`}
         </p>
       ) : null}
-      {!pending && !error && page?.items.length === 0 ? (
+      {ready && page?.items.length === 0 ? (
         <p className="operator-queue-kind__empty">
           No visible {label.toLowerCase()}.
         </p>
       ) : null}
-      {!pending && !error && page && page.items.length > 0 ? (
+      {ready && page && page.items.length > 0 ? (
         <ul className="operator-queue-kind__preview">
           {page.items.slice(0, 2).map((ticket) => (
             <li key={ticket.id}>
@@ -246,7 +243,7 @@ function QueueKindSummary({
           ))}
         </ul>
       ) : null}
-      {!pending && !error ? (
+      {ready ? (
         <Button asChild size="sm" variant="ghost">
           <Link to={target}>
             Open {descriptorLinkLabel(queue)} {label.toLowerCase()}
@@ -281,4 +278,37 @@ function descriptorLinkLabel(queue: OperatorQueue): string {
       return unreachable;
     }
   }
+}
+
+interface QueueKindHeaderProps {
+  Icon: typeof BellRing;
+  label: "Alerts" | "Cases";
+  page: TicketPage | undefined;
+  pending: boolean;
+  queue: "assigned_to_me" | "my_operator_teams" | "unassigned";
+  ready: boolean;
+}
+
+function QueueKindHeader({
+  Icon,
+  label,
+  page,
+  pending,
+  queue,
+  ready,
+}: QueueKindHeaderProps): React.JSX.Element {
+  return (
+    <div className="operator-queue-kind__summary">
+      <span>
+        <Icon aria-hidden="true" /> {label}
+      </span>
+      {pending ? <small role="status">Loading…</small> : null}
+      {ready && page ? (
+        <strong aria-label={`${queue} ${label.toLowerCase()} visible`}>
+          {page.items.length}
+          {page.nextCursor ? "+" : ""}
+        </strong>
+      ) : null}
+    </div>
+  );
 }

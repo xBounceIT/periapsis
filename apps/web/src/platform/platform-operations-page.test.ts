@@ -10,7 +10,7 @@ import {
   type SessionView,
 } from "../lib/phase-two-types";
 import { sessionFixture } from "../test/phase-two-fixtures";
-import { platformOperationsAuthority } from "./platform-operations-page";
+import { platformOperationsAuthority } from "./platform-operations-authority";
 
 const allPermissions = [
   platformFeatureFlagManagePermission,

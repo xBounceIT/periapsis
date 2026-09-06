@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowCondition } from "./model";
-import { workflowDesignFromDraft, workflowDraftFrom } from "./workflow-editor";
+import {
+  workflowDesignFromDraft,
+  workflowDraftFrom,
+} from "./workflow-editor-model";
 
 describe("workflow editor input bounds", () => {
   it("rejects deeply nested JSON before recursive schema validation", () => {

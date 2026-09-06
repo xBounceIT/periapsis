@@ -530,133 +530,105 @@ const factKindSchema = z.enum([
   "local_weekday",
   "customer_contact_class",
 ]);
-const factPathSchema = z
-  .object({ kind: factKindSchema, key: z.string().optional() })
-  .strict();
-const predicateSchema = z
-  .object({
-    kind: z.literal("predicate"),
-    predicate: z
-      .object({
-        path: factPathSchema,
-        operator: z.enum([
-          "equals",
-          "not_equals",
-          "one_of",
-          "none_of",
-          "exists",
-          "not_exists",
-        ]),
-        values: z.array(z.string()),
-      })
-      .strict(),
-  })
-  .strict();
+const factPathSchema = z.strictObject({
+  kind: factKindSchema,
+  key: z.string().optional(),
+});
+const predicateSchema = z.strictObject({
+  kind: z.literal("predicate"),
+  predicate: z.strictObject({
+    path: factPathSchema,
+    operator: z.enum([
+      "equals",
+      "not_equals",
+      "one_of",
+      "none_of",
+      "exists",
+      "not_exists",
+    ]),
+    values: z.array(z.string()),
+  }),
+});
 const matchSchema: z.ZodType<SlaMatchExpression> = z.lazy(() =>
   z.union([
     predicateSchema,
-    z
-      .object({
-        kind: z.enum(["all", "any"]),
-        children: z.array(matchSchema),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("not"),
-        children: z.tuple([matchSchema]),
-      })
-      .strict(),
+    z.strictObject({
+      kind: z.enum(["all", "any"]),
+      children: z.array(matchSchema),
+    }),
+    z.strictObject({
+      kind: z.literal("not"),
+      children: z.tuple([matchSchema]),
+    }),
   ]),
 );
-const metricSchema: z.ZodType<SlaMetricWrite> = z
-  .object({
-    id: z.string(),
-    key: z.string(),
-    label: z.string(),
-    description: z.string(),
-    durationMicros: z.number().finite(),
-    clock: z.enum(["elapsed", "business"]),
-    calendarId: z.string().optional(),
-    calendarVersion: z.number().finite().optional(),
-    startEvent: z.string(),
-    pauseEvent: z.string().optional(),
-    resumeEvent: z.string().optional(),
-    completionEvent: z.string(),
-    resetEvent: z.string().optional(),
-    resetPolicy: z.enum(["ignore", "clear", "restart"]),
-    warning: z.union([
-      z.object({ kind: z.literal("none") }).strict(),
-      z
-        .object({
-          kind: z.literal("consumed_percent"),
-          consumedPercent: z.number().finite(),
-        })
-        .strict(),
-      z
-        .object({
-          kind: z.literal("remaining_duration"),
-          remainingMicros: z.number().finite(),
-        })
-        .strict(),
-    ]),
-    breachGraceMicros: z.number().finite(),
-    displayFormat: z.string(),
-    customerVisible: z.boolean(),
-    apiVisible: z.boolean(),
-  })
-  .strict();
+const metricSchema: z.ZodType<SlaMetricWrite> = z.strictObject({
+  id: z.string(),
+  key: z.string(),
+  label: z.string(),
+  description: z.string(),
+  durationMicros: z.number().finite(),
+  clock: z.enum(["elapsed", "business"]),
+  calendarId: z.string().optional(),
+  calendarVersion: z.number().finite().optional(),
+  startEvent: z.string(),
+  pauseEvent: z.string().optional(),
+  resumeEvent: z.string().optional(),
+  completionEvent: z.string(),
+  resetEvent: z.string().optional(),
+  resetPolicy: z.enum(["ignore", "clear", "restart"]),
+  warning: z.union([
+    z.strictObject({ kind: z.literal("none") }),
+    z.strictObject({
+      kind: z.literal("consumed_percent"),
+      consumedPercent: z.number().finite(),
+    }),
+    z.strictObject({
+      kind: z.literal("remaining_duration"),
+      remainingMicros: z.number().finite(),
+    }),
+  ]),
+  breachGraceMicros: z.number().finite(),
+  displayFormat: z.string(),
+  customerVisible: z.boolean(),
+  apiVisible: z.boolean(),
+});
 const metricsSchema: z.ZodType<SlaMetricWrite[]> = z.array(metricSchema);
-const triggerSchema: z.ZodType<SlaTriggerWrite> = z
-  .object({
-    id: z.string(),
-    metricDefinitionId: z.string(),
-    key: z.string(),
-    kind: z.enum([
-      "consumed_percent",
-      "remaining_duration",
-      "due",
-      "after_breach",
-      "repeated_after_breach",
-      "state_changed",
-      "resumed",
-    ]),
-    consumedPercent: z.number().finite().optional(),
-    remainingMicros: z.number().finite().optional(),
-    offsetMicros: z.number().finite().optional(),
-    repeatIntervalMicros: z.number().finite().optional(),
-    targetState: z
-      .enum([
-        "pending",
-        "on_track",
-        "at_risk",
-        "paused",
-        "breached",
-        "completed",
-      ])
-      .optional(),
-    action: z.union([
-      z
-        .object({
-          kind: z.enum(["email", "webhook", "assign_operator_team"]),
-          configurationId: z.string(),
-        })
-        .strict(),
-      z
-        .object({
-          kind: z.enum(["add_tag", "change_priority", "domain_event"]),
-          value: z.string(),
-        })
-        .strict(),
-      z.object({ kind: z.literal("create_task"), text: z.string() }).strict(),
-      z
-        .object({
-          kind: z.literal("create_system_alert"),
-          value: z.string(),
-          allowRecursiveSla: z.boolean(),
-        })
-        .strict(),
-    ]),
-  })
-  .strict();
+const triggerSchema: z.ZodType<SlaTriggerWrite> = z.strictObject({
+  id: z.string(),
+  metricDefinitionId: z.string(),
+  key: z.string(),
+  kind: z.enum([
+    "consumed_percent",
+    "remaining_duration",
+    "due",
+    "after_breach",
+    "repeated_after_breach",
+    "state_changed",
+    "resumed",
+  ]),
+  consumedPercent: z.number().finite().optional(),
+  remainingMicros: z.number().finite().optional(),
+  offsetMicros: z.number().finite().optional(),
+  repeatIntervalMicros: z.number().finite().optional(),
+  targetState: z
+    .enum(["pending", "on_track", "at_risk", "paused", "breached", "completed"])
+    .optional(),
+  action: z.union([
+    z.strictObject({
+      kind: z.enum(["email", "webhook", "assign_operator_team"]),
+      configurationId: z.string(),
+    }),
+    z.strictObject({
+      kind: z.enum(["add_tag", "change_priority", "domain_event"]),
+      value: z.string(),
+    }),
+    z.strictObject({ kind: z.literal("create_task"), text: z.string() }),
+    z.strictObject({
+      kind: z.literal("create_system_alert"),
+      value: z.string(),
+      allowRecursiveSla: z.boolean(),
+    }),
+  ]),
+});
 const triggersSchema: z.ZodType<SlaTriggerWrite[]> = z.array(triggerSchema);

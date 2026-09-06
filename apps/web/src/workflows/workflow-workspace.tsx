@@ -11,8 +11,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
@@ -28,7 +26,14 @@ import {
   ShieldAlert,
   Star,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
 
 import { FormField } from "../components/form-field";
 import {
@@ -37,6 +42,7 @@ import {
 } from "../lib/payload-idempotency";
 import {
   normalizeWorkflowSimulation,
+  WorkflowInputError,
   type ManagedWorkflow,
   type WorkflowConditionValue,
   type WorkflowDesign,
@@ -45,18 +51,14 @@ import {
   type WorkflowSimulationFact,
   type WorkflowSimulationResult,
   type WorkflowVersion,
-  WorkflowInputError,
 } from "./model";
 import {
   WorkflowApiError,
   type VersionedWorkflow,
   type WorkflowAdministrationApi,
 } from "./workflow-api";
-import {
-  WorkflowEditor,
-  workflowDraftFrom,
-  type WorkflowDraft,
-} from "./workflow-editor";
+import { WorkflowEditor } from "./workflow-editor";
+import { workflowDraftFrom, type WorkflowDraft } from "./workflow-editor-model";
 // oxlint-disable-next-line import/no-unassigned-import -- Vite extracts this module-owned stylesheet.
 import "./workflows.css";
 
@@ -91,13 +93,21 @@ interface WorkflowWorkspaceProps {
   tenantId: string;
 }
 
-export function WorkflowWorkspace({
+export function WorkflowWorkspace(
+  props: WorkflowWorkspaceProps,
+): React.JSX.Element {
+  const model = useWorkflowWorkspaceModel(props);
+  if (model.kind === "content") return model.content;
+  return <WorkflowWorkspaceView model={model.data} />;
+}
+
+function useWorkflowWorkspaceModel({
   api,
   canManage,
   canRead,
   csrfToken,
   tenantId,
-}: WorkflowWorkspaceProps): React.JSX.Element {
+}: WorkflowWorkspaceProps) {
   const [kind, setKind] = useState<WorkflowKind>("alert");
   const [inventory, setInventory] = useState<InventoryState>({
     kind: "loading",
@@ -115,17 +125,19 @@ export function WorkflowWorkspace({
   );
   const inventoryGeneration = useRef(0);
   const inventoryRef = useRef(inventory);
-  inventoryRef.current = inventory;
   const detailGeneration = useRef(0);
   const mutationGeneration = useRef(0);
   const mutationInFlight = useRef(false);
   const idempotency = useRef<Record<string, IdempotencyReference>>({});
   const contextKey = `${tenantId}\u0000${kind}\u0000${canRead ? "read" : "denied"}`;
   const contextKeyRef = useRef(contextKey);
-  contextKeyRef.current = contextKey;
   const settledContextKey = useRef(contextKey);
   const selectedIdRef = useRef(selectedId);
-  selectedIdRef.current = selectedId;
+  useLayoutEffect(() => {
+    inventoryRef.current = inventory;
+    contextKeyRef.current = contextKey;
+    selectedIdRef.current = selectedId;
+  }, [contextKey, inventory, selectedId]);
 
   const loadInventory = useCallback(
     async (signal?: AbortSignal, after?: string): Promise<void> => {
@@ -263,28 +275,34 @@ export function WorkflowWorkspace({
   );
 
   if (!canRead || !tenantId) {
-    return (
-      <section className="workflow-denied" aria-labelledby="workflow-denied">
-        <Alert variant="destructive">
-          <ShieldAlert aria-hidden="true" />
-          <AlertTitle id="workflow-denied">
-            Workflow authority required
-          </AlertTitle>
-          <AlertDescription>
-            An active tenant and live workflow.read authority are required. The
-            API rechecks every read and mutation independently.
-          </AlertDescription>
-        </Alert>
-      </section>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <section className="workflow-denied" aria-labelledby="workflow-denied">
+          <Alert variant="destructive">
+            <ShieldAlert aria-hidden="true" />
+            <AlertTitle id="workflow-denied">
+              Workflow authority required
+            </AlertTitle>
+            <AlertDescription>
+              An active tenant and live workflow.read authority are required.
+              The API rechecks every read and mutation independently.
+            </AlertDescription>
+          </Alert>
+        </section>
+      ),
+    };
   }
 
   if (settledContextKey.current !== contextKey) {
-    return (
-      <section className="workflow-workspace">
-        <p role="status">Switching workflow tenant context…</p>
-      </section>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <section className="workflow-workspace">
+          <p role="status">Switching workflow tenant context…</p>
+        </section>
+      ),
+    };
   }
 
   const current = detail.kind === "ready" ? detail.resource : undefined;
@@ -488,6 +506,69 @@ export function WorkflowWorkspace({
     ).catch(() => undefined);
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      busy,
+      canManage,
+      createWorkflow,
+      creating,
+      csrfToken,
+      current,
+      detail,
+      detailGeneration,
+      draft,
+      inventory,
+      kind,
+      lifecycle,
+      loadInventory,
+      notice,
+      operationError,
+      publishWorkflow,
+      selectWorkflow,
+      selectedId,
+      setCreating,
+      setDetail,
+      setDraft,
+      setKind,
+      setNotice,
+      setOperationError,
+      setSelectedId,
+      tenantId,
+      updateMetadata,
+    },
+  };
+}
+
+function WorkflowWorkspaceView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useWorkflowWorkspaceModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    busy,
+    canManage,
+    current,
+    detailGeneration,
+    inventory,
+    kind,
+    loadInventory,
+    notice,
+    operationError,
+    selectWorkflow,
+    selectedId,
+    setCreating,
+    setDetail,
+    setDraft,
+    setKind,
+    setNotice,
+    setOperationError,
+    setSelectedId,
+  } = model;
   return (
     <section className="workflow-workspace" aria-labelledby="workflow-title">
       <header className="workflow-workspace__heading">
@@ -577,98 +658,7 @@ export function WorkflowWorkspace({
           onSelect={(id) => void selectWorkflow(id)}
         />
 
-        <div className="workflow-console__main">
-          {creating ? (
-            <WorkflowEditor
-              key={`create:${kind}`}
-              busy={busy}
-              canManage={canManage}
-              draft={draft}
-              setDraft={setDraft}
-              onCreate={createWorkflow}
-              onPublish={async () => undefined}
-              onUpdateMetadata={async () => undefined}
-            />
-          ) : detail.kind === "loading" ? (
-            <WorkflowLoading />
-          ) : detail.kind === "error" ? (
-            <WorkflowFailure message={detail.message} />
-          ) : current ? (
-            <>
-              <div className="workflow-lifecycle">
-                <div>
-                  <Badge
-                    variant={
-                      current.value.status === "active"
-                        ? "secondary"
-                        : "outline"
-                    }
-                  >
-                    {current.value.status}
-                  </Badge>
-                  {current.value.isDefault ? (
-                    <Badge variant="outline">default</Badge>
-                  ) : null}
-                  <span>revision {current.value.revision}</span>
-                </div>
-                {canManage ? (
-                  <div>
-                    {!current.value.isDefault &&
-                    current.value.status === "active" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void lifecycle("setDefault")}
-                      >
-                        <Star aria-hidden="true" /> Set default
-                      </Button>
-                    ) : null}
-                    {current.value.status === "active" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy || current.value.isDefault}
-                        onClick={() => void lifecycle("archive")}
-                      >
-                        <Archive aria-hidden="true" /> Archive
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void lifecycle("restore")}
-                      >
-                        <RotateCcw aria-hidden="true" /> Restore
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-              <WorkflowEditor
-                key={`${current.value.id}:${current.value.revision}`}
-                busy={busy}
-                canManage={canManage}
-                draft={draft}
-                resource={current.value}
-                setDraft={setDraft}
-                onCreate={createWorkflow}
-                onPublish={publishWorkflow}
-                onUpdateMetadata={updateMetadata}
-              />
-              <WorkflowEvidencePanels
-                key={`${tenantId}:${current.value.id}:${current.value.currentVersion}`}
-                api={api}
-                csrfToken={csrfToken}
-                resource={current.value}
-                tenantId={tenantId}
-              />
-            </>
-          ) : (
-            <WorkflowEmpty kind={kind} />
-          )}
-        </div>
+        <WorkflowSelection model={model} />
       </div>
     </section>
   );
@@ -719,33 +709,11 @@ function WorkflowInventory({
           <Plus aria-hidden="true" /> New lineage
         </Button>
       ) : null}
-      {inventory.kind === "loading" ? (
-        <p role="status">Loading workflow catalog…</p>
-      ) : inventory.kind === "error" ? (
-        <WorkflowFailure message={inventory.message} />
-      ) : inventory.items.length === 0 ? (
-        <p>No workflow lineages are visible.</p>
-      ) : (
-        <div className="workflow-inventory__items">
-          {inventory.items.map((workflow) => (
-            <button
-              key={workflow.id}
-              type="button"
-              aria-current={selectedId === workflow.id ? "true" : undefined}
-              onClick={() => onSelect(workflow.id)}
-            >
-              <span>
-                <strong>{workflow.displayName}</strong>
-                <small>{workflow.key}</small>
-              </span>
-              <span>
-                v{workflow.currentVersion}
-                {workflow.isDefault ? <Star aria-label="Default" /> : null}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <WorkflowInventoryContents
+        inventory={inventory}
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
       {inventory.kind === "ready" && inventory.loadError ? (
         <WorkflowFailure message={inventory.loadError} />
       ) : null}
@@ -944,14 +912,9 @@ function WorkflowHistory({
   return (
     <div className="workflow-history">
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Version</TableHead>
-            <TableHead>Published</TableHead>
-            <TableHead>Publisher</TableHead>
-            <TableHead>Topology</TableHead>
-          </TableRow>
-        </TableHeader>
+        <TableColumnHeaders
+          columns={["Version", "Published", "Publisher", "Topology"]}
+        />
         <TableBody>
           {history.items.map((version) => (
             <TableRow key={version.definition.version}>
@@ -1013,12 +976,17 @@ function WorkflowSimulator({
     state: resource.current.initialState,
     version: String(resource.currentVersion),
   }));
-  const [result, setResult] = useState<WorkflowSimulationResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [{ result, error }, setSimulation] = useState<{
+    result: WorkflowSimulationResult | null;
+    error: string | null;
+  }>({ result: null, error: null });
   const [busy, setBusy] = useState(false);
+  const pendingSimulation = useRef(false);
 
   async function simulate(): Promise<void> {
-    setError(null);
+    if (pendingSimulation.current) return;
+    pendingSimulation.current = true;
+    setSimulation((current) => ({ ...current, error: null }));
     setBusy(true);
     try {
       const body = normalizeWorkflowSimulation(
@@ -1050,11 +1018,11 @@ function WorkflowSimulator({
           "The simulator returned a mismatched workflow projection.",
         );
       }
-      setResult(next);
+      setSimulation({ result: next, error: null });
     } catch (caught: unknown) {
-      setResult(null);
-      setError(workflowErrorMessage(caught));
+      setSimulation({ result: null, error: workflowErrorMessage(caught) });
     } finally {
+      pendingSimulation.current = false;
       setBusy(false);
     }
   }
@@ -1380,19 +1348,20 @@ function validateVersions(
   }
   let previous = Number.POSITIVE_INFINITY;
   for (const item of items) {
+    const version = item.definition.version;
     if (
       item.tenantId !== tenantId ||
       item.workflowId !== workflow.id ||
       item.definition.id !== workflow.id ||
       item.definition.kind !== workflow.kind ||
-      item.definition.version >= previous ||
-      item.definition.version > workflow.currentVersion
+      version >= previous ||
+      version > workflow.currentVersion
     ) {
       throw new WorkflowInputError(
         "The workflow history crossed its immutable lineage boundary.",
       );
     }
-    previous = item.definition.version;
+    previous = version;
   }
   return items;
 }
@@ -1471,8 +1440,11 @@ function parsePermissions(
           "case.comment.private",
         ];
   const result: WorkflowPermission[] = [];
+  const allowedPermissions = new Map<string, WorkflowPermission>(
+    allowed.map((permission) => [permission, permission]),
+  );
   for (const permission of splitList(value)) {
-    const matched = allowed.find((candidate) => candidate === permission);
+    const matched = allowedPermissions.get(permission);
     if (!matched) {
       throw new WorkflowInputError(
         "Simulation permission is unsupported for this workflow kind.",
@@ -1487,13 +1459,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const workflowInstantFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 function formatInstant(value: string): string {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed)
-    ? new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(parsed)
+    ? workflowInstantFormatter.format(parsed)
     : "Invalid timestamp";
 }
 
@@ -1502,4 +1476,175 @@ function humanize(value: string): string {
     .replaceAll(/([a-z])([A-Z])/gu, "$1 $2")
     .replaceAll("_", " ")
     .toLowerCase();
+}
+
+type WorkflowWorkspaceModel = Extract<
+  ReturnType<typeof useWorkflowWorkspaceModel>,
+  { kind: "ready" }
+>["data"];
+function WorkflowSelection({
+  model,
+}: {
+  model: WorkflowWorkspaceModel;
+}): React.JSX.Element {
+  const {
+    creating,
+    kind,
+    busy,
+    canManage,
+    draft,
+    setDraft,
+    createWorkflow,
+    detail,
+    current,
+    publishWorkflow,
+    updateMetadata,
+    tenantId,
+    api,
+    csrfToken,
+  } = model;
+  return (
+    <div className="workflow-console__main">
+      {creating ? (
+        <WorkflowEditor
+          key={`create:${kind}`}
+          busy={busy}
+          canManage={canManage}
+          draft={draft}
+          setDraft={setDraft}
+          onCreate={createWorkflow}
+          onPublish={async () => undefined}
+          onUpdateMetadata={async () => undefined}
+        />
+      ) : detail.kind === "loading" ? (
+        <WorkflowLoading />
+      ) : detail.kind === "error" ? (
+        <WorkflowFailure message={detail.message} />
+      ) : current ? (
+        <>
+          <WorkflowLifecycle model={model} current={current} />
+          <WorkflowEditor
+            key={`${current.value.id}:${current.value.revision}`}
+            busy={busy}
+            canManage={canManage}
+            draft={draft}
+            resource={current.value}
+            setDraft={setDraft}
+            onCreate={createWorkflow}
+            onPublish={publishWorkflow}
+            onUpdateMetadata={updateMetadata}
+          />
+          <WorkflowEvidencePanels
+            key={`${tenantId}:${current.value.id}:${current.value.currentVersion}`}
+            api={api}
+            csrfToken={csrfToken}
+            resource={current.value}
+            tenantId={tenantId}
+          />
+        </>
+      ) : (
+        <WorkflowEmpty kind={kind} />
+      )}
+    </div>
+  );
+}
+
+function WorkflowLifecycle({
+  model,
+  current,
+}: {
+  model: WorkflowWorkspaceModel;
+  current: NonNullable<WorkflowWorkspaceModel["current"]>;
+}): React.JSX.Element {
+  const { canManage, busy, lifecycle } = model;
+  return (
+    <div className="workflow-lifecycle">
+      <div>
+        <Badge
+          variant={current.value.status === "active" ? "secondary" : "outline"}
+        >
+          {current.value.status}
+        </Badge>
+        {current.value.isDefault ? (
+          <Badge variant="outline">default</Badge>
+        ) : null}
+        <span>revision {current.value.revision}</span>
+      </div>
+      {canManage ? (
+        <div>
+          {!current.value.isDefault && current.value.status === "active" ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void lifecycle("setDefault")}
+            >
+              <Star aria-hidden="true" /> Set default
+            </Button>
+          ) : null}
+          {current.value.status === "active" ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || current.value.isDefault}
+              onClick={() => void lifecycle("archive")}
+            >
+              <Archive aria-hidden="true" /> Archive
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void lifecycle("restore")}
+            >
+              <RotateCcw aria-hidden="true" /> Restore
+            </Button>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkflowInventoryContents({
+  inventory,
+  selectedId,
+  onSelect,
+}: {
+  inventory: InventoryState;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}): React.JSX.Element {
+  return (
+    <>
+      {inventory.kind === "loading" ? (
+        <p role="status">Loading workflow catalog…</p>
+      ) : inventory.kind === "error" ? (
+        <WorkflowFailure message={inventory.message} />
+      ) : inventory.items.length === 0 ? (
+        <p>No workflow lineages are visible.</p>
+      ) : (
+        <div className="workflow-inventory__items">
+          {inventory.items.map((workflow) => (
+            <button
+              key={workflow.id}
+              type="button"
+              aria-current={selectedId === workflow.id ? "true" : undefined}
+              onClick={() => onSelect(workflow.id)}
+            >
+              <span>
+                <strong>{workflow.displayName}</strong>
+                <small>{workflow.key}</small>
+              </span>
+              <span>
+                v{workflow.currentVersion}
+                {workflow.isDefault ? <Star aria-label="Default" /> : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }

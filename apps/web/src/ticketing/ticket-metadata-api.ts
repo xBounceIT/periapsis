@@ -127,18 +127,16 @@ const tagsSchema = z
     }
   });
 
-const metadataBaseSchema = z
-  .object({
-    title: canonicalText(240, true),
-    description: canonicalText(20_000, false, true),
-    severity: severitySchema,
-    priority: prioritySchema,
-    category: canonicalText(120, true),
-    classification: canonicalText(120, true).nullable(),
-    customerVisible: z.boolean(),
-    tags: tagsSchema,
-  })
-  .strict();
+const metadataBaseSchema = z.strictObject({
+  title: canonicalText(240, true),
+  description: canonicalText(20_000, false, true),
+  severity: severitySchema,
+  priority: prioritySchema,
+  category: canonicalText(120, true),
+  classification: canonicalText(120, true).nullable(),
+  customerVisible: z.boolean(),
+  tags: tagsSchema,
+});
 const alertRequestSchema = metadataBaseSchema
   .extend({ description: canonicalText(10_000, false, true) })
   .strict();

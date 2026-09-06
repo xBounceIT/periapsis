@@ -1,10 +1,10 @@
+import { Badge } from "@periapsis/ui/components/ui/badge";
+import { Button } from "@periapsis/ui/components/ui/button";
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Badge } from "@periapsis/ui/components/ui/badge";
-import { Button } from "@periapsis/ui/components/ui/button";
 import {
   BellRing,
   BriefcaseBusiness,
@@ -34,8 +34,8 @@ import {
   isNotificationExpectedRevision,
   mergeNotificationInboxPages,
   NotificationInboxApiError,
-  NotificationInboxProjectionError,
   notificationInboxPageLimit,
+  NotificationInboxProjectionError,
   projectNotificationInboxPage,
   projectNotificationMarkAllReadResult,
   projectNotificationReadStateResult,
@@ -59,7 +59,13 @@ type AccessBlock = {
   reason: "forbidden" | "unauthorized";
 };
 
-export function NotificationInboxPage(): React.JSX.Element {
+export function NotificationInboxPage(): React.JSX.Element | null {
+  const model = useNotificationInboxPageModel();
+  if (model.kind === "content") return model.content;
+  return <NotificationInboxPageView model={model.data} />;
+}
+
+function useNotificationInboxPageModel() {
   const {
     api,
     boundary,
@@ -79,69 +85,15 @@ export function NotificationInboxPage(): React.JSX.Element {
   const markAllAttempt = useRef<IdempotencyReference>({ current: null });
   const handledQueryAccessError = useRef<unknown>(undefined);
   const latestIdentity = useRef<string | undefined>(undefined);
-  const cacheScope = useMemo(
-    () => ["personal-notification-inbox", boundary?.key ?? status] as const,
-    [boundary?.key, status],
-  );
-  const listQueryKey = useMemo(
-    () => [...cacheScope, "list", unreadOnly] as const,
-    [cacheScope, unreadOnly],
-  );
-  const unreadQueryKey = useMemo(
-    () => [...cacheScope, "unread-count"] as const,
-    [cacheScope],
-  );
-  const accessBlocked =
-    boundary !== undefined && accessBlock?.identityKey === boundary.identityKey;
-  const canLoad =
-    status === "ready" && boundary !== undefined && !accessBlocked;
-
-  const listQuery = useInfiniteQuery({
-    enabled: canLoad,
-    initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam, signal }) => {
-      if (!boundary) throw new NotificationInboxProjectionError();
-      const request = {
-        ...(pageParam === undefined ? {} : { after: pageParam }),
-        limit: notificationInboxPageLimit,
-        signal,
-        tenantId: boundary.tenantId,
-        unreadOnly,
-      };
-      const result = await api.list(request);
-      return projectNotificationInboxPage(result, boundary, request);
-    },
-    queryKey: listQueryKey,
-    getNextPageParam: (page) => page.nextCursor,
-    retry: false,
-  });
-  const unreadQuery = useQuery({
-    enabled: canLoad,
-    queryFn: async ({ signal }) => {
-      if (!boundary) throw new NotificationInboxProjectionError();
-      return projectNotificationUnreadState(
-        await api.countUnread({ signal, tenantId: boundary.tenantId }),
-        boundary,
-      );
-    },
-    queryKey: unreadQueryKey,
-    retry: false,
-  });
-  const projection = useMemo(
-    () =>
-      boundary
-        ? mergeNotificationInboxPages(
-            listQuery.data?.pages ?? [],
-            boundary,
-            unreadOnly,
-          )
-        : { canonical: true, items: [] },
-    [boundary, listQuery.data?.pages, unreadOnly],
-  );
-  const queryErrors = [listQuery.error, unreadQuery.error];
-  const queryAccessError =
-    queryErrors.find(isUnauthorizedError) ?? queryErrors.find(isForbiddenError);
-  const queryError = queryAccessError ?? listQuery.error ?? unreadQuery.error;
+  const {
+    cacheScope,
+    unreadQueryKey,
+    accessBlocked,
+    listQuery,
+    unreadQuery,
+    projection,
+    queryError,
+  } = useInboxQueries({ api, boundary, status, unreadOnly, accessBlock });
 
   useLayoutEffect(() => {
     boundaryToken.current = {};
@@ -205,53 +157,19 @@ export function NotificationInboxPage(): React.JSX.Element {
     unreadQuery.isSuccess,
   ]);
 
-  if (status === "inactive") {
-    return (
-      <InboxBoundary
-        detail="This inbox is always tenant-local. Select an active tenant before loading personal notifications."
-        title="Select a tenant to view notifications"
-      />
-    );
-  }
-  if (status === "loading") return <InboxSkeleton page />;
-  if (status !== "ready" || !boundary) {
-    return (
-      <InboxBoundary
-        detail={
-          message ??
-          "Live authority is not ready. No personal notification request was sent."
-        }
-        title="Notifications are not available"
-      />
-    );
-  }
-  if (accessBlocked) {
-    const forbidden = accessBlock?.reason === "forbidden";
-    return (
-      <InboxBoundary
-        action={
-          forbidden ? (
-            <Button
-              onClick={() => {
-                handledQueryAccessError.current = undefined;
-                setAccessBlock(undefined);
-              }}
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw aria-hidden="true" /> Recheck notifications
-            </Button>
-          ) : undefined
-        }
-        detail={
-          forbidden
-            ? "The inbox service rejected the current tenant authority. Authority was reloaded and further calls remain paused until you recheck."
-            : "The inbox service rejected the current session. It was cleared and no further inbox call can be sent from this page."
-        }
-        title="Notification access changed"
-      />
-    );
-  }
+  const access = inboxAccessContent({
+    status,
+    boundary,
+    message,
+    accessBlock,
+    accessBlocked,
+    onRecheck: () => {
+      handledQueryAccessError.current = undefined;
+      setAccessBlock(undefined);
+    },
+  });
+  if (access || !boundary)
+    return access ?? { kind: "content" as const, content: null };
 
   const loading = listQuery.isPending || unreadQuery.isPending;
   const failed = queryError !== null;
@@ -434,6 +352,36 @@ export function NotificationInboxPage(): React.JSX.Element {
     activeMutation.current === controller &&
     !controller.signal.aborted;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      canMarkAllRead,
+      canMutate,
+      failed,
+      listQuery,
+      loading,
+      markAllRead,
+      pending,
+      problem,
+      projection,
+      queryError,
+      setReadState,
+      setUnreadOnly,
+      unreadOnly,
+      unreadQuery,
+    },
+  };
+}
+
+function NotificationInboxPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useNotificationInboxPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { unreadQuery } = model;
   return (
     <main className="content notification-inbox-page">
       <section
@@ -463,127 +411,9 @@ export function NotificationInboxPage(): React.JSX.Element {
         aria-labelledby="notification-inbox-queue-title"
         className="notification-inbox-shell"
       >
-        <header className="notification-inbox-toolbar">
-          <div>
-            <span className="notification-inbox-signal" aria-hidden="true" />
-            <span>
-              <h2 id="notification-inbox-queue-title">Signal queue</h2>
-              <small>Strict UUIDv7 order · older pages on demand</small>
-            </span>
-          </div>
-          <div className="notification-inbox-actions">
-            <label className="notification-inbox-filter">
-              <input
-                checked={unreadOnly}
-                disabled={failed || loading || pending !== null}
-                onChange={(event) => setUnreadOnly(event.currentTarget.checked)}
-                type="checkbox"
-              />
-              Unread only
-            </label>
-            <Button
-              disabled={!canMarkAllRead}
-              onClick={() => void markAllRead()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {pending?.kind === "mark-all" ? (
-                <LoaderCircle aria-hidden="true" className="inbox-spin" />
-              ) : (
-                <CheckCheck aria-hidden="true" />
-              )}
-              {pending?.kind === "mark-all" ? "Marking…" : "Mark all read"}
-            </Button>
-          </div>
-        </header>
+        <InboxToolbar model={model} />
 
-        {problem ? (
-          <p className="notification-inbox-problem" role="alert">
-            {problem}
-          </p>
-        ) : null}
-        {loading ? <InboxSkeleton /> : null}
-        {failed ? (
-          <div className="notification-inbox-error">
-            <FocusedError
-              message={describeNotificationInboxError(
-                queryError,
-                "The current authorized notification snapshot could not be loaded.",
-              )}
-              title="Notification inbox unavailable"
-            />
-            <Button
-              disabled={listQuery.isFetching || unreadQuery.isFetching}
-              onClick={() => {
-                void listQuery.refetch();
-                void unreadQuery.refetch();
-              }}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw aria-hidden="true" /> Retry inbox
-            </Button>
-          </div>
-        ) : null}
-        {!projection.canonical ? (
-          <FocusedError
-            message="A duplicate, non-monotonic, or cross-coordinate notification page was rejected. No ambiguous item was rendered."
-            title="Notification projection rejected"
-          />
-        ) : null}
-        {!loading &&
-        !failed &&
-        projection.canonical &&
-        projection.items.length === 0 ? (
-          <div className="notification-inbox-empty">
-            <MailCheck aria-hidden="true" />
-            <h3>
-              {unreadOnly ? "You are all caught up" : "No notifications yet"}
-            </h3>
-            <p>
-              {unreadOnly
-                ? "There are no unread updates in this personal tenant inbox."
-                : "Authorized Alert, Case, Task, Evidence, and Contact updates will appear here."}
-            </p>
-          </div>
-        ) : null}
-        {!loading &&
-        !failed &&
-        projection.canonical &&
-        projection.items.length > 0 ? (
-          <ol
-            aria-label="Personal notifications"
-            className="notification-inbox-list"
-          >
-            {projection.items.map((item) => (
-              <NotificationItem
-                disabled={
-                  !canMutate || !isNotificationExpectedRevision(item.revision)
-                }
-                item={item}
-                key={item.id}
-                onSetReadState={(read) => void setReadState(item, read)}
-                pending={pending?.kind === "item" && pending.itemId === item.id}
-              />
-            ))}
-          </ol>
-        ) : null}
-
-        {!failed && projection.canonical && listQuery.hasNextPage ? (
-          <Button
-            disabled={listQuery.isFetchingNextPage || pending !== null}
-            onClick={() => void listQuery.fetchNextPage()}
-            type="button"
-            variant="outline"
-          >
-            <ChevronDown aria-hidden="true" />
-            {listQuery.isFetchingNextPage
-              ? "Loading older notifications…"
-              : "Load older notifications"}
-          </Button>
-        ) : null}
+        <InboxQueryResult model={model} />
       </section>
     </main>
   );
@@ -724,4 +554,332 @@ function isUnauthorizedError(error: unknown): boolean {
 
 function isForbiddenError(error: unknown): boolean {
   return error instanceof NotificationInboxApiError && error.status === 403;
+}
+
+function inboxAccessContent({
+  status,
+  boundary,
+  message,
+  accessBlock,
+  accessBlocked,
+  onRecheck,
+}: {
+  status: ReturnType<typeof useNotificationInbox>["status"];
+  boundary: ReturnType<typeof useNotificationInbox>["boundary"];
+  message: ReturnType<typeof useNotificationInbox>["message"];
+} & {
+  accessBlock: AccessBlock | undefined;
+  accessBlocked: boolean;
+  onRecheck: () => void;
+}) {
+  if (status === "inactive") {
+    return {
+      kind: "content" as const,
+      content: (
+        <InboxBoundary
+          detail="This inbox is always tenant-local. Select an active tenant before loading personal notifications."
+          title="Select a tenant to view notifications"
+        />
+      ),
+    };
+  }
+  if (status === "loading")
+    return { kind: "content" as const, content: <InboxSkeleton page /> };
+  if (status !== "ready" || !boundary) {
+    return {
+      kind: "content" as const,
+      content: (
+        <InboxBoundary
+          detail={
+            message ??
+            "Live authority is not ready. No personal notification request was sent."
+          }
+          title="Notifications are not available"
+        />
+      ),
+    };
+  }
+  if (accessBlocked) {
+    const forbidden = accessBlock?.reason === "forbidden";
+    return {
+      kind: "content" as const,
+      content: (
+        <InboxBoundary
+          action={
+            forbidden ? (
+              <Button
+                onClick={() => {
+                  onRecheck();
+                }}
+                type="button"
+                variant="outline"
+              >
+                <RefreshCw aria-hidden="true" /> Recheck notifications
+              </Button>
+            ) : undefined
+          }
+          detail={
+            forbidden
+              ? "The inbox service rejected the current tenant authority. Authority was reloaded and further calls remain paused until you recheck."
+              : "The inbox service rejected the current session. It was cleared and no further inbox call can be sent from this page."
+          }
+          title="Notification access changed"
+        />
+      ),
+    };
+  }
+
+  return null;
+}
+
+type InboxPageModel = Extract<
+  ReturnType<typeof useNotificationInboxPageModel>,
+  { kind: "ready" }
+>["data"];
+function InboxToolbar({ model }: { model: InboxPageModel }): React.JSX.Element {
+  const {
+    unreadOnly,
+    failed,
+    loading,
+    pending,
+    setUnreadOnly,
+    canMarkAllRead,
+    markAllRead,
+  } = model;
+  return (
+    <header className="notification-inbox-toolbar">
+      <div>
+        <span className="notification-inbox-signal" aria-hidden="true" />
+        <span>
+          <h2 id="notification-inbox-queue-title">Signal queue</h2>
+          <small>Strict UUIDv7 order · older pages on demand</small>
+        </span>
+      </div>
+      <div className="notification-inbox-actions">
+        <label className="notification-inbox-filter">
+          <input
+            checked={unreadOnly}
+            disabled={failed || loading || pending !== null}
+            onChange={(event) => setUnreadOnly(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          Unread only
+        </label>
+        <Button
+          disabled={!canMarkAllRead}
+          onClick={() => void markAllRead()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {pending?.kind === "mark-all" ? (
+            <LoaderCircle aria-hidden="true" className="inbox-spin" />
+          ) : (
+            <CheckCheck aria-hidden="true" />
+          )}
+          {pending?.kind === "mark-all" ? "Marking…" : "Mark all read"}
+        </Button>
+      </div>
+    </header>
+  );
+}
+function InboxQueryResult({
+  model,
+}: {
+  model: InboxPageModel;
+}): React.JSX.Element {
+  const {
+    problem,
+    loading,
+    failed,
+    queryError,
+    listQuery,
+    unreadQuery,
+    projection,
+    pending,
+  } = model;
+  return (
+    <>
+      {problem ? (
+        <p className="notification-inbox-problem" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      {loading ? <InboxSkeleton /> : null}
+      {failed ? (
+        <div className="notification-inbox-error">
+          <FocusedError
+            message={describeNotificationInboxError(
+              queryError,
+              "The current authorized notification snapshot could not be loaded.",
+            )}
+            title="Notification inbox unavailable"
+          />
+          <Button
+            disabled={listQuery.isFetching || unreadQuery.isFetching}
+            onClick={() => {
+              void listQuery.refetch();
+              void unreadQuery.refetch();
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw aria-hidden="true" /> Retry inbox
+          </Button>
+        </div>
+      ) : null}
+      <InboxNotificationList model={model} />
+      {!failed && projection.canonical && listQuery.hasNextPage ? (
+        <Button
+          disabled={listQuery.isFetchingNextPage || pending !== null}
+          onClick={() => void listQuery.fetchNextPage()}
+          type="button"
+          variant="outline"
+        >
+          <ChevronDown aria-hidden="true" />
+          {listQuery.isFetchingNextPage
+            ? "Loading older notifications…"
+            : "Load older notifications"}
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+function useInboxQueries({
+  api,
+  boundary,
+  status,
+  unreadOnly,
+  accessBlock,
+}: {
+  api: ReturnType<typeof useNotificationInbox>["api"];
+  boundary: ReturnType<typeof useNotificationInbox>["boundary"];
+  status: ReturnType<typeof useNotificationInbox>["status"];
+} & { unreadOnly: boolean; accessBlock: AccessBlock | undefined }) {
+  const cacheScope = useMemo(
+    () => ["personal-notification-inbox", boundary?.key ?? status] as const,
+    [boundary?.key, status],
+  );
+  const listQueryKey = useMemo(
+    () => [...cacheScope, "list", unreadOnly] as const,
+    [cacheScope, unreadOnly],
+  );
+  const unreadQueryKey = useMemo(
+    () => [...cacheScope, "unread-count"] as const,
+    [cacheScope],
+  );
+  const accessBlocked =
+    boundary !== undefined && accessBlock?.identityKey === boundary.identityKey;
+  const canLoad =
+    status === "ready" && boundary !== undefined && !accessBlocked;
+
+  const listQuery = useInfiniteQuery({
+    enabled: canLoad,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      if (!boundary) throw new NotificationInboxProjectionError();
+      const request = {
+        ...(pageParam === undefined ? {} : { after: pageParam }),
+        limit: notificationInboxPageLimit,
+        signal,
+        tenantId: boundary.tenantId,
+        unreadOnly,
+      };
+      const result = await api.list(request);
+      return projectNotificationInboxPage(result, boundary, request);
+    },
+    queryKey: listQueryKey,
+    getNextPageParam: (page) => page.nextCursor,
+    retry: false,
+  });
+  const unreadQuery = useQuery({
+    enabled: canLoad,
+    queryFn: async ({ signal }) => {
+      if (!boundary) throw new NotificationInboxProjectionError();
+      return projectNotificationUnreadState(
+        await api.countUnread({ signal, tenantId: boundary.tenantId }),
+        boundary,
+      );
+    },
+    queryKey: unreadQueryKey,
+    retry: false,
+  });
+  const projection = useMemo(
+    () =>
+      boundary
+        ? mergeNotificationInboxPages(
+            listQuery.data?.pages ?? [],
+            boundary,
+            unreadOnly,
+          )
+        : { canonical: true, items: [] },
+    [boundary, listQuery.data?.pages, unreadOnly],
+  );
+  const queryErrors = [listQuery.error, unreadQuery.error];
+  const queryAccessError =
+    queryErrors.find(isUnauthorizedError) ?? queryErrors.find(isForbiddenError);
+  const queryError = queryAccessError ?? listQuery.error ?? unreadQuery.error;
+
+  return {
+    cacheScope,
+    unreadQueryKey,
+    accessBlocked,
+    listQuery,
+    unreadQuery,
+    projection,
+    queryError,
+  };
+}
+
+function InboxNotificationList({
+  model,
+}: {
+  model: InboxPageModel;
+}): React.JSX.Element | null {
+  const {
+    loading,
+    failed,
+    projection,
+    unreadOnly,
+    canMutate,
+    setReadState,
+    pending,
+  } = model;
+  if (!projection.canonical)
+    return (
+      <FocusedError
+        message="A duplicate, non-monotonic, or cross-coordinate notification page was rejected. No ambiguous item was rendered."
+        title="Notification projection rejected"
+      />
+    );
+  if (loading || failed) return null;
+  if (projection.items.length === 0)
+    return (
+      <div className="notification-inbox-empty">
+        <MailCheck aria-hidden="true" />
+        <h3>{unreadOnly ? "You are all caught up" : "No notifications yet"}</h3>
+        <p>
+          {unreadOnly
+            ? "There are no unread updates in this personal tenant inbox."
+            : "Authorized Alert, Case, Task, Evidence, and Contact updates will appear here."}
+        </p>
+      </div>
+    );
+  return (
+    <ol aria-label="Personal notifications" className="notification-inbox-list">
+      {projection.items.map((item) => (
+        <NotificationItem
+          disabled={
+            !canMutate || !isNotificationExpectedRevision(item.revision)
+          }
+          item={item}
+          key={item.id}
+          onSetReadState={(read) => void setReadState(item, read)}
+          pending={pending?.kind === "item" && pending.itemId === item.id}
+        />
+      ))}
+    </ol>
+  );
 }

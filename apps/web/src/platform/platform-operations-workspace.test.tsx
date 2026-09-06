@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -34,6 +35,42 @@ describe("PlatformOperationsWorkspace", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Users" }));
     expect(await screen.findByText("recovery_code 1")).toBeVisible();
+  });
+
+  it("keeps a refresh failure when an older user page resolves late", async () => {
+    const fixture = createApi(false);
+    const initial = await fixture.api.listUsers({});
+    let resolvePage!: (
+      page: Awaited<ReturnType<PlatformOperationsApi["listUsers"]>>,
+    ) => void;
+    const delayedPage = new Promise<
+      Awaited<ReturnType<PlatformOperationsApi["listUsers"]>>
+    >((resolve) => {
+      resolvePage = resolve;
+    });
+    vi.spyOn(fixture.api, "listUsers")
+      .mockResolvedValueOnce({ ...initial, nextCursor: "users-page-two" })
+      .mockImplementationOnce(() => delayedPage)
+      .mockRejectedValueOnce(new Error("refresh unavailable"));
+    renderWorkspace(fixture.api);
+    fireEvent.click(await screen.findByRole("tab", { name: "Users" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load more users" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(
+      await screen.findByText("Platform users could not be loaded."),
+    ).toBeVisible();
+    await act(async () => {
+      resolvePage(initial);
+      await delayedPage;
+    });
+    expect(
+      screen.getByText("Platform users could not be loaded."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Recovery-capable operator"),
+    ).not.toBeInTheDocument();
   });
 
   it("fails closed without misreporting an unavailable flag as disabled", async () => {

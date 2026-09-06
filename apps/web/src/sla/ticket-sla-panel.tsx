@@ -47,7 +47,22 @@ const overrideKinds = [
   "recalculate",
 ] as const;
 
-export function TicketSlaPanel({
+export function TicketSlaPanel(props: {
+  api: SlaAdminApi;
+  canOverride: boolean;
+  canRead: boolean;
+  csrfToken: string;
+  expectedAudience: TicketSlaProjection["audience"];
+  kind: SlaObjectType;
+  objectId: string;
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useTicketSlaPanelModel(props);
+  if (model.kind === "content") return model.content;
+  return <TicketSlaPanelView model={model.data} />;
+}
+
+function useTicketSlaPanelModel({
   api,
   canOverride,
   canRead,
@@ -65,7 +80,7 @@ export function TicketSlaPanel({
   kind: SlaObjectType;
   objectId: string;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const [projection, setProjection] =
     useState<VersionedSlaResource<TicketSlaProjection> | null>(null);
   const [loading, setLoading] = useState(canRead);
@@ -208,29 +223,79 @@ export function TicketSlaPanel({
   }
 
   if (!canRead)
-    return (
-      <SlaEmpty
-        title="SLA authority required"
-        detail="The ticket API revalidates sla.read and ticket scope before returning any clock."
-      />
-    );
-  if (loading) return <SlaLoading label="Loading SLA projection" />;
+    return {
+      kind: "content" as const,
+      content: (
+        <SlaEmpty
+          title="SLA authority required"
+          detail="The ticket API revalidates sla.read and ticket scope before returning any clock."
+        />
+      ),
+    };
+  if (loading)
+    return {
+      kind: "content" as const,
+      content: <SlaLoading label="Loading SLA projection" />,
+    };
   if (error && !projection)
-    return (
-      <SlaError
-        error={error}
-        fallback="The SLA projection could not be loaded."
-      />
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <SlaError
+          error={error}
+          fallback="The SLA projection could not be loaded."
+        />
+      ),
+    };
   if (!projection)
-    return (
-      <SlaEmpty
-        title="No SLA assigned"
-        detail="No active policy matched this ticket at the pinned assignment event."
-      />
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <SlaEmpty
+          title="No SLA assigned"
+          detail="No active policy matched this ticket at the pinned assignment event."
+        />
+      ),
+    };
 
   const value = projection.value;
+  return {
+    kind: "ready" as const,
+    data: {
+      applyOverride,
+      busy,
+      canOverride,
+      error,
+      extensionSeconds,
+      kind,
+      kindOverride,
+      metricKey,
+      notice,
+      reason,
+      setExtensionSeconds,
+      setKindOverride,
+      setMetricKey,
+      setReason,
+      setSimulationDigest,
+      setTargetId,
+      setTargetVersion,
+      simulationDigest,
+      targetId,
+      targetVersion,
+      value,
+    },
+  };
+}
+
+function TicketSlaPanelView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTicketSlaPanelModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { value, error, notice, canOverride } = model;
   return (
     <div className="ticket-sla">
       <header className="ticket-sla__heading">
@@ -264,56 +329,7 @@ export function TicketSlaPanel({
       ) : null}
       <div className="ticket-sla__metrics">
         {value.metrics.map((metric) => (
-          <article
-            key={metric.key}
-            className={`sla-metric sla-metric--${metric.state}`}
-          >
-            <header>
-              <div>
-                <Clock3 aria-hidden="true" />
-                <strong>{metric.label}</strong>
-                <code>{metric.key}</code>
-              </div>
-              <Badge
-                variant={
-                  metric.state === "breached" ? "destructive" : "outline"
-                }
-              >
-                {metric.state.replaceAll("_", " ")}
-              </Badge>
-            </header>
-            <div
-              className="sla-progress"
-              role="meter"
-              aria-label={`${metric.label} consumed`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.max(
-                0,
-                Math.min(100, metric.consumedPercentage),
-              )}
-            >
-              <span
-                style={{
-                  width: `${Math.max(0, Math.min(100, metric.consumedPercentage))}%`,
-                }}
-              />
-            </div>
-            <dl>
-              <div>
-                <dt>Due</dt>
-                <dd>{formatSlaInstant(metric.dueAt)}</dd>
-              </div>
-              <div>
-                <dt>Remaining</dt>
-                <dd>{formatSlaDuration(metric.remainingSeconds)}</dd>
-              </div>
-              <div>
-                <dt>Consumed</dt>
-                <dd>{metric.consumedPercentage.toFixed(1)}%</dd>
-              </div>
-            </dl>
-          </article>
+          <TicketSlaMetric key={metric.key} metric={metric} />
         ))}
       </div>
       {value.columns.length > 0 ? (
@@ -336,128 +352,7 @@ export function TicketSlaPanel({
         </section>
       ) : null}
       {canOverride && value.audience === "operator" ? (
-        <form
-          className="sla-override"
-          onSubmit={(event) => void applyOverride(event)}
-        >
-          <header>
-            <div>
-              <ShieldCheck aria-hidden="true" />
-              <div>
-                <p className="section-label">Privileged mutation</p>
-                <h3>Override SLA</h3>
-              </div>
-            </div>
-            <Badge variant="outline">{kind}.sla.override</Badge>
-          </header>
-          <div className="sla-form-grid">
-            <SlaNativeSelect
-              id="sla-override-kind"
-              label="Override"
-              options={overrideKinds}
-              value={kindOverride}
-              onChange={setKindOverride}
-            />
-            {requiresMetric(kindOverride) ? (
-              <label
-                className="sla-native-select"
-                htmlFor="sla-override-metric"
-              >
-                <span>Metric</span>
-                <select
-                  id="sla-override-metric"
-                  value={metricKey}
-                  onChange={(event) => setMetricKey(event.target.value)}
-                >
-                  {value.metrics.map((metric) => (
-                    <option key={metric.key} value={metric.key}>
-                      {metric.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {kindOverride === "extend" ? (
-              <FormField
-                htmlFor="sla-override-extension"
-                label="Extension seconds"
-              >
-                <Input
-                  id="sla-override-extension"
-                  required
-                  type="number"
-                  min={60}
-                  value={extensionSeconds}
-                  onChange={(event) => setExtensionSeconds(event.target.value)}
-                />
-              </FormField>
-            ) : null}
-            {kindOverride === "change_calendar" ||
-            kindOverride === "change_policy" ? (
-              <FormField
-                htmlFor="sla-override-target-id"
-                label={
-                  kindOverride === "change_calendar"
-                    ? "Calendar ID"
-                    : "Policy ID"
-                }
-              >
-                <Input
-                  id="sla-override-target-id"
-                  required
-                  value={targetId}
-                  onChange={(event) => setTargetId(event.target.value)}
-                />
-              </FormField>
-            ) : null}
-            {kindOverride === "change_calendar" ||
-            kindOverride === "change_policy" ? (
-              <FormField
-                htmlFor="sla-override-target-version"
-                label="Pinned version"
-              >
-                <Input
-                  id="sla-override-target-version"
-                  required
-                  type="number"
-                  min={1}
-                  value={targetVersion}
-                  onChange={(event) => setTargetVersion(event.target.value)}
-                />
-              </FormField>
-            ) : null}
-            {kindOverride === "change_calendar" ||
-            kindOverride === "change_policy" ||
-            kindOverride === "recalculate" ? (
-              <FormField
-                htmlFor="sla-override-digest"
-                label="Simulation digest"
-              >
-                <Input
-                  id="sla-override-digest"
-                  required
-                  value={simulationDigest}
-                  onChange={(event) => setSimulationDigest(event.target.value)}
-                />
-              </FormField>
-            ) : null}
-            <div className="sla-form-grid__wide">
-              <FormField htmlFor="sla-override-reason" label="Audited reason">
-                <Input
-                  id="sla-override-reason"
-                  required
-                  minLength={8}
-                  maxLength={1000}
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                />
-              </FormField>
-            </div>
-          </div>
-          <Button type="submit" disabled={busy || reason.trim().length < 8}>
-            {busy ? "Applying…" : "Apply governed override"}
-          </Button>
-        </form>
+        <TicketSlaOverride model={model} />
       ) : null}
     </div>
   );
@@ -901,4 +796,198 @@ function isColumnCalculation(value: string): boolean {
 
 function isColumnFormat(value: string): boolean {
   return ["datetime", "duration", "state_badge", "percentage"].includes(value);
+}
+
+function TicketSlaMetric({
+  metric,
+}: {
+  metric: TicketSlaProjection["metrics"][number];
+}): React.JSX.Element {
+  return (
+    <article className={`sla-metric sla-metric--${metric.state}`}>
+      <header>
+        <div>
+          <Clock3 aria-hidden="true" />
+          <strong>{metric.label}</strong>
+          <code>{metric.key}</code>
+        </div>
+        <Badge
+          variant={metric.state === "breached" ? "destructive" : "outline"}
+        >
+          {metric.state.replaceAll("_", " ")}
+        </Badge>
+      </header>
+      <meter
+        className="sr-only"
+        aria-label={`${metric.label} consumed`}
+        min={0}
+        max={100}
+        value={Math.max(0, Math.min(100, metric.consumedPercentage))}
+      />
+      <div className="sla-progress" aria-hidden="true">
+        <span
+          style={{
+            width: `${Math.max(0, Math.min(100, metric.consumedPercentage))}%`,
+          }}
+        />
+      </div>
+      <dl>
+        <div>
+          <dt>Due</dt>
+          <dd>{formatSlaInstant(metric.dueAt)}</dd>
+        </div>
+        <div>
+          <dt>Remaining</dt>
+          <dd>{formatSlaDuration(metric.remainingSeconds)}</dd>
+        </div>
+        <div>
+          <dt>Consumed</dt>
+          <dd>{metric.consumedPercentage.toFixed(1)}%</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function TicketSlaOverride({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTicketSlaPanelModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    applyOverride,
+    busy,
+    extensionSeconds,
+    kind,
+    kindOverride,
+    metricKey,
+    reason,
+    setExtensionSeconds,
+    setKindOverride,
+    setMetricKey,
+    setReason,
+    setSimulationDigest,
+    setTargetId,
+    setTargetVersion,
+    simulationDigest,
+    targetId,
+    targetVersion,
+    value,
+  } = model;
+  return (
+    <form
+      className="sla-override"
+      onSubmit={(event) => void applyOverride(event)}
+    >
+      <header>
+        <div>
+          <ShieldCheck aria-hidden="true" />
+          <div>
+            <p className="section-label">Privileged mutation</p>
+            <h3>Override SLA</h3>
+          </div>
+        </div>
+        <Badge variant="outline">{kind}.sla.override</Badge>
+      </header>
+      <div className="sla-form-grid">
+        <SlaNativeSelect
+          id="sla-override-kind"
+          label="Override"
+          options={overrideKinds}
+          value={kindOverride}
+          onChange={setKindOverride}
+        />
+        {requiresMetric(kindOverride) ? (
+          <label className="sla-native-select" htmlFor="sla-override-metric">
+            <span>Metric</span>
+            <select
+              id="sla-override-metric"
+              value={metricKey}
+              onChange={(event) => setMetricKey(event.target.value)}
+            >
+              {value.metrics.map((metric) => (
+                <option key={metric.key} value={metric.key}>
+                  {metric.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {kindOverride === "extend" ? (
+          <FormField htmlFor="sla-override-extension" label="Extension seconds">
+            <Input
+              id="sla-override-extension"
+              required
+              type="number"
+              min={60}
+              value={extensionSeconds}
+              onChange={(event) => setExtensionSeconds(event.target.value)}
+            />
+          </FormField>
+        ) : null}
+        {kindOverride === "change_calendar" ||
+        kindOverride === "change_policy" ? (
+          <FormField
+            htmlFor="sla-override-target-id"
+            label={
+              kindOverride === "change_calendar" ? "Calendar ID" : "Policy ID"
+            }
+          >
+            <Input
+              id="sla-override-target-id"
+              required
+              value={targetId}
+              onChange={(event) => setTargetId(event.target.value)}
+            />
+          </FormField>
+        ) : null}
+        {kindOverride === "change_calendar" ||
+        kindOverride === "change_policy" ? (
+          <FormField
+            htmlFor="sla-override-target-version"
+            label="Pinned version"
+          >
+            <Input
+              id="sla-override-target-version"
+              required
+              type="number"
+              min={1}
+              value={targetVersion}
+              onChange={(event) => setTargetVersion(event.target.value)}
+            />
+          </FormField>
+        ) : null}
+        {kindOverride === "change_calendar" ||
+        kindOverride === "change_policy" ||
+        kindOverride === "recalculate" ? (
+          <FormField htmlFor="sla-override-digest" label="Simulation digest">
+            <Input
+              id="sla-override-digest"
+              required
+              value={simulationDigest}
+              onChange={(event) => setSimulationDigest(event.target.value)}
+            />
+          </FormField>
+        ) : null}
+        <div className="sla-form-grid__wide">
+          <FormField htmlFor="sla-override-reason" label="Audited reason">
+            <Input
+              id="sla-override-reason"
+              required
+              minLength={8}
+              maxLength={1000}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </FormField>
+        </div>
+      </div>
+      <Button type="submit" disabled={busy || reason.trim().length < 8}>
+        {busy ? "Applying…" : "Apply governed override"}
+      </Button>
+    </form>
+  );
 }

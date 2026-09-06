@@ -24,15 +24,23 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { reduceWorkspaceState } from "../pages/workspace-state";
 
 import type {
+  TenantFederationAssurancePolicy,
+  TenantFederationAssurancePolicyReplaceRequest,
   TenantFederationAuthProvider,
   TenantFederationAuthProviderCreateRequest,
   TenantFederationAuthProviderSummary,
   TenantFederationAuthProviderUpdateRequest,
-  TenantFederationAssurancePolicy,
-  TenantFederationAssurancePolicyReplaceRequest,
   TenantFederationMappingPolicy,
   TenantFederationMappingPolicyReplaceRequest,
   TenantOidcTrustDocumentsRefreshRequest,
@@ -167,13 +175,21 @@ export function TenantFederationPage({
   );
 }
 
-function TenantFederationTenantScope({
+function TenantFederationTenantScope(props: {
+  api: TenantFederationApi;
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useTenantFederationTenantScopeModel(props);
+  return <TenantFederationTenantScopeView model={model.data} />;
+}
+
+function useTenantFederationTenantScopeModel({
   api,
   tenantId,
 }: {
   api: TenantFederationApi;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const canRead = authority.hasPermission("identity_provider.read", "tenant");
@@ -196,14 +212,61 @@ function TenantFederationTenantScope({
     "identity_policy.manage",
     "tenant",
   );
-  const [inventory, setInventory] = useState<InventoryState>({
-    kind: "loading",
-  });
-  const [detail, setDetail] = useState<DetailState>({ kind: "idle" });
-  const [revision, setRevision] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<TenantFederationTenantScopeState>,
+    undefined,
+    (): TenantFederationTenantScopeState => ({
+      inventory: {
+        kind: "loading",
+      },
+      detail: { kind: "idle" },
+      revision: 0,
+      createOpen: false,
+      notice: null,
+      loadingMore: false,
+    }),
+  );
+  const { inventory, detail, revision, createOpen, notice, loadingMore } =
+    workspaceState;
+  const {
+    setInventory,
+    setDetail,
+    setRevision,
+    setCreateOpen,
+    setNotice,
+    setLoadingMore,
+  } = useMemo(
+    () => ({
+      setInventory: (
+        value: React.SetStateAction<
+          TenantFederationTenantScopeState["inventory"]
+        >,
+      ) => updateWorkspaceState({ inventory: value }),
+      setDetail: (
+        value: React.SetStateAction<TenantFederationTenantScopeState["detail"]>,
+      ) => updateWorkspaceState({ detail: value }),
+      setRevision: (
+        value: React.SetStateAction<
+          TenantFederationTenantScopeState["revision"]
+        >,
+      ) => updateWorkspaceState({ revision: value }),
+      setCreateOpen: (
+        value: React.SetStateAction<
+          TenantFederationTenantScopeState["createOpen"]
+        >,
+      ) => updateWorkspaceState({ createOpen: value }),
+      setNotice: (
+        value: React.SetStateAction<TenantFederationTenantScopeState["notice"]>,
+      ) => updateWorkspaceState({ notice: value }),
+      setLoadingMore: (
+        value: React.SetStateAction<
+          TenantFederationTenantScopeState["loadingMore"]
+        >,
+      ) => updateWorkspaceState({ loadingMore: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const inventoryGeneration = useRef(0);
   const loadMoreRequest = useRef<AbortController | null>(null);
   const detailRequest = useRef({
@@ -226,8 +289,10 @@ function TenantFederationTenantScope({
     inventoryGeneration.current = generation;
     loadMoreRequest.current?.abort();
     loadMoreRequest.current = null;
-    setLoadingMore(false);
-    setInventory({ kind: "loading" });
+    updateWorkspaceState({
+      loadingMore: false,
+      inventory: { kind: "loading" },
+    });
     void api
       .list(tenantId, { signal: controller.signal })
       .then((page) => {
@@ -264,8 +329,10 @@ function TenantFederationTenantScope({
       loadMoreRequest.current?.abort();
     };
   }, [
+    setInventory,
     api,
     authority.status,
+    authority.reload,
     canRead,
     clearSession,
     revision,
@@ -383,190 +450,63 @@ function TenantFederationTenantScope({
     } finally {
       if (loadMoreRequest.current === controller) {
         loadMoreRequest.current = null;
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         if (inventoryGeneration.current === generation) setLoadingMore(false);
       }
     }
   }
 
-  return (
-    <div className="content federation-page">
-      <section className="page-heading federation-page__heading">
-        <div>
-          <p className="section-label">Tenant administration</p>
-          <h1>Federated identity providers</h1>
-          <p>
-            Stage tenant-owned OIDC and SAML login, inspect only safe public
-            configuration, and rotate credentials through write-only controls.
-            The API rechecks live authority for every action.
-          </p>
-        </div>
-        {canManage ? (
-          <Button
-            type="button"
-            onClick={() => setCreateOpen((value) => !value)}
-          >
-            <Plus aria-hidden="true" />{" "}
-            {createOpen ? "Close form" : "Create provider"}
-          </Button>
-        ) : null}
-      </section>
-
-      {notice ? (
-        <Alert>
-          <CheckCircle2 aria-hidden="true" />
-          <AlertTitle>Federation update</AlertTitle>
-          <AlertDescription>{notice}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {createOpen && canManage ? (
-        <CreateFederationProviderForm
-          api={api}
-          csrfToken={session.csrfToken}
-          tenantId={tenantId}
-          onCreated={(provider) => {
-            if (provider.value.tenantId !== tenantId) {
-              setDetail({ kind: "idle" });
-              setNotice("The created provider did not match its tenant scope.");
-              return;
-            }
-            setCreateOpen(false);
-            setNotice(
-              "The provider and login binding were created disabled. Install protected material and review readiness before enabling login.",
-            );
-            setRevision((value) => value + 1);
-            setDetail({ kind: "ready", versioned: provider });
-          }}
-          onError={(caught) => {
-            handleAuthorityError(caught, authority.reload, () =>
-              clearSession(session.id),
-            );
-          }}
-        />
-      ) : null}
-
-      {inventory.kind === "loading" ? (
-        <FederationSkeleton />
-      ) : inventory.kind === "error" ? (
-        <Card>
-          <CardContent className="federation-page__error">
-            <FocusedError message={inventory.message} />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRevision((value) => value + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Retry inventory
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tenant federation inventory</CardTitle>
-            <CardDescription>
-              Presence and revision flags replace credential, token, metadata,
-              certificate, assertion, claim, and subject readback.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {inventory.items.length === 0 ? (
-              <p className="federation-empty">
-                No federated providers are configured for this tenant.
-              </p>
-            ) : (
-              <div
-                className="federation-grid"
-                role="list"
-                aria-label="Federated identity providers"
-              >
-                {inventory.items.map((provider) => (
-                  <article
-                    className="federation-provider"
-                    role="listitem"
-                    key={provider.id}
-                  >
-                    <div className="federation-provider__header">
-                      <div>
-                        <span className="federation-provider__kind">
-                          {provider.kind.toUpperCase()}
-                        </span>
-                        <h2>{provider.displayName}</h2>
-                        <code>{provider.key}</code>
-                      </div>
-                      <ProviderBadge provider={provider} />
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>Login key</dt>
-                        <dd>{provider.binding.loginKey}</dd>
-                      </div>
-                      <div>
-                        <dt>Configuration</dt>
-                        <dd>{provider.configured ? "Ready" : "Incomplete"}</dd>
-                      </div>
-                      <div>
-                        <dt>Version</dt>
-                        <dd>{provider.version}</dd>
-                      </div>
-                    </dl>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void inspect(provider.id)}
-                    >
-                      Inspect and manage
-                    </Button>
-                  </article>
-                ))}
-              </div>
-            )}
-            {inventory.nextCursor ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={loadingMore}
-                onClick={() => void loadMore()}
-              >
-                {loadingMore ? "Loading more…" : "Load more providers"}
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
-      )}
-
-      <ProviderDetail
-        api={api}
-        canManage={canManage}
-        canManageAssurance={canManageAssurance}
-        canManageMapping={canManageMapping}
-        canReadAssurance={canReadAssurance}
-        canReadMapping={canReadMapping}
-        csrfToken={session.csrfToken}
-        state={detail}
-        tenantId={tenantId}
-        onChanged={(message, provider) => {
-          if (provider && provider.value.tenantId !== tenantId) {
-            setDetail({ kind: "idle" });
-            setNotice("The updated provider did not match its tenant scope.");
-            return;
-          }
-          setNotice(message);
-          setRevision((value) => value + 1);
-          if (provider) setDetail({ kind: "ready", versioned: provider });
-          else setDetail({ kind: "idle" });
-        }}
-        onError={(caught) => {
-          handleAuthorityError(caught, authority.reload, () =>
-            clearSession(session.id),
-          );
-        }}
-      />
-    </div>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      authority,
+      canManage,
+      canManageAssurance,
+      canManageMapping,
+      canReadAssurance,
+      canReadMapping,
+      clearSession,
+      createOpen,
+      detail,
+      inspect,
+      inventory,
+      loadMore,
+      loadingMore,
+      notice,
+      session,
+      setCreateOpen,
+      setDetail,
+      setNotice,
+      setRevision,
+      tenantId,
+    },
+  };
 }
 
-function CreateFederationProviderForm({
+function TenantFederationTenantScopeView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantFederationTenantScopeModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <FederationWorkspace model={model} />;
+}
+
+function CreateFederationProviderForm(props: {
+  api: TenantFederationApi;
+  csrfToken: string;
+  onCreated: (provider: TenantFederationProviderVersioned) => void;
+  onError: (error: unknown) => void;
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useCreateFederationProviderFormModel(props);
+  return <CreateFederationProviderFormView model={model.data} />;
+}
+
+function useCreateFederationProviderFormModel({
   api,
   csrfToken,
   onCreated,
@@ -578,52 +518,215 @@ function CreateFederationProviderForm({
   onCreated: (provider: TenantFederationProviderVersioned) => void;
   onError: (error: unknown) => void;
   tenantId: string;
-}): React.JSX.Element {
-  const [kind, setKind] = useState<"oidc" | "saml">("oidc");
-  const [key, setKey] = useState("");
-  const [loginKey, setLoginKey] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [description, setDescription] = useState("");
-  const [issuerOrEntity, setIssuerOrEntity] = useState("");
-  const [clientId, setClientId] = useState("");
-  const postLogoutRedirectUri = tenantOIDCPostLogoutRedirectURI();
-  const [extraScopes, setExtraScopes] = useState("email, profile");
-  const [allowRefreshToken, setAllowRefreshToken] = useState(false);
-  const [useUserInfo, setUseUserInfo] = useState(false);
-  const [jitMode, setJitMode] = useState<"disabled" | "create">("disabled");
-  const [noMatchPolicy, setNoMatchPolicy] = useState<
-    "deny" | "provider_access_only"
-  >("deny");
-  const [samlSignatureAlgorithm, setSamlSignatureAlgorithm] =
-    useState<SAMLSignatureAlgorithm>(
-      "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
-    );
-  const [samlSignaturePolicy, setSamlSignaturePolicy] = useState<
-    "signed_assertion" | "signed_response" | "both"
-  >("signed_assertion");
-  const [samlRequestedAuthnContexts, setSamlRequestedAuthnContexts] = useState(
-    "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+}) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<CreateFederationProviderFormState>,
+    undefined,
+    (): CreateFederationProviderFormState => ({
+      kind: "oidc",
+      key: "",
+      loginKey: "",
+      displayName: "",
+      description: "",
+      issuerOrEntity: "",
+      clientId: "",
+      extraScopes: "email, profile",
+      allowRefreshToken: false,
+      useUserInfo: false,
+      jitMode: "disabled",
+      noMatchPolicy: "deny",
+      samlSignatureAlgorithm:
+        "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+      samlSignaturePolicy: "signed_assertion",
+      samlRequestedAuthnContexts:
+        "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+      samlSubjectSource: "persistent_nameid",
+      samlSubjectAttributeName: "",
+      samlSubjectAttributeNameFormat: "",
+      samlClockSkewSeconds: 120,
+      samlMaximumAuthenticationAgeSeconds: 3_600,
+      reason: "",
+      submitting: false,
+      error: null,
+      idempotencyKey: generateUuidV7(),
+    }),
   );
-  const [samlSubjectSource, setSamlSubjectSource] = useState<
-    "persistent_nameid" | "immutable_attribute"
-  >("persistent_nameid");
-  const [samlSubjectAttributeName, setSamlSubjectAttributeName] = useState("");
-  const [samlSubjectAttributeNameFormat, setSamlSubjectAttributeNameFormat] =
-    useState("");
-  const [samlClockSkewSeconds, setSamlClockSkewSeconds] = useState(120);
-  const [
+  const {
+    kind,
+    key,
+    loginKey,
+    displayName,
+    description,
+    issuerOrEntity,
+    clientId,
+    extraScopes,
+    allowRefreshToken,
+    useUserInfo,
+    jitMode,
+    noMatchPolicy,
+    samlSignatureAlgorithm,
+    samlSignaturePolicy,
+    samlRequestedAuthnContexts,
+    samlSubjectSource,
+    samlSubjectAttributeName,
+    samlSubjectAttributeNameFormat,
+    samlClockSkewSeconds,
     samlMaximumAuthenticationAgeSeconds,
+    reason,
+    submitting,
+    error,
+    idempotencyKey,
+  } = workspaceState;
+  const {
+    setKind,
+    setKey,
+    setLoginKey,
+    setDisplayName,
+    setDescription,
+    setIssuerOrEntity,
+    setClientId,
+    setExtraScopes,
+    setAllowRefreshToken,
+    setUseUserInfo,
+    setJitMode,
+    setNoMatchPolicy,
+    setSamlSignatureAlgorithm,
+    setSamlSignaturePolicy,
+    setSamlRequestedAuthnContexts,
+    setSamlSubjectSource,
+    setSamlSubjectAttributeName,
+    setSamlSubjectAttributeNameFormat,
+    setSamlClockSkewSeconds,
     setSamlMaximumAuthenticationAgeSeconds,
-  ] = useState(3_600);
-  const [reason, setReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [idempotencyKey, setIdempotencyKey] = useState(generateUuidV7);
+    setReason,
+    setSubmitting,
+    setError,
+    setIdempotencyKey,
+  } = useMemo(
+    () => ({
+      setKind: (
+        value: React.SetStateAction<CreateFederationProviderFormState["kind"]>,
+      ) => updateWorkspaceState({ kind: value }),
+      setKey: (
+        value: React.SetStateAction<CreateFederationProviderFormState["key"]>,
+      ) => updateWorkspaceState({ key: value }),
+      setLoginKey: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["loginKey"]
+        >,
+      ) => updateWorkspaceState({ loginKey: value }),
+      setDisplayName: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["displayName"]
+        >,
+      ) => updateWorkspaceState({ displayName: value }),
+      setDescription: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["description"]
+        >,
+      ) => updateWorkspaceState({ description: value }),
+      setIssuerOrEntity: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["issuerOrEntity"]
+        >,
+      ) => updateWorkspaceState({ issuerOrEntity: value }),
+      setClientId: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["clientId"]
+        >,
+      ) => updateWorkspaceState({ clientId: value }),
+      setExtraScopes: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["extraScopes"]
+        >,
+      ) => updateWorkspaceState({ extraScopes: value }),
+      setAllowRefreshToken: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["allowRefreshToken"]
+        >,
+      ) => updateWorkspaceState({ allowRefreshToken: value }),
+      setUseUserInfo: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["useUserInfo"]
+        >,
+      ) => updateWorkspaceState({ useUserInfo: value }),
+      setJitMode: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["jitMode"]
+        >,
+      ) => updateWorkspaceState({ jitMode: value }),
+      setNoMatchPolicy: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["noMatchPolicy"]
+        >,
+      ) => updateWorkspaceState({ noMatchPolicy: value }),
+      setSamlSignatureAlgorithm: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlSignatureAlgorithm"]
+        >,
+      ) => updateWorkspaceState({ samlSignatureAlgorithm: value }),
+      setSamlSignaturePolicy: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlSignaturePolicy"]
+        >,
+      ) => updateWorkspaceState({ samlSignaturePolicy: value }),
+      setSamlRequestedAuthnContexts: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlRequestedAuthnContexts"]
+        >,
+      ) => updateWorkspaceState({ samlRequestedAuthnContexts: value }),
+      setSamlSubjectSource: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlSubjectSource"]
+        >,
+      ) => updateWorkspaceState({ samlSubjectSource: value }),
+      setSamlSubjectAttributeName: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlSubjectAttributeName"]
+        >,
+      ) => updateWorkspaceState({ samlSubjectAttributeName: value }),
+      setSamlSubjectAttributeNameFormat: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlSubjectAttributeNameFormat"]
+        >,
+      ) => updateWorkspaceState({ samlSubjectAttributeNameFormat: value }),
+      setSamlClockSkewSeconds: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlClockSkewSeconds"]
+        >,
+      ) => updateWorkspaceState({ samlClockSkewSeconds: value }),
+      setSamlMaximumAuthenticationAgeSeconds: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["samlMaximumAuthenticationAgeSeconds"]
+        >,
+      ) => updateWorkspaceState({ samlMaximumAuthenticationAgeSeconds: value }),
+      setReason: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["reason"]
+        >,
+      ) => updateWorkspaceState({ reason: value }),
+      setSubmitting: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["submitting"]
+        >,
+      ) => updateWorkspaceState({ submitting: value }),
+      setError: (
+        value: React.SetStateAction<CreateFederationProviderFormState["error"]>,
+      ) => updateWorkspaceState({ error: value }),
+      setIdempotencyKey: (
+        value: React.SetStateAction<
+          CreateFederationProviderFormState["idempotencyKey"]
+        >,
+      ) => updateWorkspaceState({ idempotencyKey: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
+  const postLogoutRedirectUri = tenantOIDCPostLogoutRedirectURI();
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    setSubmitting(true);
-    setError(null);
+    updateWorkspaceState({ submitting: true, error: null });
     try {
       const input: TenantFederationAuthProviderCreateRequest =
         kind === "oidc"
@@ -692,6 +795,90 @@ function CreateFederationProviderForm({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      allowRefreshToken,
+      clientId,
+      description,
+      displayName,
+      error,
+      extraScopes,
+      issuerOrEntity,
+      jitMode,
+      key,
+      kind,
+      loginKey,
+      noMatchPolicy,
+      postLogoutRedirectUri,
+      reason,
+      samlClockSkewSeconds,
+      samlMaximumAuthenticationAgeSeconds,
+      samlRequestedAuthnContexts,
+      samlSignatureAlgorithm,
+      samlSignaturePolicy,
+      samlSubjectAttributeName,
+      samlSubjectAttributeNameFormat,
+      samlSubjectSource,
+      setAllowRefreshToken,
+      setClientId,
+      setDescription,
+      setDisplayName,
+      setExtraScopes,
+      setIssuerOrEntity,
+      setJitMode,
+      setKey,
+      setKind,
+      setLoginKey,
+      setNoMatchPolicy,
+      setReason,
+      setSamlClockSkewSeconds,
+      setSamlMaximumAuthenticationAgeSeconds,
+      setSamlRequestedAuthnContexts,
+      setSamlSignatureAlgorithm,
+      setSamlSignaturePolicy,
+      setSamlSubjectAttributeName,
+      setSamlSubjectAttributeNameFormat,
+      setSamlSubjectSource,
+      setUseUserInfo,
+      submit,
+      submitting,
+      useUserInfo,
+    },
+  };
+}
+
+function CreateFederationProviderFormView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useCreateFederationProviderFormModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    description,
+    displayName,
+    error,
+    issuerOrEntity,
+    jitMode,
+    key,
+    kind,
+    loginKey,
+    noMatchPolicy,
+    reason,
+    setDescription,
+    setDisplayName,
+    setIssuerOrEntity,
+    setJitMode,
+    setKey,
+    setKind,
+    setLoginKey,
+    setNoMatchPolicy,
+    setReason,
+    submit,
+    submitting,
+  } = model;
   return (
     <Card className="federation-create-card">
       <CardHeader>
@@ -810,223 +997,7 @@ function CreateFederationProviderForm({
               onChange={(event) => setIssuerOrEntity(event.target.value)}
             />
           </FormField>
-          {kind === "oidc" ? (
-            <>
-              <FormField htmlFor="federation-client-id" label="Client ID">
-                <Input
-                  id="federation-client-id"
-                  required
-                  maxLength={512}
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                />
-              </FormField>
-              <FormField
-                htmlFor="federation-logout-uri"
-                label="Post-logout redirect URI"
-                hint="Deployment-managed from this app's public origin. Register this exact URI with the provider."
-              >
-                <Input
-                  id="federation-logout-uri"
-                  type="url"
-                  required
-                  readOnly
-                  value={postLogoutRedirectUri}
-                />
-              </FormField>
-              <FormField
-                htmlFor="federation-extra-scopes"
-                label="OIDC extra scopes"
-                hint="Comma-separated exact scopes; openid and refresh-related offline_access are managed automatically."
-              >
-                <Input
-                  id="federation-extra-scopes"
-                  value={extraScopes}
-                  onChange={(event) => setExtraScopes(event.target.value)}
-                />
-              </FormField>
-              <div className="federation-check">
-                <Checkbox
-                  id="federation-refresh"
-                  checked={allowRefreshToken}
-                  onCheckedChange={(checked) => {
-                    const enabled = checked === true;
-                    setAllowRefreshToken(enabled);
-                    setExtraScopes((current) =>
-                      withOIDCRefreshScope(current, enabled),
-                    );
-                  }}
-                />
-                <Label htmlFor="federation-refresh">
-                  Allow bounded refresh-token rotation
-                </Label>
-              </div>
-              <div className="federation-check">
-                <Checkbox
-                  id="federation-userinfo"
-                  checked={useUserInfo}
-                  onCheckedChange={(checked) =>
-                    setUseUserInfo(checked === true)
-                  }
-                />
-                <Label htmlFor="federation-userinfo">
-                  Fetch profile claims from the validated UserInfo endpoint
-                </Label>
-              </div>
-            </>
-          ) : (
-            <>
-              <FormField
-                htmlFor="federation-saml-signature-algorithm"
-                label="SAML redirect signature algorithm"
-              >
-                <select
-                  id="federation-saml-signature-algorithm"
-                  value={samlSignatureAlgorithm}
-                  onChange={(event) => {
-                    if (isSAMLSignatureAlgorithm(event.target.value)) {
-                      setSamlSignatureAlgorithm(event.target.value);
-                    }
-                  }}
-                >
-                  {samlSignatureAlgorithms.map((algorithm) => (
-                    <option value={algorithm} key={algorithm}>
-                      {algorithm.slice(algorithm.lastIndexOf("#") + 1)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField
-                htmlFor="federation-saml-signature-policy"
-                label="Required SAML signature"
-              >
-                <select
-                  id="federation-saml-signature-policy"
-                  value={samlSignaturePolicy}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (
-                      value === "signed_assertion" ||
-                      value === "signed_response" ||
-                      value === "both"
-                    ) {
-                      setSamlSignaturePolicy(value);
-                    }
-                  }}
-                >
-                  <option value="signed_assertion">Signed assertion</option>
-                  <option value="signed_response">Signed response</option>
-                  <option value="both">Signed response and assertion</option>
-                </select>
-              </FormField>
-              <FormField
-                htmlFor="federation-saml-contexts"
-                label="Requested AuthnContext values"
-                hint="One exact class reference per line."
-              >
-                <Textarea
-                  id="federation-saml-contexts"
-                  required
-                  value={samlRequestedAuthnContexts}
-                  onChange={(event) =>
-                    setSamlRequestedAuthnContexts(event.target.value)
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="federation-saml-subject-source"
-                label="Stable SAML subject"
-              >
-                <select
-                  id="federation-saml-subject-source"
-                  value={samlSubjectSource}
-                  onChange={(event) =>
-                    setSamlSubjectSource(
-                      event.target.value === "immutable_attribute"
-                        ? "immutable_attribute"
-                        : "persistent_nameid",
-                    )
-                  }
-                >
-                  <option value="persistent_nameid">Persistent NameID</option>
-                  <option value="immutable_attribute">
-                    Immutable attribute
-                  </option>
-                </select>
-              </FormField>
-              {samlSubjectSource === "immutable_attribute" ? (
-                <>
-                  <FormField
-                    htmlFor="federation-saml-subject-attribute"
-                    label="Subject attribute Name"
-                  >
-                    <Input
-                      id="federation-saml-subject-attribute"
-                      required
-                      value={samlSubjectAttributeName}
-                      onChange={(event) =>
-                        setSamlSubjectAttributeName(event.target.value)
-                      }
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor="federation-saml-subject-format"
-                    label="Subject attribute NameFormat"
-                  >
-                    <Input
-                      id="federation-saml-subject-format"
-                      required
-                      value={samlSubjectAttributeNameFormat}
-                      onChange={(event) =>
-                        setSamlSubjectAttributeNameFormat(event.target.value)
-                      }
-                    />
-                  </FormField>
-                </>
-              ) : null}
-              <FormField
-                htmlFor="federation-saml-skew"
-                label="Clock skew seconds"
-              >
-                <Input
-                  id="federation-saml-skew"
-                  type="number"
-                  min={0}
-                  max={300}
-                  value={samlClockSkewSeconds}
-                  onChange={(event) =>
-                    setSamlClockSkewSeconds(Number(event.target.value))
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="federation-saml-max-age"
-                label="Maximum authentication age seconds"
-              >
-                <Input
-                  id="federation-saml-max-age"
-                  type="number"
-                  min={60}
-                  max={86_400}
-                  value={samlMaximumAuthenticationAgeSeconds}
-                  onChange={(event) =>
-                    setSamlMaximumAuthenticationAgeSeconds(
-                      Number(event.target.value),
-                    )
-                  }
-                />
-              </FormField>
-              <Alert className="federation-material-note">
-                <LockKeyhole aria-hidden="true" />
-                <AlertTitle>Trust remains write-only</AlertTitle>
-                <AlertDescription>
-                  Raw metadata, certificates, and SP keys never appear in this
-                  form or in provider reads. XML encryption remains disabled
-                  until a separate encrypted-key ceremony is supported.
-                </AlertDescription>
-              </Alert>
-            </>
-          )}
+          {<FederationProtocolFields model={model} />}
           <FormField htmlFor="federation-create-reason" label="Audit reason">
             <Input
               id="federation-create-reason"
@@ -1048,11 +1019,7 @@ function CreateFederationProviderForm({
 
 function ProviderDetail({
   api,
-  canManage,
-  canManageAssurance,
-  canManageMapping,
-  canReadAssurance,
-  canReadMapping,
+  permissions,
   csrfToken,
   onChanged,
   onError,
@@ -1060,11 +1027,14 @@ function ProviderDetail({
   tenantId,
 }: {
   api: TenantFederationApi;
-  canManage: boolean;
-  canManageAssurance: boolean;
-  canManageMapping: boolean;
-  canReadAssurance: boolean;
-  canReadMapping: boolean;
+  permissions: Pick<
+    React.ComponentProps<typeof ProviderManagementForm>,
+    | "canManage"
+    | "canManageAssurance"
+    | "canManageMapping"
+    | "canReadAssurance"
+    | "canReadMapping"
+  >;
   csrfToken: string;
   onChanged: (
     message: string,
@@ -1087,11 +1057,7 @@ function ProviderDetail({
     <ProviderManagementForm
       key={`${tenantId}:${state.versioned.value.id}`}
       api={api}
-      canManage={canManage}
-      canManageAssurance={canManageAssurance}
-      canManageMapping={canManageMapping}
-      canReadAssurance={canReadAssurance}
-      canReadMapping={canReadMapping}
+      {...permissions}
       csrfToken={csrfToken}
       current={state.versioned}
       onChanged={onChanged}
@@ -1101,7 +1067,38 @@ function ProviderDetail({
   );
 }
 
-function ProviderManagementForm({
+function ProviderManagementForm(props: {
+  api: TenantFederationApi;
+  canManage: boolean;
+  canManageAssurance: boolean;
+  canManageMapping: boolean;
+  canReadAssurance: boolean;
+  canReadMapping: boolean;
+  csrfToken: string;
+  current: TenantFederationProviderVersioned;
+  onChanged: (
+    message: string,
+    provider?: TenantFederationProviderVersioned,
+  ) => void;
+  onError: (error: unknown) => void;
+  tenantId: string;
+}): React.JSX.Element {
+  return (
+    <ProviderManagementEditor
+      key={`${props.tenantId}:${props.current.value.id}`}
+      {...props}
+    />
+  );
+}
+
+function ProviderManagementEditor(
+  props: React.ComponentProps<typeof ProviderManagementForm>,
+): React.JSX.Element {
+  const model = useProviderManagementFormModel(props);
+  return <ProviderManagementFormView model={model.data} />;
+}
+
+function useProviderManagementFormModel({
   api,
   canManage,
   canManageAssurance,
@@ -1128,128 +1125,303 @@ function ProviderManagementForm({
   ) => void;
   onError: (error: unknown) => void;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const provider = current.value;
-  const [displayName, setDisplayName] = useState(provider.displayName);
-  const [description, setDescription] = useState(provider.description);
-  const [enabled, setEnabled] = useState(provider.enabled);
-  const [jitMode, setJitMode] = useState(provider.jitMode);
-  const [noMatchPolicy, setNoMatchPolicy] = useState(provider.noMatchPolicy);
-  const [oidcIssuer, setOIDCIssuer] = useState(
-    provider.kind === "oidc" ? provider.configuration.issuer : "",
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<ProviderManagementFormState>,
+    undefined,
+    (): ProviderManagementFormState => ({
+      observedProvider: provider,
+      displayName: provider.displayName,
+      description: provider.description,
+      enabled: provider.enabled,
+      jitMode: provider.jitMode,
+      noMatchPolicy: provider.noMatchPolicy,
+      oidcIssuer: provider.kind === "oidc" ? provider.configuration.issuer : "",
+      oidcClientID:
+        provider.kind === "oidc" ? provider.configuration.clientId : "",
+      oidcExtraScopes:
+        provider.kind === "oidc"
+          ? provider.configuration.extraScopes.join(", ")
+          : "",
+      oidcAllowRefreshToken:
+        provider.kind === "oidc" && provider.configuration.allowRefreshToken,
+      oidcUseUserInfo:
+        provider.kind === "oidc" && provider.configuration.useUserInfo,
+      samlExpectedEntityID:
+        provider.kind === "saml" ? provider.configuration.expectedEntityId : "",
+      samlSignatureAlgorithm:
+        provider.kind === "saml"
+          ? provider.configuration.redirectSignatureAlgorithm
+          : "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+      samlSignaturePolicy:
+        provider.kind === "saml"
+          ? provider.configuration.signaturePolicy
+          : "signed_assertion",
+      samlRequestedAuthnContexts:
+        provider.kind === "saml"
+          ? provider.configuration.requestedAuthnContexts.join("\n")
+          : "",
+      samlSubjectSource:
+        provider.kind === "saml"
+          ? provider.configuration.subjectSource
+          : "persistent_nameid",
+      samlSubjectAttributeName:
+        provider.kind === "saml"
+          ? (provider.configuration.subjectAttributeName ?? "")
+          : "",
+      samlSubjectAttributeNameFormat:
+        provider.kind === "saml"
+          ? (provider.configuration.subjectAttributeNameFormat ?? "")
+          : "",
+      samlClockSkewSeconds:
+        provider.kind === "saml"
+          ? provider.configuration.clockSkewSeconds
+          : 120,
+      samlMaximumAuthenticationAgeSeconds:
+        provider.kind === "saml"
+          ? provider.configuration.maxAuthenticationAgeSeconds
+          : 3_600,
+      reason: "",
+      clientSecret: "",
+      trustClientAuthentication: "client_secret_basic",
+      trustSigningAlgorithms: "RS256",
+      trustReason: "",
+      clearSecretConfirmed: false,
+      archiveConfirmed: false,
+      busy: false,
+      error: null,
+    }),
   );
-  const [oidcClientID, setOIDCClientID] = useState(
-    provider.kind === "oidc" ? provider.configuration.clientId : "",
-  );
-  const oidcPostLogoutRedirectURI = tenantOIDCPostLogoutRedirectURI();
-  const [oidcExtraScopes, setOIDCExtraScopes] = useState(
-    provider.kind === "oidc"
-      ? provider.configuration.extraScopes.join(", ")
-      : "",
-  );
-  const [oidcAllowRefreshToken, setOIDCAllowRefreshToken] = useState(
-    provider.kind === "oidc" && provider.configuration.allowRefreshToken,
-  );
-  const [oidcUseUserInfo, setOIDCUseUserInfo] = useState(
-    provider.kind === "oidc" && provider.configuration.useUserInfo,
-  );
-  const [samlExpectedEntityID, setSAMLExpectedEntityID] = useState(
-    provider.kind === "saml" ? provider.configuration.expectedEntityId : "",
-  );
-  const [samlSignatureAlgorithm, setSAMLSignatureAlgorithm] =
-    useState<SAMLSignatureAlgorithm>(
-      provider.kind === "saml"
-        ? provider.configuration.redirectSignatureAlgorithm
-        : "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
-    );
-  const [samlSignaturePolicy, setSAMLSignaturePolicy] =
-    useState<SAMLSignaturePolicy>(
-      provider.kind === "saml"
-        ? provider.configuration.signaturePolicy
-        : "signed_assertion",
-    );
-  const [samlRequestedAuthnContexts, setSAMLRequestedAuthnContexts] = useState(
-    provider.kind === "saml"
-      ? provider.configuration.requestedAuthnContexts.join("\n")
-      : "",
-  );
-  const [samlSubjectSource, setSAMLSubjectSource] = useState<SAMLSubjectSource>(
-    provider.kind === "saml"
-      ? provider.configuration.subjectSource
-      : "persistent_nameid",
-  );
-  const [samlSubjectAttributeName, setSAMLSubjectAttributeName] = useState(
-    provider.kind === "saml"
-      ? (provider.configuration.subjectAttributeName ?? "")
-      : "",
-  );
-  const [samlSubjectAttributeNameFormat, setSAMLSubjectAttributeNameFormat] =
-    useState(
-      provider.kind === "saml"
-        ? (provider.configuration.subjectAttributeNameFormat ?? "")
-        : "",
-    );
-  const [samlClockSkewSeconds, setSAMLClockSkewSeconds] = useState(
-    provider.kind === "saml" ? provider.configuration.clockSkewSeconds : 120,
-  );
-  const [
+  const {
+    observedProvider,
+    displayName,
+    description,
+    enabled,
+    jitMode,
+    noMatchPolicy,
+    oidcIssuer,
+    oidcClientID,
+    oidcExtraScopes,
+    oidcAllowRefreshToken,
+    oidcUseUserInfo,
+    samlExpectedEntityID,
+    samlSignatureAlgorithm,
+    samlSignaturePolicy,
+    samlRequestedAuthnContexts,
+    samlSubjectSource,
+    samlSubjectAttributeName,
+    samlSubjectAttributeNameFormat,
+    samlClockSkewSeconds,
     samlMaximumAuthenticationAgeSeconds,
+    reason,
+    clientSecret,
+    trustClientAuthentication,
+    trustSigningAlgorithms,
+    trustReason,
+    clearSecretConfirmed,
+    archiveConfirmed,
+    busy,
+    error,
+  } = workspaceState;
+  const {
+    setDisplayName,
+    setDescription,
+    setEnabled,
+    setJitMode,
+    setNoMatchPolicy,
+    setOIDCIssuer,
+    setOIDCClientID,
+    setOIDCExtraScopes,
+    setOIDCAllowRefreshToken,
+    setOIDCUseUserInfo,
+    setSAMLExpectedEntityID,
+    setSAMLSignatureAlgorithm,
+    setSAMLSignaturePolicy,
+    setSAMLRequestedAuthnContexts,
+    setSAMLSubjectSource,
+    setSAMLSubjectAttributeName,
+    setSAMLSubjectAttributeNameFormat,
+    setSAMLClockSkewSeconds,
     setSAMLMaximumAuthenticationAgeSeconds,
-  ] = useState(
-    provider.kind === "saml"
-      ? provider.configuration.maxAuthenticationAgeSeconds
-      : 3_600,
+    setReason,
+    setClientSecret,
+    setTrustClientAuthentication,
+    setTrustSigningAlgorithms,
+    setTrustReason,
+    setClearSecretConfirmed,
+    setArchiveConfirmed,
+    setBusy,
+    setError,
+  } = useMemo(
+    () => ({
+      setDisplayName: (
+        value: React.SetStateAction<ProviderManagementFormState["displayName"]>,
+      ) => updateWorkspaceState({ displayName: value }),
+      setDescription: (
+        value: React.SetStateAction<ProviderManagementFormState["description"]>,
+      ) => updateWorkspaceState({ description: value }),
+      setEnabled: (
+        value: React.SetStateAction<ProviderManagementFormState["enabled"]>,
+      ) => updateWorkspaceState({ enabled: value }),
+      setJitMode: (
+        value: React.SetStateAction<ProviderManagementFormState["jitMode"]>,
+      ) => updateWorkspaceState({ jitMode: value }),
+      setNoMatchPolicy: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["noMatchPolicy"]
+        >,
+      ) => updateWorkspaceState({ noMatchPolicy: value }),
+      setOIDCIssuer: (
+        value: React.SetStateAction<ProviderManagementFormState["oidcIssuer"]>,
+      ) => updateWorkspaceState({ oidcIssuer: value }),
+      setOIDCClientID: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["oidcClientID"]
+        >,
+      ) => updateWorkspaceState({ oidcClientID: value }),
+      setOIDCExtraScopes: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["oidcExtraScopes"]
+        >,
+      ) => updateWorkspaceState({ oidcExtraScopes: value }),
+      setOIDCAllowRefreshToken: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["oidcAllowRefreshToken"]
+        >,
+      ) => updateWorkspaceState({ oidcAllowRefreshToken: value }),
+      setOIDCUseUserInfo: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["oidcUseUserInfo"]
+        >,
+      ) => updateWorkspaceState({ oidcUseUserInfo: value }),
+      setSAMLExpectedEntityID: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlExpectedEntityID"]
+        >,
+      ) => updateWorkspaceState({ samlExpectedEntityID: value }),
+      setSAMLSignatureAlgorithm: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlSignatureAlgorithm"]
+        >,
+      ) => updateWorkspaceState({ samlSignatureAlgorithm: value }),
+      setSAMLSignaturePolicy: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlSignaturePolicy"]
+        >,
+      ) => updateWorkspaceState({ samlSignaturePolicy: value }),
+      setSAMLRequestedAuthnContexts: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlRequestedAuthnContexts"]
+        >,
+      ) => updateWorkspaceState({ samlRequestedAuthnContexts: value }),
+      setSAMLSubjectSource: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlSubjectSource"]
+        >,
+      ) => updateWorkspaceState({ samlSubjectSource: value }),
+      setSAMLSubjectAttributeName: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlSubjectAttributeName"]
+        >,
+      ) => updateWorkspaceState({ samlSubjectAttributeName: value }),
+      setSAMLSubjectAttributeNameFormat: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlSubjectAttributeNameFormat"]
+        >,
+      ) => updateWorkspaceState({ samlSubjectAttributeNameFormat: value }),
+      setSAMLClockSkewSeconds: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlClockSkewSeconds"]
+        >,
+      ) => updateWorkspaceState({ samlClockSkewSeconds: value }),
+      setSAMLMaximumAuthenticationAgeSeconds: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["samlMaximumAuthenticationAgeSeconds"]
+        >,
+      ) => updateWorkspaceState({ samlMaximumAuthenticationAgeSeconds: value }),
+      setReason: (
+        value: React.SetStateAction<ProviderManagementFormState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setClientSecret: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["clientSecret"]
+        >,
+      ) => updateWorkspaceState({ clientSecret: value }),
+      setTrustClientAuthentication: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["trustClientAuthentication"]
+        >,
+      ) => updateWorkspaceState({ trustClientAuthentication: value }),
+      setTrustSigningAlgorithms: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["trustSigningAlgorithms"]
+        >,
+      ) => updateWorkspaceState({ trustSigningAlgorithms: value }),
+      setTrustReason: (
+        value: React.SetStateAction<ProviderManagementFormState["trustReason"]>,
+      ) => updateWorkspaceState({ trustReason: value }),
+      setClearSecretConfirmed: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["clearSecretConfirmed"]
+        >,
+      ) => updateWorkspaceState({ clearSecretConfirmed: value }),
+      setArchiveConfirmed: (
+        value: React.SetStateAction<
+          ProviderManagementFormState["archiveConfirmed"]
+        >,
+      ) => updateWorkspaceState({ archiveConfirmed: value }),
+      setBusy: (
+        value: React.SetStateAction<ProviderManagementFormState["busy"]>,
+      ) => updateWorkspaceState({ busy: value }),
+      setError: (
+        value: React.SetStateAction<ProviderManagementFormState["error"]>,
+      ) => updateWorkspaceState({ error: value }),
+    }),
+    [updateWorkspaceState],
   );
-  const [reason, setReason] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [trustClientAuthentication, setTrustClientAuthentication] = useState<
-    "client_secret_basic" | "client_secret_post"
-  >("client_secret_basic");
-  const [trustSigningAlgorithms, setTrustSigningAlgorithms] = useState("RS256");
-  const [trustReason, setTrustReason] = useState("");
-  const [clearSecretConfirmed, setClearSecretConfirmed] = useState(false);
-  const [archiveConfirmed, setArchiveConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setDisplayName(provider.displayName);
-    setDescription(provider.description);
-    setEnabled(provider.enabled);
-    setJitMode(provider.jitMode);
-    setNoMatchPolicy(provider.noMatchPolicy);
+  const oidcPostLogoutRedirectURI = tenantOIDCPostLogoutRedirectURI();
+
+  if (observedProvider !== provider) {
+    updateWorkspaceState({
+      observedProvider: provider,
+      displayName: provider.displayName,
+      description: provider.description,
+      enabled: provider.enabled,
+      jitMode: provider.jitMode,
+      noMatchPolicy: provider.noMatchPolicy,
+    });
     if (provider.kind === "oidc") {
-      setOIDCIssuer(provider.configuration.issuer);
-      setOIDCClientID(provider.configuration.clientId);
-      setOIDCExtraScopes(provider.configuration.extraScopes.join(", "));
-      setOIDCAllowRefreshToken(provider.configuration.allowRefreshToken);
-      setOIDCUseUserInfo(provider.configuration.useUserInfo);
+      updateWorkspaceState({
+        oidcIssuer: provider.configuration.issuer,
+        oidcClientID: provider.configuration.clientId,
+        oidcExtraScopes: provider.configuration.extraScopes.join(", "),
+        oidcAllowRefreshToken: provider.configuration.allowRefreshToken,
+        oidcUseUserInfo: provider.configuration.useUserInfo,
+      });
     } else {
-      setSAMLExpectedEntityID(provider.configuration.expectedEntityId);
-      setSAMLSignatureAlgorithm(
-        provider.configuration.redirectSignatureAlgorithm,
-      );
-      setSAMLSignaturePolicy(provider.configuration.signaturePolicy);
-      setSAMLRequestedAuthnContexts(
-        provider.configuration.requestedAuthnContexts.join("\n"),
-      );
-      setSAMLSubjectSource(provider.configuration.subjectSource);
-      setSAMLSubjectAttributeName(
-        provider.configuration.subjectAttributeName ?? "",
-      );
-      setSAMLSubjectAttributeNameFormat(
-        provider.configuration.subjectAttributeNameFormat ?? "",
-      );
-      setSAMLClockSkewSeconds(provider.configuration.clockSkewSeconds);
-      setSAMLMaximumAuthenticationAgeSeconds(
-        provider.configuration.maxAuthenticationAgeSeconds,
-      );
+      updateWorkspaceState({
+        samlExpectedEntityID: provider.configuration.expectedEntityId,
+        samlSignatureAlgorithm:
+          provider.configuration.redirectSignatureAlgorithm,
+        samlSignaturePolicy: provider.configuration.signaturePolicy,
+        samlRequestedAuthnContexts:
+          provider.configuration.requestedAuthnContexts.join("\n"),
+        samlSubjectSource: provider.configuration.subjectSource,
+        samlSubjectAttributeName:
+          provider.configuration.subjectAttributeName ?? "",
+        samlSubjectAttributeNameFormat:
+          provider.configuration.subjectAttributeNameFormat ?? "",
+        samlClockSkewSeconds: provider.configuration.clockSkewSeconds,
+        samlMaximumAuthenticationAgeSeconds:
+          provider.configuration.maxAuthenticationAgeSeconds,
+      });
     }
-  }, [provider]);
+  }
 
   async function mutate(action: () => Promise<void>): Promise<void> {
-    setBusy(true);
-    setError(null);
+    updateWorkspaceState({ busy: true, error: null });
     try {
       await action();
     } catch (caught) {
@@ -1267,6 +1439,7 @@ function ProviderManagementForm({
 
   function update(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
+    // react-doctor-disable-next-line no-impure-state-updater -- mutate is the local async command executor, not a React state setter or updater.
     void mutate(async () => {
       const common = {
         displayName,
@@ -1331,6 +1504,7 @@ function ProviderManagementForm({
   function rotateSecret(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (provider.kind !== "oidc") return;
+    // react-doctor-disable-next-line no-impure-state-updater -- mutate is the local async command executor, not a React state setter or updater.
     void mutate(async () => {
       await api.replaceOidcClientSecret(
         csrfToken,
@@ -1340,8 +1514,7 @@ function ProviderManagementForm({
         clientSecret,
         reason,
       );
-      setClientSecret("");
-      setReason("");
+      updateWorkspaceState({ clientSecret: "", reason: "" });
       const refreshed = await api.get(tenantId, provider.id);
       onChanged(
         "The OIDC client secret was rotated without credential readback.",
@@ -1352,6 +1525,7 @@ function ProviderManagementForm({
 
   function clearSecret(): void {
     if (provider.kind !== "oidc" || !clearSecretConfirmed) return;
+    // react-doctor-disable-next-line no-impure-state-updater -- mutate is the local async command executor, not a React state setter or updater.
     void mutate(async () => {
       await api.clearOidcClientSecret(
         csrfToken,
@@ -1360,9 +1534,11 @@ function ProviderManagementForm({
         current.etag,
         reason,
       );
-      setClientSecret("");
-      setReason("");
-      setClearSecretConfirmed(false);
+      updateWorkspaceState({
+        clientSecret: "",
+        reason: "",
+        clearSecretConfirmed: false,
+      });
       const refreshed = await api.get(tenantId, provider.id);
       onChanged(
         "The OIDC client secret was retired without credential readback.",
@@ -1374,6 +1550,7 @@ function ProviderManagementForm({
   function refreshOIDCTrust(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (provider.kind !== "oidc") return;
+    // react-doctor-disable-next-line no-impure-state-updater -- mutate is the local async command executor, not a React state setter or updater.
     void mutate(async () => {
       const signingAlgorithms: OIDCSigningAlgorithm[] = [];
       for (const value of parseCommaSeparated(trustSigningAlgorithms)) {
@@ -1404,6 +1581,122 @@ function ProviderManagementForm({
     });
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      archiveConfirmed,
+      busy,
+      canManage,
+      canManageAssurance,
+      canManageMapping,
+      canReadAssurance,
+      canReadMapping,
+      clearSecret,
+      clearSecretConfirmed,
+      clientSecret,
+      csrfToken,
+      current,
+      description,
+      displayName,
+      enabled,
+      error,
+      jitMode,
+      mutate,
+      noMatchPolicy,
+      oidcAllowRefreshToken,
+      oidcClientID,
+      oidcExtraScopes,
+      oidcIssuer,
+      oidcPostLogoutRedirectURI,
+      oidcUseUserInfo,
+      onChanged,
+      onError,
+      provider,
+      reason,
+      refreshOIDCTrust,
+      rotateSecret,
+      samlClockSkewSeconds,
+      samlExpectedEntityID,
+      samlMaximumAuthenticationAgeSeconds,
+      samlRequestedAuthnContexts,
+      samlSignatureAlgorithm,
+      samlSignaturePolicy,
+      samlSubjectAttributeName,
+      samlSubjectAttributeNameFormat,
+      samlSubjectSource,
+      setArchiveConfirmed,
+      setClearSecretConfirmed,
+      setClientSecret,
+      setDescription,
+      setDisplayName,
+      setEnabled,
+      setJitMode,
+      setNoMatchPolicy,
+      setOIDCAllowRefreshToken,
+      setOIDCClientID,
+      setOIDCExtraScopes,
+      setOIDCIssuer,
+      setOIDCUseUserInfo,
+      setReason,
+      setSAMLClockSkewSeconds,
+      setSAMLExpectedEntityID,
+      setSAMLMaximumAuthenticationAgeSeconds,
+      setSAMLRequestedAuthnContexts,
+      setSAMLSignatureAlgorithm,
+      setSAMLSignaturePolicy,
+      setSAMLSubjectAttributeName,
+      setSAMLSubjectAttributeNameFormat,
+      setSAMLSubjectSource,
+      setTrustClientAuthentication,
+      setTrustReason,
+      setTrustSigningAlgorithms,
+      tenantId,
+      trustClientAuthentication,
+      trustReason,
+      trustSigningAlgorithms,
+      update,
+    },
+  };
+}
+
+function ProviderManagementFormView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useProviderManagementFormModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    api,
+    busy,
+    canManage,
+    canManageAssurance,
+    canManageMapping,
+    canReadAssurance,
+    canReadMapping,
+    csrfToken,
+    current,
+    description,
+    displayName,
+    enabled,
+    error,
+    jitMode,
+    noMatchPolicy,
+    onChanged,
+    onError,
+    provider,
+    reason,
+    setDescription,
+    setDisplayName,
+    setEnabled,
+    setJitMode,
+    setNoMatchPolicy,
+    setReason,
+    tenantId,
+    update,
+  } = model;
   return (
     <Card
       className="federation-detail"
@@ -1424,61 +1717,7 @@ function ProviderManagementForm({
         </div>
       </CardHeader>
       <CardContent className="federation-detail__content">
-        <dl className="federation-detail__facts">
-          <div>
-            <dt>Callback / ACS</dt>
-            <dd>
-              {provider.kind === "oidc"
-                ? provider.configuration.redirectUri
-                : provider.configuration.acsUrl}
-            </dd>
-          </div>
-          <div>
-            <dt>Security revision</dt>
-            <dd>{provider.securityRevision}</dd>
-          </div>
-          <div>
-            <dt>Binding</dt>
-            <dd>{provider.binding.loginKey}</dd>
-          </div>
-          {provider.kind === "oidc" ? (
-            <div>
-              <dt>Client secret</dt>
-              <dd>
-                {provider.configuration.clientSecretPresent
-                  ? `Present · revision ${provider.configuration.clientSecretRevision}`
-                  : "Not set"}
-              </dd>
-            </div>
-          ) : (
-            <>
-              <div>
-                <dt>SP entity ID</dt>
-                <dd>{provider.configuration.spEntityId}</dd>
-              </div>
-              <div>
-                <dt>IdP metadata</dt>
-                <dd>Revision {provider.configuration.metadataRevision}</dd>
-              </div>
-              <div>
-                <dt>SP signing credential</dt>
-                <dd>
-                  {provider.configuration.spKeyPresent
-                    ? `Present · revision ${provider.configuration.spKeyRevision}`
-                    : "Not generated"}
-                </dd>
-              </div>
-              <div>
-                <dt>Single logout</dt>
-                <dd>
-                  {provider.configuration.singleLogoutConfigured
-                    ? "Configured"
-                    : "Local revocation only"}
-                </dd>
-              </div>
-            </>
-          )}
-        </dl>
+        <FederationProviderFacts model={model} />
         <TenantFederationPolicyControls
           api={api}
           canManageAssurance={canManageAssurance}
@@ -1564,251 +1803,9 @@ function ProviderManagementForm({
                 </select>
               </FormField>
               {provider.kind === "oidc" ? (
-                <>
-                  <FormField
-                    htmlFor={`federation-edit-oidc-issuer-${provider.id}`}
-                    label="HTTPS issuer"
-                  >
-                    <Input
-                      id={`federation-edit-oidc-issuer-${provider.id}`}
-                      type="url"
-                      required
-                      value={oidcIssuer}
-                      onChange={(event) => setOIDCIssuer(event.target.value)}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-oidc-client-${provider.id}`}
-                    label="Client ID"
-                  >
-                    <Input
-                      id={`federation-edit-oidc-client-${provider.id}`}
-                      required
-                      maxLength={512}
-                      value={oidcClientID}
-                      onChange={(event) => setOIDCClientID(event.target.value)}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-oidc-logout-${provider.id}`}
-                    label="Post-logout redirect URI"
-                    hint="Deployment-managed from this app's public origin. Register this exact URI with the provider."
-                  >
-                    <Input
-                      id={`federation-edit-oidc-logout-${provider.id}`}
-                      type="url"
-                      required
-                      readOnly
-                      value={oidcPostLogoutRedirectURI}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-oidc-scopes-${provider.id}`}
-                    label="OIDC extra scopes"
-                  >
-                    <Input
-                      id={`federation-edit-oidc-scopes-${provider.id}`}
-                      value={oidcExtraScopes}
-                      onChange={(event) =>
-                        setOIDCExtraScopes(event.target.value)
-                      }
-                    />
-                  </FormField>
-                  <div className="federation-check">
-                    <Checkbox
-                      id={`federation-edit-oidc-refresh-${provider.id}`}
-                      checked={oidcAllowRefreshToken}
-                      onCheckedChange={(checked) => {
-                        const refreshEnabled = checked === true;
-                        setOIDCAllowRefreshToken(refreshEnabled);
-                        setOIDCExtraScopes((currentScopes) =>
-                          withOIDCRefreshScope(currentScopes, refreshEnabled),
-                        );
-                      }}
-                    />
-                    <Label
-                      htmlFor={`federation-edit-oidc-refresh-${provider.id}`}
-                    >
-                      Allow bounded refresh-token rotation
-                    </Label>
-                  </div>
-                  <div className="federation-check">
-                    <Checkbox
-                      id={`federation-edit-oidc-userinfo-${provider.id}`}
-                      checked={oidcUseUserInfo}
-                      onCheckedChange={(checked) =>
-                        setOIDCUseUserInfo(checked === true)
-                      }
-                    />
-                    <Label
-                      htmlFor={`federation-edit-oidc-userinfo-${provider.id}`}
-                    >
-                      Fetch profile claims from validated UserInfo
-                    </Label>
-                  </div>
-                </>
+                <FederationOidcConfiguration model={model} />
               ) : (
-                <>
-                  <FormField
-                    htmlFor={`federation-edit-saml-entity-${provider.id}`}
-                    label="Expected IdP entity ID"
-                  >
-                    <Input
-                      id={`federation-edit-saml-entity-${provider.id}`}
-                      type="url"
-                      required
-                      value={samlExpectedEntityID}
-                      onChange={(event) =>
-                        setSAMLExpectedEntityID(event.target.value)
-                      }
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-saml-algorithm-${provider.id}`}
-                    label="SAML redirect signature algorithm"
-                  >
-                    <select
-                      id={`federation-edit-saml-algorithm-${provider.id}`}
-                      value={samlSignatureAlgorithm}
-                      onChange={(event) => {
-                        if (isSAMLSignatureAlgorithm(event.target.value)) {
-                          setSAMLSignatureAlgorithm(event.target.value);
-                        }
-                      }}
-                    >
-                      {samlSignatureAlgorithms.map((algorithm) => (
-                        <option value={algorithm} key={algorithm}>
-                          {algorithm.slice(algorithm.lastIndexOf("#") + 1)}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-saml-signature-${provider.id}`}
-                    label="Required SAML signature"
-                  >
-                    <select
-                      id={`federation-edit-saml-signature-${provider.id}`}
-                      value={samlSignaturePolicy}
-                      onChange={(event) => {
-                        if (isSAMLSignaturePolicy(event.target.value)) {
-                          setSAMLSignaturePolicy(event.target.value);
-                        }
-                      }}
-                    >
-                      <option value="signed_assertion">Signed assertion</option>
-                      <option value="signed_response">Signed response</option>
-                      <option value="both">
-                        Signed response and assertion
-                      </option>
-                    </select>
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-saml-contexts-${provider.id}`}
-                    label="Requested AuthnContext values"
-                    hint="One exact class reference per line."
-                  >
-                    <Textarea
-                      id={`federation-edit-saml-contexts-${provider.id}`}
-                      required
-                      value={samlRequestedAuthnContexts}
-                      onChange={(event) =>
-                        setSAMLRequestedAuthnContexts(event.target.value)
-                      }
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-saml-subject-${provider.id}`}
-                    label="Stable SAML subject"
-                  >
-                    <select
-                      id={`federation-edit-saml-subject-${provider.id}`}
-                      value={samlSubjectSource}
-                      onChange={(event) =>
-                        setSAMLSubjectSource(
-                          event.target.value === "immutable_attribute"
-                            ? "immutable_attribute"
-                            : "persistent_nameid",
-                        )
-                      }
-                    >
-                      <option value="persistent_nameid">
-                        Persistent NameID
-                      </option>
-                      <option value="immutable_attribute">
-                        Immutable attribute
-                      </option>
-                    </select>
-                  </FormField>
-                  {samlSubjectSource === "immutable_attribute" ? (
-                    <>
-                      <FormField
-                        htmlFor={`federation-edit-saml-attribute-${provider.id}`}
-                        label="Subject attribute Name"
-                      >
-                        <Input
-                          id={`federation-edit-saml-attribute-${provider.id}`}
-                          required
-                          value={samlSubjectAttributeName}
-                          onChange={(event) =>
-                            setSAMLSubjectAttributeName(event.target.value)
-                          }
-                        />
-                      </FormField>
-                      <FormField
-                        htmlFor={`federation-edit-saml-format-${provider.id}`}
-                        label="Subject attribute NameFormat"
-                      >
-                        <Input
-                          id={`federation-edit-saml-format-${provider.id}`}
-                          required
-                          value={samlSubjectAttributeNameFormat}
-                          onChange={(event) =>
-                            setSAMLSubjectAttributeNameFormat(
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </FormField>
-                    </>
-                  ) : null}
-                  <FormField
-                    htmlFor={`federation-edit-saml-skew-${provider.id}`}
-                    label="Clock skew seconds"
-                  >
-                    <Input
-                      id={`federation-edit-saml-skew-${provider.id}`}
-                      type="number"
-                      min={0}
-                      max={300}
-                      value={samlClockSkewSeconds}
-                      onChange={(event) =>
-                        setSAMLClockSkewSeconds(Number(event.target.value))
-                      }
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`federation-edit-saml-age-${provider.id}`}
-                    label="Maximum authentication age seconds"
-                  >
-                    <Input
-                      id={`federation-edit-saml-age-${provider.id}`}
-                      type="number"
-                      min={60}
-                      max={86_400}
-                      value={samlMaximumAuthenticationAgeSeconds}
-                      onChange={(event) =>
-                        setSAMLMaximumAuthenticationAgeSeconds(
-                          Number(event.target.value),
-                        )
-                      }
-                    />
-                  </FormField>
-                  <p className="federation-policy-editor__permission">
-                    XML encryption remains disabled; protected metadata and SP
-                    credentials use the write-only controls below.
-                  </p>
-                </>
+                <FederationSamlConfiguration model={model} />
               )}
               <div className="federation-check">
                 <Checkbox
@@ -1836,208 +1833,8 @@ function ProviderManagementForm({
                 Save provider
               </Button>
             </form>
-            {provider.kind === "oidc" ? (
-              <>
-                <form
-                  className="federation-secret-form"
-                  aria-label="Rotate OIDC client secret"
-                  onSubmit={rotateSecret}
-                >
-                  <div>
-                    <h3>
-                      <KeyRound aria-hidden="true" /> Write-only client secret
-                    </h3>
-                    <p>
-                      The value is transferred once, encrypted for this
-                      tenant/provider/binding row, and immediately cleared from
-                      the form.
-                    </p>
-                  </div>
-                  <FormField
-                    htmlFor={`federation-secret-${provider.id}`}
-                    label="New client secret"
-                  >
-                    <Input
-                      id={`federation-secret-${provider.id}`}
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      value={clientSecret}
-                      onChange={(event) => setClientSecret(event.target.value)}
-                    />
-                  </FormField>
-                  {provider.configuration.clientSecretPresent ? (
-                    <div className="federation-check">
-                      <Checkbox
-                        id={`federation-clear-secret-confirm-${provider.id}`}
-                        checked={clearSecretConfirmed}
-                        onCheckedChange={(checked) =>
-                          setClearSecretConfirmed(checked === true)
-                        }
-                      />
-                      <Label
-                        htmlFor={`federation-clear-secret-confirm-${provider.id}`}
-                      >
-                        Confirm permanent retirement of this OIDC client secret
-                      </Label>
-                    </div>
-                  ) : null}
-                  <div className="federation-secret-form__actions">
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      disabled={busy || reason.length === 0}
-                    >
-                      Rotate client secret
-                    </Button>
-                    {provider.configuration.clientSecretPresent ? (
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        disabled={
-                          busy || reason.length === 0 || !clearSecretConfirmed
-                        }
-                        onClick={clearSecret}
-                      >
-                        Clear client secret
-                      </Button>
-                    ) : null}
-                  </div>
-                </form>
-                <form
-                  className="federation-secret-form"
-                  aria-label="Refresh OIDC trust documents"
-                  onSubmit={refreshOIDCTrust}
-                >
-                  <div>
-                    <h3>
-                      <RefreshCw aria-hidden="true" /> Verified OIDC trust
-                    </h3>
-                    <p>
-                      Discovery and JWKS are fetched server-side through the
-                      hardened client. Raw trust documents are never accepted or
-                      returned here.
-                    </p>
-                  </div>
-                  <div className="federation-form federation-form--compact">
-                    <FormField
-                      htmlFor={`federation-oidc-client-auth-${provider.id}`}
-                      label="Token endpoint client authentication"
-                    >
-                      <select
-                        id={`federation-oidc-client-auth-${provider.id}`}
-                        value={trustClientAuthentication}
-                        onChange={(event) =>
-                          setTrustClientAuthentication(
-                            event.target.value === "client_secret_post"
-                              ? "client_secret_post"
-                              : "client_secret_basic",
-                          )
-                        }
-                      >
-                        <option value="client_secret_basic">
-                          client_secret_basic
-                        </option>
-                        <option value="client_secret_post">
-                          client_secret_post
-                        </option>
-                      </select>
-                    </FormField>
-                    <FormField
-                      htmlFor={`federation-oidc-algorithms-${provider.id}`}
-                      label="Allowed signing algorithms"
-                      hint="Comma-separated exact values, for example RS256,ES256."
-                    >
-                      <Input
-                        id={`federation-oidc-algorithms-${provider.id}`}
-                        required
-                        value={trustSigningAlgorithms}
-                        onChange={(event) =>
-                          setTrustSigningAlgorithms(event.target.value)
-                        }
-                      />
-                    </FormField>
-                    <FormField
-                      htmlFor={`federation-oidc-trust-reason-${provider.id}`}
-                      label="OIDC trust audit reason"
-                    >
-                      <Input
-                        id={`federation-oidc-trust-reason-${provider.id}`}
-                        required
-                        maxLength={federationAuditReasonDOMMaxLength}
-                        value={trustReason}
-                        onChange={(event) => setTrustReason(event.target.value)}
-                      />
-                    </FormField>
-                  </div>
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={busy || trustReason.length === 0}
-                  >
-                    Refresh verified trust
-                  </Button>
-                </form>
-              </>
-            ) : (
-              <TenantSAMLMaterialControls
-                api={api}
-                busy={busy}
-                csrfToken={csrfToken}
-                current={current}
-                mutate={mutate}
-                onChanged={onChanged}
-                tenantId={tenantId}
-              />
-            )}
-            <div className="federation-danger">
-              <div>
-                <h3>Archive provider</h3>
-                <p>
-                  Archive is terminal and requires the provider to be disabled.
-                </p>
-                <div className="federation-check">
-                  <Checkbox
-                    id={`federation-archive-confirm-${provider.id}`}
-                    checked={archiveConfirmed}
-                    onCheckedChange={(checked) =>
-                      setArchiveConfirmed(checked === true)
-                    }
-                  />
-                  <Label htmlFor={`federation-archive-confirm-${provider.id}`}>
-                    Confirm permanent archival of this provider
-                  </Label>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={
-                  busy ||
-                  provider.enabled ||
-                  reason.length === 0 ||
-                  !archiveConfirmed
-                }
-                onClick={() => {
-                  if (!archiveConfirmed) return;
-                  void mutate(async () => {
-                    await api.archive(
-                      csrfToken,
-                      tenantId,
-                      provider.id,
-                      current.etag,
-                      reason,
-                    );
-                    onChanged(
-                      "The provider, binding, and affected local sessions were retired.",
-                    );
-                    setArchiveConfirmed(false);
-                  });
-                }}
-              >
-                <Trash2 aria-hidden="true" /> Archive
-              </Button>
-            </div>
+            {<FederationTrustManagement model={model} />}
+            <ProviderManagementFormArchiveProvider model={model} />
           </>
         ) : null}
         {error ? <FocusedError message={error} /> : null}
@@ -2046,7 +1843,27 @@ function ProviderManagementForm({
   );
 }
 
-function TenantFederationPolicyControls({
+function TenantFederationPolicyControls(props: {
+  api: TenantFederationApi;
+  canManageAssurance: boolean;
+  canManageMapping: boolean;
+  canReadAssurance: boolean;
+  canReadMapping: boolean;
+  csrfToken: string;
+  current: TenantFederationProviderVersioned;
+  onChanged: (
+    message: string,
+    provider?: TenantFederationProviderVersioned,
+  ) => void;
+  onError: (error: unknown) => void;
+  tenantId: string;
+}): React.JSX.Element | null {
+  const model = useTenantFederationPolicyControlsModel(props);
+  if (model.kind === "content") return model.content;
+  return <TenantFederationPolicyControlsView model={model.data} />;
+}
+
+function useTenantFederationPolicyControlsModel({
   api,
   canManageAssurance,
   canManageMapping,
@@ -2071,20 +1888,100 @@ function TenantFederationPolicyControls({
   ) => void;
   onError: (error: unknown) => void;
   tenantId: string;
-}): React.JSX.Element | null {
+}) {
   const provider = current.value;
-  const mappingContext = tenantFederationMappingPolicyContext(provider);
-  const [mapping, setMapping] = useState<MappingPolicyState>({ kind: "idle" });
-  const [assurance, setAssurance] = useState<AssurancePolicyState>({
-    kind: "idle",
-  });
-  const [mappingDocument, setMappingDocument] = useState("");
-  const [assuranceDocument, setAssuranceDocument] = useState("");
-  const [mappingReason, setMappingReason] = useState("");
-  const [assuranceReason, setAssuranceReason] = useState("");
-  const [mappingBusy, setMappingBusy] = useState(false);
-  const [assuranceBusy, setAssuranceBusy] = useState(false);
-  const [reload, setReload] = useState(0);
+  const mappingContext = useMemo(
+    () => tenantFederationMappingPolicyContext(provider),
+    [provider],
+  );
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<TenantFederationPolicyControlsState>,
+    undefined,
+    (): TenantFederationPolicyControlsState => ({
+      mapping: { kind: "idle" },
+      assurance: {
+        kind: "idle",
+      },
+      mappingDocument: "",
+      assuranceDocument: "",
+      mappingReason: "",
+      assuranceReason: "",
+      mappingBusy: false,
+      assuranceBusy: false,
+      reload: 0,
+    }),
+  );
+  const {
+    mapping,
+    assurance,
+    mappingDocument,
+    assuranceDocument,
+    mappingReason,
+    assuranceReason,
+    mappingBusy,
+    assuranceBusy,
+    reload,
+  } = workspaceState;
+  const {
+    setMapping,
+    setAssurance,
+    setMappingDocument,
+    setAssuranceDocument,
+    setMappingReason,
+    setAssuranceReason,
+    setMappingBusy,
+    setAssuranceBusy,
+    setReload,
+  } = useMemo(
+    () => ({
+      setMapping: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["mapping"]
+        >,
+      ) => updateWorkspaceState({ mapping: value }),
+      setAssurance: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["assurance"]
+        >,
+      ) => updateWorkspaceState({ assurance: value }),
+      setMappingDocument: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["mappingDocument"]
+        >,
+      ) => updateWorkspaceState({ mappingDocument: value }),
+      setAssuranceDocument: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["assuranceDocument"]
+        >,
+      ) => updateWorkspaceState({ assuranceDocument: value }),
+      setMappingReason: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["mappingReason"]
+        >,
+      ) => updateWorkspaceState({ mappingReason: value }),
+      setAssuranceReason: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["assuranceReason"]
+        >,
+      ) => updateWorkspaceState({ assuranceReason: value }),
+      setMappingBusy: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["mappingBusy"]
+        >,
+      ) => updateWorkspaceState({ mappingBusy: value }),
+      setAssuranceBusy: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["assuranceBusy"]
+        >,
+      ) => updateWorkspaceState({ assuranceBusy: value }),
+      setReload: (
+        value: React.SetStateAction<
+          TenantFederationPolicyControlsState["reload"]
+        >,
+      ) => updateWorkspaceState({ reload: value }),
+    }),
+    [updateWorkspaceState],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2104,8 +2001,10 @@ function TenantFederationPolicyControls({
               "The mapping policy protocol did not match the provider.",
             );
           }
-          setMapping({ kind: "ready", versioned });
-          setMappingDocument(formatMappingPolicy(versioned.value));
+          updateWorkspaceState({
+            mapping: { kind: "ready", versioned },
+            mappingDocument: formatMappingPolicy(versioned.value),
+          });
         })
         .catch((caught: unknown) => {
           if (controller.signal.aborted) return;
@@ -2119,8 +2018,7 @@ function TenantFederationPolicyControls({
           });
         });
     } else {
-      setMapping({ kind: "idle" });
-      setMappingDocument("");
+      updateWorkspaceState({ mapping: { kind: "idle" }, mappingDocument: "" });
     }
     if (canReadAssurance) {
       setAssurance({ kind: "loading" });
@@ -2133,8 +2031,10 @@ function TenantFederationPolicyControls({
               "The assurance policy protocol did not match the provider.",
             );
           }
-          setAssurance({ kind: "ready", versioned });
-          setAssuranceDocument(formatAssurancePolicy(versioned.value));
+          updateWorkspaceState({
+            assurance: { kind: "ready", versioned },
+            assuranceDocument: formatAssurancePolicy(versioned.value),
+          });
         })
         .catch((caught: unknown) => {
           if (controller.signal.aborted) return;
@@ -2148,24 +2048,29 @@ function TenantFederationPolicyControls({
           });
         });
     } else {
-      setAssurance({ kind: "idle" });
-      setAssuranceDocument("");
+      updateWorkspaceState({
+        assurance: { kind: "idle" },
+        assuranceDocument: "",
+      });
     }
     return () => controller.abort();
   }, [
+    setMapping,
+    setAssurance,
     api,
     canReadAssurance,
     canReadMapping,
     onError,
     provider.id,
     provider.kind,
-    provider.kind === "oidc" ? provider.configuration.useUserInfo : false,
+    mappingContext,
     provider.version,
     reload,
     tenantId,
   ]);
 
-  if (!canReadMapping && !canReadAssurance) return null;
+  if (!canReadMapping && !canReadAssurance)
+    return { kind: "content" as const, content: null };
 
   function replaceMapping(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -2248,177 +2153,42 @@ function TenantFederationPolicyControls({
     })();
   }
 
-  return (
-    <section
-      className="federation-policies"
-      aria-label="Federated mapping and assurance policies"
-    >
-      <div>
-        <h3>Identity mapping and MFA assurance</h3>
-        <p>
-          Editors are hydrated from protected readback before they can submit.
-          Replacing a mapping uses exact security-group, role, and optional
-          operator-team assignment UUIDv7 targets; an empty mapping rules array
-          explicitly revokes all assignments.
-        </p>
-      </div>
-      {canReadMapping ? (
-        <form
-          className="federation-policy-editor"
-          aria-label="Edit federated mapping policy"
-          onSubmit={replaceMapping}
-        >
-          <div className="federation-policy-editor__heading">
-            <div>
-              <h4>Claim / attribute mapping</h4>
-              <p>
-                {mapping.kind === "ready"
-                  ? `Provider v${mapping.versioned.value.providerVersion} · mapping revision ${mapping.versioned.mappingRevision}`
-                  : "Loading the exact active extraction and mapping rules…"}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={mappingBusy}
-              onClick={() => setReload((value) => value + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Reload mapping
-            </Button>
-          </div>
-          {mapping.kind === "error" ? (
-            <FocusedError message={mapping.message} />
-          ) : null}
-          <FormField
-            htmlFor={`federation-mapping-policy-${provider.id}`}
-            label="Mapping policy JSON"
-            hint={
-              provider.kind === "oidc"
-                ? `Includes OIDC claim extraction plus exact scalar/group-to-role targets. UserInfo extraction must be ${provider.configuration.useUserInfo ? "present because UserInfo is enabled" : "absent because UserInfo is disabled"}.`
-                : "Includes SAML Name/NameFormat extraction plus exact scalar/group-to-role targets."
-            }
-          >
-            <Textarea
-              id={`federation-mapping-policy-${provider.id}`}
-              aria-busy={mapping.kind === "loading"}
-              disabled={mapping.kind !== "ready"}
-              readOnly={!canManageMapping}
-              rows={16}
-              value={mappingDocument}
-              onChange={(event) => setMappingDocument(event.target.value)}
-            />
-          </FormField>
-          {canManageMapping ? (
-            <>
-              <FormField
-                htmlFor={`federation-mapping-reason-${provider.id}`}
-                label="Mapping policy audit reason"
-              >
-                <Input
-                  id={`federation-mapping-reason-${provider.id}`}
-                  required
-                  maxLength={federationAuditReasonDOMMaxLength}
-                  value={mappingReason}
-                  onChange={(event) => setMappingReason(event.target.value)}
-                />
-              </FormField>
-              <Button
-                type="submit"
-                disabled={
-                  mappingBusy ||
-                  mapping.kind !== "ready" ||
-                  mappingReason.length === 0 ||
-                  provider.archivedAt !== null
-                }
-              >
-                Replace mapping policy
-              </Button>
-            </>
-          ) : (
-            <p className="federation-policy-editor__permission">
-              Editing requires both identity_mapping.manage and role.grant;
-              exact operator-team roster authority is rechecked per target.
-            </p>
-          )}
-        </form>
-      ) : null}
-      {canReadAssurance ? (
-        <form
-          className="federation-policy-editor"
-          aria-label="Edit federated assurance policy"
-          onSubmit={replaceAssurance}
-        >
-          <div className="federation-policy-editor__heading">
-            <div>
-              <h4>Trusted IdP MFA assertions</h4>
-              <p>
-                {assurance.kind === "ready"
-                  ? `Provider v${assurance.versioned.value.providerVersion} · assurance revision ${assurance.versioned.assurancePolicyRevision}`
-                  : "Loading the exact active assurance rules…"}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={assuranceBusy}
-              onClick={() => setReload((value) => value + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Reload assurance
-            </Button>
-          </div>
-          {assurance.kind === "error" ? (
-            <FocusedError message={assurance.message} />
-          ) : null}
-          <FormField
-            htmlFor={`federation-assurance-policy-${provider.id}`}
-            label="Assurance trust policy JSON"
-            hint="Only exact OIDC ACR/AMR or SAML AuthnContext matches are trusted; every other login falls back to local MFA step-up."
-          >
-            <Textarea
-              id={`federation-assurance-policy-${provider.id}`}
-              aria-busy={assurance.kind === "loading"}
-              disabled={assurance.kind !== "ready"}
-              readOnly={!canManageAssurance}
-              rows={12}
-              value={assuranceDocument}
-              onChange={(event) => setAssuranceDocument(event.target.value)}
-            />
-          </FormField>
-          {canManageAssurance ? (
-            <>
-              <FormField
-                htmlFor={`federation-assurance-reason-${provider.id}`}
-                label="Assurance policy audit reason"
-              >
-                <Input
-                  id={`federation-assurance-reason-${provider.id}`}
-                  required
-                  maxLength={federationAuditReasonDOMMaxLength}
-                  value={assuranceReason}
-                  onChange={(event) => setAssuranceReason(event.target.value)}
-                />
-              </FormField>
-              <Button
-                type="submit"
-                disabled={
-                  assuranceBusy ||
-                  assurance.kind !== "ready" ||
-                  assuranceReason.length === 0 ||
-                  provider.archivedAt !== null
-                }
-              >
-                Replace assurance policy
-              </Button>
-            </>
-          ) : (
-            <p className="federation-policy-editor__permission">
-              Editing requires identity_policy.manage.
-            </p>
-          )}
-        </form>
-      ) : null}
-    </section>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      assurance,
+      assuranceBusy,
+      assuranceDocument,
+      assuranceReason,
+      canManageAssurance,
+      canManageMapping,
+      canReadAssurance,
+      canReadMapping,
+      mapping,
+      mappingBusy,
+      mappingDocument,
+      mappingReason,
+      provider,
+      replaceAssurance,
+      replaceMapping,
+      setAssuranceDocument,
+      setAssuranceReason,
+      setMappingDocument,
+      setMappingReason,
+      setReload,
+    },
+  };
+}
+
+function TenantFederationPolicyControlsView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantFederationPolicyControlsModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <FederationPolicyEditors model={model} />;
 }
 
 function formatMappingPolicy(value: TenantFederationMappingPolicy): string {
@@ -2858,4 +2628,1394 @@ function handleAuthorityError(
 
 function describeFederationError(error: unknown, fallback: string): string {
   return describePhaseTwoError(error, fallback);
+}
+
+function FederationWorkspace({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantFederationTenantScopeView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    authority,
+    canManage,
+    canManageAssurance,
+    canManageMapping,
+    canReadAssurance,
+    canReadMapping,
+    clearSession,
+    createOpen,
+    detail,
+    notice,
+    session,
+    setCreateOpen,
+    setDetail,
+    setNotice,
+    setRevision,
+    tenantId,
+  } = model;
+  return (
+    <div className="content federation-page">
+      <section className="page-heading federation-page__heading">
+        <div>
+          <p className="section-label">Tenant administration</p>
+          <h1>Federated identity providers</h1>
+          <p>
+            Stage tenant-owned OIDC and SAML login, inspect only safe public
+            configuration, and rotate credentials through write-only controls.
+            The API rechecks live authority for every action.
+          </p>
+        </div>
+        {canManage ? (
+          <Button
+            type="button"
+            onClick={() => setCreateOpen((value) => !value)}
+          >
+            <Plus aria-hidden="true" />{" "}
+            {createOpen ? "Close form" : "Create provider"}
+          </Button>
+        ) : null}
+      </section>
+
+      {notice ? (
+        <Alert>
+          <CheckCircle2 aria-hidden="true" />
+          <AlertTitle>Federation update</AlertTitle>
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {createOpen && canManage ? (
+        <CreateFederationProviderForm
+          api={api}
+          csrfToken={session.csrfToken}
+          tenantId={tenantId}
+          onCreated={(provider) => {
+            if (provider.value.tenantId !== tenantId) {
+              setDetail({ kind: "idle" });
+              setNotice("The created provider did not match its tenant scope.");
+              return;
+            }
+            setCreateOpen(false);
+            setNotice(
+              "The provider and login binding were created disabled. Install protected material and review readiness before enabling login.",
+            );
+            setRevision((value) => value + 1);
+            setDetail({ kind: "ready", versioned: provider });
+          }}
+          onError={(caught) => {
+            handleAuthorityError(caught, authority.reload, () =>
+              clearSession(session.id),
+            );
+          }}
+        />
+      ) : null}
+
+      {<FederationProviderInventory model={model} />}
+
+      <ProviderDetail
+        api={api}
+        permissions={{
+          canManage,
+          canManageAssurance,
+          canManageMapping,
+          canReadAssurance,
+          canReadMapping,
+        }}
+        csrfToken={session.csrfToken}
+        state={detail}
+        tenantId={tenantId}
+        onChanged={(message, provider) => {
+          if (provider && provider.value.tenantId !== tenantId) {
+            setDetail({ kind: "idle" });
+            setNotice("The updated provider did not match its tenant scope.");
+            return;
+          }
+          setNotice(message);
+          setRevision((value) => value + 1);
+          if (provider) setDetail({ kind: "ready", versioned: provider });
+          else setDetail({ kind: "idle" });
+        }}
+        onError={(caught) => {
+          handleAuthorityError(caught, authority.reload, () =>
+            clearSession(session.id),
+          );
+        }}
+      />
+    </div>
+  );
+}
+
+function FederationProtocolFields({
+  model,
+}: {
+  model: React.ComponentProps<typeof CreateFederationProviderFormView>["model"];
+}): React.ReactNode {
+  const {
+    kind,
+    samlClockSkewSeconds,
+    samlMaximumAuthenticationAgeSeconds,
+    samlRequestedAuthnContexts,
+    samlSignatureAlgorithm,
+    samlSignaturePolicy,
+    samlSubjectSource,
+    setSamlClockSkewSeconds,
+    setSamlMaximumAuthenticationAgeSeconds,
+    setSamlRequestedAuthnContexts,
+    setSamlSignatureAlgorithm,
+    setSamlSignaturePolicy,
+    setSamlSubjectSource,
+  } = model;
+  return kind === "oidc" ? (
+    <FederationOidcClientFields model={model} />
+  ) : (
+    <>
+      <FormField
+        htmlFor="federation-saml-signature-algorithm"
+        label="SAML redirect signature algorithm"
+      >
+        <select
+          id="federation-saml-signature-algorithm"
+          value={samlSignatureAlgorithm}
+          onChange={(event) => {
+            if (isSAMLSignatureAlgorithm(event.target.value)) {
+              setSamlSignatureAlgorithm(event.target.value);
+            }
+          }}
+        >
+          {samlSignatureAlgorithms.map((algorithm) => (
+            <option value={algorithm} key={algorithm}>
+              {algorithm.slice(algorithm.lastIndexOf("#") + 1)}
+            </option>
+          ))}
+        </select>
+      </FormField>
+      <FormField
+        htmlFor="federation-saml-signature-policy"
+        label="Required SAML signature"
+      >
+        <select
+          id="federation-saml-signature-policy"
+          value={samlSignaturePolicy}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (
+              value === "signed_assertion" ||
+              value === "signed_response" ||
+              value === "both"
+            ) {
+              setSamlSignaturePolicy(value);
+            }
+          }}
+        >
+          <option value="signed_assertion">Signed assertion</option>
+          <option value="signed_response">Signed response</option>
+          <option value="both">Signed response and assertion</option>
+        </select>
+      </FormField>
+      <FormField
+        htmlFor="federation-saml-contexts"
+        label="Requested AuthnContext values"
+        hint="One exact class reference per line."
+      >
+        <Textarea
+          id="federation-saml-contexts"
+          required
+          value={samlRequestedAuthnContexts}
+          onChange={(event) =>
+            setSamlRequestedAuthnContexts(event.target.value)
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor="federation-saml-subject-source"
+        label="Stable SAML subject"
+      >
+        <select
+          id="federation-saml-subject-source"
+          value={samlSubjectSource}
+          onChange={(event) =>
+            setSamlSubjectSource(
+              event.target.value === "immutable_attribute"
+                ? "immutable_attribute"
+                : "persistent_nameid",
+            )
+          }
+        >
+          <option value="persistent_nameid">Persistent NameID</option>
+          <option value="immutable_attribute">Immutable attribute</option>
+        </select>
+      </FormField>
+      {<FederationSamlSubjectFields model={model} />}
+      <FormField htmlFor="federation-saml-skew" label="Clock skew seconds">
+        <Input
+          id="federation-saml-skew"
+          type="number"
+          min={0}
+          max={300}
+          value={samlClockSkewSeconds}
+          onChange={(event) =>
+            setSamlClockSkewSeconds(Number(event.target.value))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor="federation-saml-max-age"
+        label="Maximum authentication age seconds"
+      >
+        <Input
+          id="federation-saml-max-age"
+          type="number"
+          min={60}
+          max={86_400}
+          value={samlMaximumAuthenticationAgeSeconds}
+          onChange={(event) =>
+            setSamlMaximumAuthenticationAgeSeconds(Number(event.target.value))
+          }
+        />
+      </FormField>
+      <Alert className="federation-material-note">
+        <LockKeyhole aria-hidden="true" />
+        <AlertTitle>Trust remains write-only</AlertTitle>
+        <AlertDescription>
+          Raw metadata, certificates, and SP keys never appear in this form or
+          in provider reads. XML encryption remains disabled until a separate
+          encrypted-key ceremony is supported.
+        </AlertDescription>
+      </Alert>
+    </>
+  );
+}
+
+function FederationOidcConfiguration({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderManagementFormView>["model"];
+}): React.ReactNode {
+  const {
+    oidcAllowRefreshToken,
+    oidcClientID,
+    oidcExtraScopes,
+    oidcIssuer,
+    oidcPostLogoutRedirectURI,
+    oidcUseUserInfo,
+    provider,
+    setOIDCAllowRefreshToken,
+    setOIDCClientID,
+    setOIDCExtraScopes,
+    setOIDCIssuer,
+    setOIDCUseUserInfo,
+  } = model;
+  return (
+    <>
+      <FormField
+        htmlFor={`federation-edit-oidc-issuer-${provider.id}`}
+        label="HTTPS issuer"
+      >
+        <Input
+          id={`federation-edit-oidc-issuer-${provider.id}`}
+          type="url"
+          required
+          value={oidcIssuer}
+          onChange={(event) => setOIDCIssuer(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-oidc-client-${provider.id}`}
+        label="Client ID"
+      >
+        <Input
+          id={`federation-edit-oidc-client-${provider.id}`}
+          required
+          maxLength={512}
+          value={oidcClientID}
+          onChange={(event) => setOIDCClientID(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-oidc-logout-${provider.id}`}
+        label="Post-logout redirect URI"
+        hint="Deployment-managed from this app's public origin. Register this exact URI with the provider."
+      >
+        <Input
+          id={`federation-edit-oidc-logout-${provider.id}`}
+          type="url"
+          required
+          readOnly
+          value={oidcPostLogoutRedirectURI}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-oidc-scopes-${provider.id}`}
+        label="OIDC extra scopes"
+      >
+        <Input
+          id={`federation-edit-oidc-scopes-${provider.id}`}
+          value={oidcExtraScopes}
+          onChange={(event) => setOIDCExtraScopes(event.target.value)}
+        />
+      </FormField>
+      <div className="federation-check">
+        <Checkbox
+          id={`federation-edit-oidc-refresh-${provider.id}`}
+          checked={oidcAllowRefreshToken}
+          onCheckedChange={(checked) => {
+            const refreshEnabled = checked === true;
+            setOIDCAllowRefreshToken(refreshEnabled);
+            setOIDCExtraScopes((currentScopes) =>
+              withOIDCRefreshScope(currentScopes, refreshEnabled),
+            );
+          }}
+        />
+        <Label htmlFor={`federation-edit-oidc-refresh-${provider.id}`}>
+          Allow bounded refresh-token rotation
+        </Label>
+      </div>
+      <div className="federation-check">
+        <Checkbox
+          id={`federation-edit-oidc-userinfo-${provider.id}`}
+          checked={oidcUseUserInfo}
+          onCheckedChange={(checked) => setOIDCUseUserInfo(checked === true)}
+        />
+        <Label htmlFor={`federation-edit-oidc-userinfo-${provider.id}`}>
+          Fetch profile claims from validated UserInfo
+        </Label>
+      </div>
+    </>
+  );
+}
+
+function FederationSamlConfiguration({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderManagementFormView>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    samlClockSkewSeconds,
+    samlExpectedEntityID,
+    samlMaximumAuthenticationAgeSeconds,
+    samlRequestedAuthnContexts,
+    samlSignatureAlgorithm,
+    samlSignaturePolicy,
+    samlSubjectSource,
+    setSAMLClockSkewSeconds,
+    setSAMLExpectedEntityID,
+    setSAMLMaximumAuthenticationAgeSeconds,
+    setSAMLRequestedAuthnContexts,
+    setSAMLSignatureAlgorithm,
+    setSAMLSignaturePolicy,
+    setSAMLSubjectSource,
+  } = model;
+  return (
+    <>
+      <FormField
+        htmlFor={`federation-edit-saml-entity-${provider.id}`}
+        label="Expected IdP entity ID"
+      >
+        <Input
+          id={`federation-edit-saml-entity-${provider.id}`}
+          type="url"
+          required
+          value={samlExpectedEntityID}
+          onChange={(event) => setSAMLExpectedEntityID(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-saml-algorithm-${provider.id}`}
+        label="SAML redirect signature algorithm"
+      >
+        <select
+          id={`federation-edit-saml-algorithm-${provider.id}`}
+          value={samlSignatureAlgorithm}
+          onChange={(event) => {
+            if (isSAMLSignatureAlgorithm(event.target.value)) {
+              setSAMLSignatureAlgorithm(event.target.value);
+            }
+          }}
+        >
+          {samlSignatureAlgorithms.map((algorithm) => (
+            <option value={algorithm} key={algorithm}>
+              {algorithm.slice(algorithm.lastIndexOf("#") + 1)}
+            </option>
+          ))}
+        </select>
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-saml-signature-${provider.id}`}
+        label="Required SAML signature"
+      >
+        <select
+          id={`federation-edit-saml-signature-${provider.id}`}
+          value={samlSignaturePolicy}
+          onChange={(event) => {
+            if (isSAMLSignaturePolicy(event.target.value)) {
+              setSAMLSignaturePolicy(event.target.value);
+            }
+          }}
+        >
+          <option value="signed_assertion">Signed assertion</option>
+          <option value="signed_response">Signed response</option>
+          <option value="both">Signed response and assertion</option>
+        </select>
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-saml-contexts-${provider.id}`}
+        label="Requested AuthnContext values"
+        hint="One exact class reference per line."
+      >
+        <Textarea
+          id={`federation-edit-saml-contexts-${provider.id}`}
+          required
+          value={samlRequestedAuthnContexts}
+          onChange={(event) =>
+            setSAMLRequestedAuthnContexts(event.target.value)
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-saml-subject-${provider.id}`}
+        label="Stable SAML subject"
+      >
+        <select
+          id={`federation-edit-saml-subject-${provider.id}`}
+          value={samlSubjectSource}
+          onChange={(event) =>
+            setSAMLSubjectSource(
+              event.target.value === "immutable_attribute"
+                ? "immutable_attribute"
+                : "persistent_nameid",
+            )
+          }
+        >
+          <option value="persistent_nameid">Persistent NameID</option>
+          <option value="immutable_attribute">Immutable attribute</option>
+        </select>
+      </FormField>
+      {<FederationSamlSubjectEditor model={model} />}
+      <FormField
+        htmlFor={`federation-edit-saml-skew-${provider.id}`}
+        label="Clock skew seconds"
+      >
+        <Input
+          id={`federation-edit-saml-skew-${provider.id}`}
+          type="number"
+          min={0}
+          max={300}
+          value={samlClockSkewSeconds}
+          onChange={(event) =>
+            setSAMLClockSkewSeconds(Number(event.target.value))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-saml-age-${provider.id}`}
+        label="Maximum authentication age seconds"
+      >
+        <Input
+          id={`federation-edit-saml-age-${provider.id}`}
+          type="number"
+          min={60}
+          max={86_400}
+          value={samlMaximumAuthenticationAgeSeconds}
+          onChange={(event) =>
+            setSAMLMaximumAuthenticationAgeSeconds(Number(event.target.value))
+          }
+        />
+      </FormField>
+      <p className="federation-policy-editor__permission">
+        XML encryption remains disabled; protected metadata and SP credentials
+        use the write-only controls below.
+      </p>
+    </>
+  );
+}
+
+function FederationTrustManagement({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderManagementFormView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    busy,
+    csrfToken,
+    current,
+    mutate,
+    onChanged,
+    provider,
+    tenantId,
+  } = model;
+  return provider.kind === "oidc" ? (
+    <>
+      <FederationOidcSecretForm model={model} />
+      <FederationOidcTrustRefreshForm model={model} />
+    </>
+  ) : (
+    <TenantSAMLMaterialControls
+      api={api}
+      busy={busy}
+      csrfToken={csrfToken}
+      current={current}
+      mutate={mutate}
+      onChanged={onChanged}
+      tenantId={tenantId}
+    />
+  );
+}
+
+function FederationPolicyEditors({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof TenantFederationPolicyControlsView
+  >["model"];
+}): React.ReactNode {
+  return (
+    <section
+      className="federation-policies"
+      aria-label="Federated mapping and assurance policies"
+    >
+      <div>
+        <h3>Identity mapping and MFA assurance</h3>
+        <p>
+          Editors are hydrated from protected readback before they can submit.
+          Replacing a mapping uses exact security-group, role, and optional
+          operator-team assignment UUIDv7 targets; an empty mapping rules array
+          explicitly revokes all assignments.
+        </p>
+      </div>
+      {<FederationMappingPolicyEditor model={model} />}
+      {<FederationAssurancePolicyEditor model={model} />}
+    </section>
+  );
+}
+
+interface TenantFederationTenantScopeState {
+  inventory: InventoryState;
+  detail: DetailState;
+  revision: number;
+  createOpen: boolean;
+  notice: string | null;
+  loadingMore: boolean;
+}
+
+interface CreateFederationProviderFormState {
+  kind: "oidc" | "saml";
+  key: string;
+  loginKey: string;
+  displayName: string;
+  description: string;
+  issuerOrEntity: string;
+  clientId: string;
+  extraScopes: string;
+  allowRefreshToken: boolean;
+  useUserInfo: boolean;
+  jitMode: "disabled" | "create";
+  noMatchPolicy: "deny" | "provider_access_only";
+  samlSignatureAlgorithm: SAMLSignatureAlgorithm;
+  samlSignaturePolicy: "signed_assertion" | "signed_response" | "both";
+  samlRequestedAuthnContexts: string;
+  samlSubjectSource: "persistent_nameid" | "immutable_attribute";
+  samlSubjectAttributeName: string;
+  samlSubjectAttributeNameFormat: string;
+  samlClockSkewSeconds: number;
+  samlMaximumAuthenticationAgeSeconds: number;
+  reason: string;
+  submitting: boolean;
+  error: string | null;
+  idempotencyKey: string;
+}
+
+interface ProviderManagementFormState {
+  observedProvider: TenantFederationAuthProvider;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  jitMode: "disabled" | "create";
+  noMatchPolicy: "deny" | "provider_access_only";
+  oidcIssuer: string;
+  oidcClientID: string;
+  oidcExtraScopes: string;
+  oidcAllowRefreshToken: boolean;
+  oidcUseUserInfo: boolean;
+  samlExpectedEntityID: string;
+  samlSignatureAlgorithm: SAMLSignatureAlgorithm;
+  samlSignaturePolicy: SAMLSignaturePolicy;
+  samlRequestedAuthnContexts: string;
+  samlSubjectSource: SAMLSubjectSource;
+  samlSubjectAttributeName: string;
+  samlSubjectAttributeNameFormat: string;
+  samlClockSkewSeconds: number;
+  samlMaximumAuthenticationAgeSeconds: number;
+  reason: string;
+  clientSecret: string;
+  trustClientAuthentication: "client_secret_basic" | "client_secret_post";
+  trustSigningAlgorithms: string;
+  trustReason: string;
+  clearSecretConfirmed: boolean;
+  archiveConfirmed: boolean;
+  busy: boolean;
+  error: string | null;
+}
+
+interface TenantFederationPolicyControlsState {
+  mapping: MappingPolicyState;
+  assurance: AssurancePolicyState;
+  mappingDocument: string;
+  assuranceDocument: string;
+  mappingReason: string;
+  assuranceReason: string;
+  mappingBusy: boolean;
+  assuranceBusy: boolean;
+  reload: number;
+}
+
+function FederationProviderFacts({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderManagementFormView>["model"];
+}): React.ReactNode {
+  const { provider } = model;
+  return (
+    <dl className="federation-detail__facts">
+      <div>
+        <dt>Callback / ACS</dt>
+        <dd>
+          {provider.kind === "oidc"
+            ? provider.configuration.redirectUri
+            : provider.configuration.acsUrl}
+        </dd>
+      </div>
+      <div>
+        <dt>Security revision</dt>
+        <dd>{provider.securityRevision}</dd>
+      </div>
+      <div>
+        <dt>Binding</dt>
+        <dd>{provider.binding.loginKey}</dd>
+      </div>
+      {provider.kind === "oidc" ? (
+        <div>
+          <dt>Client secret</dt>
+          <dd>
+            {provider.configuration.clientSecretPresent
+              ? `Present · revision ${provider.configuration.clientSecretRevision}`
+              : "Not set"}
+          </dd>
+        </div>
+      ) : (
+        <>
+          <div>
+            <dt>SP entity ID</dt>
+            <dd>{provider.configuration.spEntityId}</dd>
+          </div>
+          <div>
+            <dt>IdP metadata</dt>
+            <dd>Revision {provider.configuration.metadataRevision}</dd>
+          </div>
+          <div>
+            <dt>SP signing credential</dt>
+            <dd>
+              {provider.configuration.spKeyPresent
+                ? `Present · revision ${provider.configuration.spKeyRevision}`
+                : "Not generated"}
+            </dd>
+          </div>
+          <div>
+            <dt>Single logout</dt>
+            <dd>
+              {provider.configuration.singleLogoutConfigured
+                ? "Configured"
+                : "Local revocation only"}
+            </dd>
+          </div>
+        </>
+      )}
+    </dl>
+  );
+}
+
+function ProviderManagementFormArchiveProvider({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderManagementFormView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    archiveConfirmed,
+    busy,
+    csrfToken,
+    current,
+    mutate,
+    onChanged,
+    provider,
+    reason,
+    setArchiveConfirmed,
+    tenantId,
+  } = model;
+  return (
+    <div className="federation-danger">
+      <div>
+        <h3>Archive provider</h3>
+        <p>Archive is terminal and requires the provider to be disabled.</p>
+        <div className="federation-check">
+          <Checkbox
+            id={`federation-archive-confirm-${provider.id}`}
+            checked={archiveConfirmed}
+            onCheckedChange={(checked) => setArchiveConfirmed(checked === true)}
+          />
+          <Label htmlFor={`federation-archive-confirm-${provider.id}`}>
+            Confirm permanent archival of this provider
+          </Label>
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="destructive"
+        disabled={
+          busy || provider.enabled || reason.length === 0 || !archiveConfirmed
+        }
+        onClick={() => {
+          if (!archiveConfirmed) return;
+          // react-doctor-disable-next-line no-impure-state-updater -- mutate is the local async command executor, not a React state setter or updater.
+          void mutate(async () => {
+            await api.archive(
+              csrfToken,
+              tenantId,
+              provider.id,
+              current.etag,
+              reason,
+            );
+            onChanged(
+              "The provider, binding, and affected local sessions were retired.",
+            );
+            setArchiveConfirmed(false);
+          });
+        }}
+      >
+        <Trash2 aria-hidden="true" /> Archive
+      </Button>
+    </div>
+  );
+}
+
+function FederationProviderInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationWorkspace>["model"];
+}): React.ReactNode {
+  const { inspect, inventory, loadMore, loadingMore, setRevision } = model;
+  return inventory.kind === "loading" ? (
+    <FederationSkeleton />
+  ) : inventory.kind === "error" ? (
+    <Card>
+      <CardContent className="federation-page__error">
+        <FocusedError message={inventory.message} />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setRevision((value) => value + 1)}
+        >
+          <RefreshCw aria-hidden="true" /> Retry inventory
+        </Button>
+      </CardContent>
+    </Card>
+  ) : (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tenant federation inventory</CardTitle>
+        <CardDescription>
+          Presence and revision flags replace credential, token, metadata,
+          certificate, assertion, claim, and subject readback.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {inventory.items.length === 0 ? (
+          <p className="federation-empty">
+            No federated providers are configured for this tenant.
+          </p>
+        ) : (
+          <ul
+            className="federation-grid"
+            aria-label="Federated identity providers"
+          >
+            {inventory.items.map((provider) => (
+              <li className="federation-provider" key={provider.id}>
+                <div className="federation-provider__header">
+                  <div>
+                    <span className="federation-provider__kind">
+                      {provider.kind.toUpperCase()}
+                    </span>
+                    <h2>{provider.displayName}</h2>
+                    <code>{provider.key}</code>
+                  </div>
+                  <ProviderBadge provider={provider} />
+                </div>
+                <dl>
+                  <div>
+                    <dt>Login key</dt>
+                    <dd>{provider.binding.loginKey}</dd>
+                  </div>
+                  <div>
+                    <dt>Configuration</dt>
+                    <dd>{provider.configured ? "Ready" : "Incomplete"}</dd>
+                  </div>
+                  <div>
+                    <dt>Version</dt>
+                    <dd>{provider.version}</dd>
+                  </div>
+                </dl>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void inspect(provider.id)}
+                >
+                  Inspect and manage
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {inventory.nextCursor ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loadingMore}
+            onClick={() => void loadMore()}
+          >
+            {loadingMore ? "Loading more…" : "Load more providers"}
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FederationOidcClientFields({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationProtocolFields>["model"];
+}): React.ReactNode {
+  const {
+    allowRefreshToken,
+    clientId,
+    extraScopes,
+    postLogoutRedirectUri,
+    setAllowRefreshToken,
+    setClientId,
+    setExtraScopes,
+    setUseUserInfo,
+    useUserInfo,
+  } = model;
+  return (
+    <>
+      <FormField htmlFor="federation-client-id" label="Client ID">
+        <Input
+          id="federation-client-id"
+          required
+          maxLength={512}
+          value={clientId}
+          onChange={(event) => setClientId(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor="federation-logout-uri"
+        label="Post-logout redirect URI"
+        hint="Deployment-managed from this app's public origin. Register this exact URI with the provider."
+      >
+        <Input
+          id="federation-logout-uri"
+          type="url"
+          required
+          readOnly
+          value={postLogoutRedirectUri}
+        />
+      </FormField>
+      <FormField
+        htmlFor="federation-extra-scopes"
+        label="OIDC extra scopes"
+        hint="Comma-separated exact scopes; openid and refresh-related offline_access are managed automatically."
+      >
+        <Input
+          id="federation-extra-scopes"
+          value={extraScopes}
+          onChange={(event) => setExtraScopes(event.target.value)}
+        />
+      </FormField>
+      <div className="federation-check">
+        <Checkbox
+          id="federation-refresh"
+          checked={allowRefreshToken}
+          onCheckedChange={(checked) => {
+            const enabled = checked === true;
+            setAllowRefreshToken(enabled);
+            setExtraScopes((current) => withOIDCRefreshScope(current, enabled));
+          }}
+        />
+        <Label htmlFor="federation-refresh">
+          Allow bounded refresh-token rotation
+        </Label>
+      </div>
+      <div className="federation-check">
+        <Checkbox
+          id="federation-userinfo"
+          checked={useUserInfo}
+          onCheckedChange={(checked) => setUseUserInfo(checked === true)}
+        />
+        <Label htmlFor="federation-userinfo">
+          Fetch profile claims from the validated UserInfo endpoint
+        </Label>
+      </div>
+    </>
+  );
+}
+
+function FederationSamlSubjectFields({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationProtocolFields>["model"];
+}): React.ReactNode {
+  const {
+    samlSubjectAttributeName,
+    samlSubjectAttributeNameFormat,
+    samlSubjectSource,
+    setSamlSubjectAttributeName,
+    setSamlSubjectAttributeNameFormat,
+  } = model;
+  return samlSubjectSource === "immutable_attribute" ? (
+    <>
+      <FormField
+        htmlFor="federation-saml-subject-attribute"
+        label="Subject attribute Name"
+      >
+        <Input
+          id="federation-saml-subject-attribute"
+          required
+          value={samlSubjectAttributeName}
+          onChange={(event) => setSamlSubjectAttributeName(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor="federation-saml-subject-format"
+        label="Subject attribute NameFormat"
+      >
+        <Input
+          id="federation-saml-subject-format"
+          required
+          value={samlSubjectAttributeNameFormat}
+          onChange={(event) =>
+            setSamlSubjectAttributeNameFormat(event.target.value)
+          }
+        />
+      </FormField>
+    </>
+  ) : null;
+}
+
+function FederationSamlSubjectEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationSamlConfiguration>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    samlSubjectAttributeName,
+    samlSubjectAttributeNameFormat,
+    samlSubjectSource,
+    setSAMLSubjectAttributeName,
+    setSAMLSubjectAttributeNameFormat,
+  } = model;
+  return samlSubjectSource === "immutable_attribute" ? (
+    <>
+      <FormField
+        htmlFor={`federation-edit-saml-attribute-${provider.id}`}
+        label="Subject attribute Name"
+      >
+        <Input
+          id={`federation-edit-saml-attribute-${provider.id}`}
+          required
+          value={samlSubjectAttributeName}
+          onChange={(event) => setSAMLSubjectAttributeName(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`federation-edit-saml-format-${provider.id}`}
+        label="Subject attribute NameFormat"
+      >
+        <Input
+          id={`federation-edit-saml-format-${provider.id}`}
+          required
+          value={samlSubjectAttributeNameFormat}
+          onChange={(event) =>
+            setSAMLSubjectAttributeNameFormat(event.target.value)
+          }
+        />
+      </FormField>
+    </>
+  ) : null;
+}
+
+function FederationOidcSecretForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationTrustManagement>["model"];
+}): React.ReactNode {
+  const {
+    busy,
+    clearSecret,
+    clearSecretConfirmed,
+    clientSecret,
+    provider,
+    reason,
+    rotateSecret,
+    setClearSecretConfirmed,
+    setClientSecret,
+  } = model;
+  if (provider.kind !== "oidc") return null;
+  return (
+    <form
+      className="federation-secret-form"
+      aria-label="Rotate OIDC client secret"
+      onSubmit={rotateSecret}
+    >
+      <div>
+        <h3>
+          <KeyRound aria-hidden="true" /> Write-only client secret
+        </h3>
+        <p>
+          The value is transferred once, encrypted for this
+          tenant/provider/binding row, and immediately cleared from the form.
+        </p>
+      </div>
+      <FormField
+        htmlFor={`federation-secret-${provider.id}`}
+        label="New client secret"
+      >
+        <Input
+          id={`federation-secret-${provider.id}`}
+          type="password"
+          autoComplete="new-password"
+          required
+          value={clientSecret}
+          onChange={(event) => setClientSecret(event.target.value)}
+        />
+      </FormField>
+      {provider.configuration.clientSecretPresent ? (
+        <div className="federation-check">
+          <Checkbox
+            id={`federation-clear-secret-confirm-${provider.id}`}
+            checked={clearSecretConfirmed}
+            onCheckedChange={(checked) =>
+              setClearSecretConfirmed(checked === true)
+            }
+          />
+          <Label htmlFor={`federation-clear-secret-confirm-${provider.id}`}>
+            Confirm permanent retirement of this OIDC client secret
+          </Label>
+        </div>
+      ) : null}
+      <div className="federation-secret-form__actions">
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={busy || reason.length === 0}
+        >
+          Rotate client secret
+        </Button>
+        {provider.configuration.clientSecretPresent ? (
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={busy || reason.length === 0 || !clearSecretConfirmed}
+            onClick={clearSecret}
+          >
+            Clear client secret
+          </Button>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+function FederationOidcTrustRefreshForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationTrustManagement>["model"];
+}): React.ReactNode {
+  const {
+    busy,
+    provider,
+    refreshOIDCTrust,
+    setTrustClientAuthentication,
+    setTrustReason,
+    setTrustSigningAlgorithms,
+    trustClientAuthentication,
+    trustReason,
+    trustSigningAlgorithms,
+  } = model;
+  return (
+    <form
+      className="federation-secret-form"
+      aria-label="Refresh OIDC trust documents"
+      onSubmit={refreshOIDCTrust}
+    >
+      <div>
+        <h3>
+          <RefreshCw aria-hidden="true" /> Verified OIDC trust
+        </h3>
+        <p>
+          Discovery and JWKS are fetched server-side through the hardened
+          client. Raw trust documents are never accepted or returned here.
+        </p>
+      </div>
+      <div className="federation-form federation-form--compact">
+        <FormField
+          htmlFor={`federation-oidc-client-auth-${provider.id}`}
+          label="Token endpoint client authentication"
+        >
+          <select
+            id={`federation-oidc-client-auth-${provider.id}`}
+            value={trustClientAuthentication}
+            onChange={(event) =>
+              setTrustClientAuthentication(
+                event.target.value === "client_secret_post"
+                  ? "client_secret_post"
+                  : "client_secret_basic",
+              )
+            }
+          >
+            <option value="client_secret_basic">client_secret_basic</option>
+            <option value="client_secret_post">client_secret_post</option>
+          </select>
+        </FormField>
+        <FormField
+          htmlFor={`federation-oidc-algorithms-${provider.id}`}
+          label="Allowed signing algorithms"
+          hint="Comma-separated exact values, for example RS256,ES256."
+        >
+          <Input
+            id={`federation-oidc-algorithms-${provider.id}`}
+            required
+            value={trustSigningAlgorithms}
+            onChange={(event) => setTrustSigningAlgorithms(event.target.value)}
+          />
+        </FormField>
+        <FormField
+          htmlFor={`federation-oidc-trust-reason-${provider.id}`}
+          label="OIDC trust audit reason"
+        >
+          <Input
+            id={`federation-oidc-trust-reason-${provider.id}`}
+            required
+            maxLength={federationAuditReasonDOMMaxLength}
+            value={trustReason}
+            onChange={(event) => setTrustReason(event.target.value)}
+          />
+        </FormField>
+      </div>
+      <Button
+        type="submit"
+        variant="outline"
+        disabled={busy || trustReason.length === 0}
+      >
+        Refresh verified trust
+      </Button>
+    </form>
+  );
+}
+
+function FederationMappingPolicyEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationPolicyEditors>["model"];
+}): React.ReactNode {
+  const {
+    canManageMapping,
+    canReadMapping,
+    mapping,
+    mappingBusy,
+    mappingDocument,
+    mappingReason,
+    provider,
+    replaceMapping,
+    setMappingDocument,
+    setMappingReason,
+    setReload,
+  } = model;
+  return canReadMapping ? (
+    <form
+      className="federation-policy-editor"
+      aria-label="Edit federated mapping policy"
+      onSubmit={replaceMapping}
+    >
+      <div className="federation-policy-editor__heading">
+        <div>
+          <h4>Claim / attribute mapping</h4>
+          <p>
+            {mapping.kind === "ready"
+              ? `Provider v${mapping.versioned.value.providerVersion} · mapping revision ${mapping.versioned.mappingRevision}`
+              : "Loading the exact active extraction and mapping rules…"}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={mappingBusy}
+          onClick={() => setReload((value) => value + 1)}
+        >
+          <RefreshCw aria-hidden="true" /> Reload mapping
+        </Button>
+      </div>
+      {mapping.kind === "error" ? (
+        <FocusedError message={mapping.message} />
+      ) : null}
+      <FormField
+        htmlFor={`federation-mapping-policy-${provider.id}`}
+        label="Mapping policy JSON"
+        hint={
+          provider.kind === "oidc"
+            ? `Includes OIDC claim extraction plus exact scalar/group-to-role targets. UserInfo extraction must be ${provider.configuration.useUserInfo ? "present because UserInfo is enabled" : "absent because UserInfo is disabled"}.`
+            : "Includes SAML Name/NameFormat extraction plus exact scalar/group-to-role targets."
+        }
+      >
+        <Textarea
+          id={`federation-mapping-policy-${provider.id}`}
+          aria-busy={mapping.kind === "loading"}
+          disabled={mapping.kind !== "ready"}
+          readOnly={!canManageMapping}
+          rows={16}
+          value={mappingDocument}
+          onChange={(event) => setMappingDocument(event.target.value)}
+        />
+      </FormField>
+      {canManageMapping ? (
+        <>
+          <FormField
+            htmlFor={`federation-mapping-reason-${provider.id}`}
+            label="Mapping policy audit reason"
+          >
+            <Input
+              id={`federation-mapping-reason-${provider.id}`}
+              required
+              maxLength={federationAuditReasonDOMMaxLength}
+              value={mappingReason}
+              onChange={(event) => setMappingReason(event.target.value)}
+            />
+          </FormField>
+          <Button
+            type="submit"
+            disabled={
+              mappingBusy ||
+              mapping.kind !== "ready" ||
+              mappingReason.length === 0 ||
+              provider.archivedAt !== null
+            }
+          >
+            Replace mapping policy
+          </Button>
+        </>
+      ) : (
+        <p className="federation-policy-editor__permission">
+          Editing requires both identity_mapping.manage and role.grant; exact
+          operator-team roster authority is rechecked per target.
+        </p>
+      )}
+    </form>
+  ) : null;
+}
+
+function FederationAssurancePolicyEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof FederationPolicyEditors>["model"];
+}): React.ReactNode {
+  const {
+    assurance,
+    assuranceBusy,
+    assuranceDocument,
+    assuranceReason,
+    canManageAssurance,
+    canReadAssurance,
+    provider,
+    replaceAssurance,
+    setAssuranceDocument,
+    setAssuranceReason,
+    setReload,
+  } = model;
+  return canReadAssurance ? (
+    <form
+      className="federation-policy-editor"
+      aria-label="Edit federated assurance policy"
+      onSubmit={replaceAssurance}
+    >
+      <div className="federation-policy-editor__heading">
+        <div>
+          <h4>Trusted IdP MFA assertions</h4>
+          <p>
+            {assurance.kind === "ready"
+              ? `Provider v${assurance.versioned.value.providerVersion} · assurance revision ${assurance.versioned.assurancePolicyRevision}`
+              : "Loading the exact active assurance rules…"}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={assuranceBusy}
+          onClick={() => setReload((value) => value + 1)}
+        >
+          <RefreshCw aria-hidden="true" /> Reload assurance
+        </Button>
+      </div>
+      {assurance.kind === "error" ? (
+        <FocusedError message={assurance.message} />
+      ) : null}
+      <FormField
+        htmlFor={`federation-assurance-policy-${provider.id}`}
+        label="Assurance trust policy JSON"
+        hint="Only exact OIDC ACR/AMR or SAML AuthnContext matches are trusted; every other login falls back to local MFA step-up."
+      >
+        <Textarea
+          id={`federation-assurance-policy-${provider.id}`}
+          aria-busy={assurance.kind === "loading"}
+          disabled={assurance.kind !== "ready"}
+          readOnly={!canManageAssurance}
+          rows={12}
+          value={assuranceDocument}
+          onChange={(event) => setAssuranceDocument(event.target.value)}
+        />
+      </FormField>
+      {canManageAssurance ? (
+        <>
+          <FormField
+            htmlFor={`federation-assurance-reason-${provider.id}`}
+            label="Assurance policy audit reason"
+          >
+            <Input
+              id={`federation-assurance-reason-${provider.id}`}
+              required
+              maxLength={federationAuditReasonDOMMaxLength}
+              value={assuranceReason}
+              onChange={(event) => setAssuranceReason(event.target.value)}
+            />
+          </FormField>
+          <Button
+            type="submit"
+            disabled={
+              assuranceBusy ||
+              assurance.kind !== "ready" ||
+              assuranceReason.length === 0 ||
+              provider.archivedAt !== null
+            }
+          >
+            Replace assurance policy
+          </Button>
+        </>
+      ) : (
+        <p className="federation-policy-editor__permission">
+          Editing requires identity_policy.manage.
+        </p>
+      )}
+    </form>
+  ) : null;
 }

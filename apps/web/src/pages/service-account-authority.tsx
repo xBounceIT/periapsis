@@ -75,7 +75,36 @@ export function ServiceAccountAuthorityRail({
   );
 }
 
-export function RoleAuthorityPanel({
+export function RoleAuthorityPanel(props: {
+  account: ServiceAccountView;
+  canGrantRoles: boolean;
+  grantError: string | null;
+  grantExpiresAt: string;
+  grantPagination: PaginationState;
+  grantReason: string;
+  grantRevokeReasons: Readonly<Record<string, string>>;
+  grantRevokingId: string | null;
+  grants: ServiceAccountRoleGrantPageView;
+  grantRoleId: string;
+  grantSaving: boolean;
+  hidden: boolean;
+  id: string;
+  machineRoles: MachineRoleState;
+  onGrantExpiresAtChange: (value: string) => void;
+  onGrantReasonChange: (value: string) => void;
+  onGrantRevokeReasonChange: (grantId: string, reason: string) => void;
+  onGrantRoleIdChange: (value: string) => void;
+  onGrantSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onLoadMoreGrants: () => void;
+  onLoadMoreRoles: () => void;
+  onRevoke: (grant: ServiceAccountRoleGrantView) => void;
+  rolePagination: PaginationState;
+}): React.JSX.Element {
+  const model = useRoleAuthorityPanelModel(props);
+  return <RoleAuthorityPanelView model={model.data} />;
+}
+
+function useRoleAuthorityPanelModel({
   account,
   canGrantRoles,
   grantError,
@@ -123,7 +152,59 @@ export function RoleAuthorityPanel({
   onLoadMoreRoles: () => void;
   onRevoke: (grant: ServiceAccountRoleGrantView) => void;
   rolePagination: PaginationState;
+}) {
+  return {
+    kind: "ready" as const,
+    data: {
+      account,
+      canGrantRoles,
+      grantError,
+      grantExpiresAt,
+      grantPagination,
+      grantReason,
+      grantRevokeReasons,
+      grantRevokingId,
+      grantRoleId,
+      grantSaving,
+      grants,
+      hidden,
+      id,
+      machineRoles,
+      onGrantExpiresAtChange,
+      onGrantReasonChange,
+      onGrantRevokeReasonChange,
+      onGrantRoleIdChange,
+      onGrantSubmit,
+      onLoadMoreGrants,
+      onLoadMoreRoles,
+      onRevoke,
+      rolePagination,
+    },
+  };
+}
+
+function RoleAuthorityPanelView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useRoleAuthorityPanelModel>,
+    { kind: "ready" }
+  >["data"];
 }): React.JSX.Element {
+  const {
+    account,
+    canGrantRoles,
+    grantError,
+    grantPagination,
+    grantRoleId,
+    grantSaving,
+    grants,
+    hidden,
+    id,
+    machineRoles,
+    onGrantSubmit,
+    onLoadMoreGrants,
+  } = model;
   return (
     <section
       id={`${id}-roles-panel`}
@@ -165,75 +246,8 @@ export function RoleAuthorityPanel({
               message={machineRoles.message}
             />
           ) : null}
-          {machineRoles.kind === "ready" ? (
-            <>
-              <FormField htmlFor={`${id}-machine-role`} label="Machine role">
-                <select
-                  id={`${id}-machine-role`}
-                  className="service-account-select"
-                  value={grantRoleId}
-                  disabled={grantSaving}
-                  onChange={(event) => onGrantRoleIdChange(event.target.value)}
-                >
-                  <option value="">Select a machine-only role</option>
-                  {machineRoles.items.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name} ({role.key})
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              {machineRoles.items.length === 0 ? (
-                <p className="capability-note">
-                  No service_account role appears in the loaded role pages.
-                </p>
-              ) : null}
-              {rolePagination.error ? (
-                <FocusedError
-                  title="More roles could not be loaded"
-                  message={rolePagination.error}
-                />
-              ) : null}
-              {machineRoles.nextCursor ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={rolePagination.loading}
-                  onClick={onLoadMoreRoles}
-                >
-                  <ArrowDown aria-hidden="true" />
-                  {rolePagination.loading
-                    ? "Loading roles…"
-                    : "Load more machine roles"}
-                </Button>
-              ) : null}
-            </>
-          ) : null}
-          <div className="service-account-two-column-form">
-            <FormField
-              htmlFor={`${id}-grant-expiry`}
-              label="Grant expiry"
-              optional
-            >
-              <Input
-                id={`${id}-grant-expiry`}
-                type="datetime-local"
-                disabled={grantSaving}
-                value={grantExpiresAt}
-                onChange={(event) => onGrantExpiresAtChange(event.target.value)}
-              />
-            </FormField>
-            <FormField htmlFor={`${id}-grant-reason`} label="Grant reason">
-              <Textarea
-                id={`${id}-grant-reason`}
-                maxLength={500}
-                disabled={grantSaving}
-                value={grantReason}
-                onChange={(event) => onGrantReasonChange(event.target.value)}
-              />
-            </FormField>
-          </div>
+          {<MachineRoleSelector model={model} />}
+          <MachineRoleGrantFields model={model} />
           <Button
             type="submit"
             disabled={
@@ -251,95 +265,7 @@ export function RoleAuthorityPanel({
         </p>
       )}
 
-      {grants.items.length === 0 ? (
-        <div className="service-account-empty service-account-empty--inline">
-          <ShieldCheck aria-hidden="true" />
-          <h4>No role grants returned</h4>
-          <p>Credentials cannot be useful until live role authority exists.</p>
-        </div>
-      ) : (
-        <div className="service-account-edge-list">
-          {grants.items.map((grant) => (
-            <Card className="service-account-edge-card" key={grant.id}>
-              <CardHeader>
-                <div>
-                  <CardTitle>{grant.role.name}</CardTitle>
-                  <CardDescription>
-                    {grant.role.key} · {grant.provenance.sourceKind}
-                  </CardDescription>
-                </div>
-                <Badge
-                  variant={grant.state === "active" ? "secondary" : "outline"}
-                >
-                  {capitalize(grant.state)}
-                </Badge>
-              </CardHeader>
-              <CardContent>
-                <dl className="service-account-edge-facts">
-                  <div>
-                    <dt>Granted</dt>
-                    <dd>{formatTimestamp(grant.provenance.grantedAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Expires</dt>
-                    <dd>
-                      {grant.provenance.expiresAt
-                        ? formatTimestamp(grant.provenance.expiresAt)
-                        : "Dependency-derived / unbounded edge"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>ETag</dt>
-                    <dd>
-                      <code>{grant.etag}</code>
-                    </dd>
-                  </div>
-                </dl>
-                <blockquote>{grant.provenance.reason}</blockquote>
-                {canGrantRoles &&
-                grant.state === "active" &&
-                grant.managedByServiceAccountApi ? (
-                  <form
-                    className="service-account-inline-revoke"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      onRevoke(grant);
-                    }}
-                  >
-                    <FormField
-                      htmlFor={`${id}-revoke-grant-${grant.id}`}
-                      label={`Revoke ${grant.role.name}`}
-                    >
-                      <Textarea
-                        id={`${id}-revoke-grant-${grant.id}`}
-                        maxLength={500}
-                        disabled={grantRevokingId === grant.id}
-                        value={grantRevokeReasons[grant.id] ?? ""}
-                        onChange={(event) =>
-                          onGrantRevokeReasonChange(
-                            grant.id,
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </FormField>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      variant="destructive"
-                      disabled={grantRevokingId === grant.id}
-                    >
-                      {grantRevokingId === grant.id
-                        ? "Revoking role…"
-                        : "Revoke role grant"}
-                    </Button>
-                  </form>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {<RoleAuthorityPanelNoRoleGrantsReturned model={model} />}
       {grantPagination.error ? (
         <FocusedError
           title="More grants could not be loaded"
@@ -360,5 +286,203 @@ export function RoleAuthorityPanel({
         </Button>
       ) : null}
     </section>
+  );
+}
+
+function MachineRoleSelector({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleAuthorityPanelView>["model"];
+}): React.ReactNode {
+  const {
+    grantRoleId,
+    grantSaving,
+    id,
+    machineRoles,
+    onGrantRoleIdChange,
+    onLoadMoreRoles,
+    rolePagination,
+  } = model;
+  return machineRoles.kind === "ready" ? (
+    <>
+      <FormField htmlFor={`${id}-machine-role`} label="Machine role">
+        <select
+          id={`${id}-machine-role`}
+          className="service-account-select"
+          value={grantRoleId}
+          disabled={grantSaving}
+          onChange={(event) => onGrantRoleIdChange(event.target.value)}
+        >
+          <option value="">Select a machine-only role</option>
+          {machineRoles.items.map((role) => (
+            <option key={role.id} value={role.id}>
+              {role.name} ({role.key})
+            </option>
+          ))}
+        </select>
+      </FormField>
+      {machineRoles.items.length === 0 ? (
+        <p className="capability-note">
+          No service_account role appears in the loaded role pages.
+        </p>
+      ) : null}
+      {rolePagination.error ? (
+        <FocusedError
+          title="More roles could not be loaded"
+          message={rolePagination.error}
+        />
+      ) : null}
+      {machineRoles.nextCursor ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={rolePagination.loading}
+          onClick={onLoadMoreRoles}
+        >
+          <ArrowDown aria-hidden="true" />
+          {rolePagination.loading
+            ? "Loading roles…"
+            : "Load more machine roles"}
+        </Button>
+      ) : null}
+    </>
+  ) : null;
+}
+
+function MachineRoleGrantFields({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleAuthorityPanelView>["model"];
+}): React.ReactNode {
+  const {
+    grantExpiresAt,
+    grantReason,
+    grantSaving,
+    id,
+    onGrantExpiresAtChange,
+    onGrantReasonChange,
+  } = model;
+  return (
+    <div className="service-account-two-column-form">
+      <FormField htmlFor={`${id}-grant-expiry`} label="Grant expiry" optional>
+        <Input
+          id={`${id}-grant-expiry`}
+          type="datetime-local"
+          disabled={grantSaving}
+          value={grantExpiresAt}
+          onChange={(event) => onGrantExpiresAtChange(event.target.value)}
+        />
+      </FormField>
+      <FormField htmlFor={`${id}-grant-reason`} label="Grant reason">
+        <Textarea
+          id={`${id}-grant-reason`}
+          maxLength={500}
+          disabled={grantSaving}
+          value={grantReason}
+          onChange={(event) => onGrantReasonChange(event.target.value)}
+        />
+      </FormField>
+    </div>
+  );
+}
+
+function RoleAuthorityPanelNoRoleGrantsReturned({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleAuthorityPanelView>["model"];
+}): React.ReactNode {
+  const {
+    canGrantRoles,
+    grantRevokeReasons,
+    grantRevokingId,
+    grants,
+    id,
+    onGrantRevokeReasonChange,
+    onRevoke,
+  } = model;
+  return grants.items.length === 0 ? (
+    <div className="service-account-empty service-account-empty--inline">
+      <ShieldCheck aria-hidden="true" />
+      <h4>No role grants returned</h4>
+      <p>Credentials cannot be useful until live role authority exists.</p>
+    </div>
+  ) : (
+    <div className="service-account-edge-list">
+      {grants.items.map((grant) => (
+        <Card className="service-account-edge-card" key={grant.id}>
+          <CardHeader>
+            <div>
+              <CardTitle>{grant.role.name}</CardTitle>
+              <CardDescription>
+                {grant.role.key} · {grant.provenance.sourceKind}
+              </CardDescription>
+            </div>
+            <Badge variant={grant.state === "active" ? "secondary" : "outline"}>
+              {capitalize(grant.state)}
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            <dl className="service-account-edge-facts">
+              <div>
+                <dt>Granted</dt>
+                <dd>{formatTimestamp(grant.provenance.grantedAt)}</dd>
+              </div>
+              <div>
+                <dt>Expires</dt>
+                <dd>
+                  {grant.provenance.expiresAt
+                    ? formatTimestamp(grant.provenance.expiresAt)
+                    : "Dependency-derived / unbounded edge"}
+                </dd>
+              </div>
+              <div>
+                <dt>ETag</dt>
+                <dd>
+                  <code>{grant.etag}</code>
+                </dd>
+              </div>
+            </dl>
+            <blockquote>{grant.provenance.reason}</blockquote>
+            {canGrantRoles &&
+            grant.state === "active" &&
+            grant.managedByServiceAccountApi ? (
+              <form
+                className="service-account-inline-revoke"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onRevoke(grant);
+                }}
+              >
+                <FormField
+                  htmlFor={`${id}-revoke-grant-${grant.id}`}
+                  label={`Revoke ${grant.role.name}`}
+                >
+                  <Textarea
+                    id={`${id}-revoke-grant-${grant.id}`}
+                    maxLength={500}
+                    disabled={grantRevokingId === grant.id}
+                    value={grantRevokeReasons[grant.id] ?? ""}
+                    onChange={(event) =>
+                      onGrantRevokeReasonChange(grant.id, event.target.value)
+                    }
+                  />
+                </FormField>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="destructive"
+                  disabled={grantRevokingId === grant.id}
+                >
+                  {grantRevokingId === grant.id
+                    ? "Revoking role…"
+                    : "Revoke role grant"}
+                </Button>
+              </form>
+            ) : null}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   );
 }

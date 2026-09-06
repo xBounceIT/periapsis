@@ -231,7 +231,11 @@ function normalizeIds(values: readonly string[], label: string): string[] {
   if (values.length > 512) {
     throw new TypeError(`At most 512 ${label} IDs are allowed.`);
   }
-  const normalized = values.map((value) => value.trim()).filter(Boolean);
+  const normalized: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (trimmed) normalized.push(trimmed);
+  }
   if (
     normalized.some((value) => !isCanonicalUuidV7(value)) ||
     new Set(normalized).size !== normalized.length

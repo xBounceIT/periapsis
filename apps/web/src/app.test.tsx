@@ -9,7 +9,8 @@ import {
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AppShell, appRouteTitle } from "./app";
+import { AppShell } from "./app";
+import { appRouteTitle } from "./app-model";
 import { ApplicationBoundary } from "./auth/application-boundary";
 import { useSession } from "./auth/session-context";
 import type { SessionView } from "./lib/phase-two-types";

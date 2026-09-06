@@ -20,11 +20,6 @@ import {
 
 import { FormField } from "../components/form-field";
 import {
-  NotificationApiError,
-  type NotificationAdminApi,
-  type Versioned,
-} from "./notification-api";
-import {
   bindMutationAttempt,
   bindOpaqueMutationAttempt,
   emptySmtpWrite,
@@ -35,6 +30,11 @@ import {
   type MutationAttemptReference,
   type OpaqueMutationAttemptReference,
 } from "./model";
+import {
+  NotificationApiError,
+  type NotificationAdminApi,
+  type Versioned,
+} from "./notification-api";
 import {
   EditorActions,
   NotificationEmpty,
@@ -101,7 +101,17 @@ export function PlatformSmtpWorkspace({
   );
 }
 
-export function SmtpPanel({ api, csrfToken, scope, tenantId }: SmtpPanelProps) {
+export function SmtpPanel(props: SmtpPanelProps) {
+  const model = useSmtpPanelModel(props);
+  return <SmtpPanelView model={model.data} />;
+}
+
+function useSmtpPanelModel({
+  api,
+  csrfToken,
+  scope,
+  tenantId,
+}: SmtpPanelProps) {
   const [snapshot, setSnapshot] = useState<SmtpSnapshot>({ kind: "loading" });
   const [draft, setDraft] =
     useState<SmtpConfigurationWriteWritable>(emptySmtpWrite);
@@ -256,150 +266,78 @@ export function SmtpPanel({ api, csrfToken, scope, tenantId }: SmtpPanelProps) {
   const isInherited =
     scope === "tenant" && projection?.inheritedFromGlobal === true;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      actionError,
+      busy,
+      draft,
+      health,
+      isInherited,
+      notice,
+      projection,
+      reason,
+      recipient,
+      save,
+      scope,
+      setReason,
+      setRecipient,
+      setRevision,
+      snapshot,
+      test,
+      testAttempt,
+      updateDraft,
+    },
+  };
+}
+
+function SmtpPanelView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useSmtpPanelModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    actionError,
+    busy,
+    draft,
+    health,
+    isInherited,
+    notice,
+    projection,
+    reason,
+    recipient,
+    save,
+    scope,
+    setReason,
+    setRecipient,
+    setRevision,
+    snapshot,
+    test,
+    testAttempt,
+    updateDraft,
+  } = model;
   return (
     <div
       className="notification-smtp-layout"
       aria-busy={snapshot.kind === "loading"}
     >
-      <section className="notification-provider-summary">
-        <div className="notification-provider-summary__title">
-          <div className="notification-provider-icon">
-            <MailCheck aria-hidden="true" />
-          </div>
-          <div>
-            <p className="section-label">Effective provider</p>
-            <h2>{projection?.name ?? "No relay configured"}</h2>
-          </div>
-        </div>
-        {snapshot.kind === "loading" ? (
-          <NotificationLoading label="Loading SMTP configuration" />
-        ) : null}
-        {snapshot.kind === "error" ? (
-          <NotificationError
-            error={snapshot.error}
-            fallback="SMTP configuration could not be loaded."
-          />
-        ) : null}
-        {snapshot.kind === "empty" ? (
-          <NotificationEmpty
-            title="No SMTP configuration"
-            detail={
-              scope === "tenant"
-                ? "No tenant override or platform fallback is available."
-                : "Create the global relay used when tenants do not override it."
-            }
-          />
-        ) : null}
-        {projection ? (
-          <dl className="notification-definition-list">
-            <div>
-              <dt>Boundary</dt>
-              <dd>
-                {isInherited ? (
-                  <Badge variant="secondary">Platform fallback</Badge>
-                ) : (
-                  <Badge variant="outline">
-                    {scope === "tenant" ? "Tenant override" : "Platform"}
-                  </Badge>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Endpoint</dt>
-              <dd>
-                {projection.host}:{projection.port} / {projection.security}
-              </dd>
-            </div>
-            <div>
-              <dt>Credentials</dt>
-              <dd>
-                {projection.passwordConfigured
-                  ? "Password pinned"
-                  : "No password"}
-              </dd>
-            </div>
-            <div>
-              <dt>DKIM</dt>
-              <dd>
-                {projection.dkim?.privateKeyConfigured
-                  ? `${projection.dkim.selector} · key pinned`
-                  : "Not configured"}
-              </dd>
-            </div>
-            <div>
-              <dt>Version</dt>
-              <dd>v{projection.version}</dd>
-            </div>
-          </dl>
-        ) : null}
-        {projection ? (
-          <section className="notification-toolbox">
-            <h3>Provider health check</h3>
-            <div className="notification-form-grid">
-              {scope === "tenant" ? (
-                <FormField
-                  htmlFor={`${scope}-smtp-test-recipient`}
-                  label="Optional test recipient"
-                >
-                  <Input
-                    id={`${scope}-smtp-test-recipient`}
-                    type="email"
-                    autoComplete="off"
-                    value={recipient}
-                    onChange={(event) => {
-                      setRecipient(event.target.value);
-                      resetMutationAttempt(testAttempt.current);
-                    }}
-                  />
-                </FormField>
-              ) : null}
-              <FormField
-                htmlFor={`${scope}-smtp-test-reason`}
-                label="Audited reason"
-              >
-                <Input
-                  id={`${scope}-smtp-test-reason`}
-                  maxLength={500}
-                  value={reason}
-                  onChange={(event) => {
-                    setReason(event.target.value);
-                    resetMutationAttempt(testAttempt.current);
-                  }}
-                />
-              </FormField>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy !== null || !reason.trim()}
-              onClick={() => void test()}
-            >
-              <MailCheck aria-hidden="true" /> Run health check
-            </Button>
-            {health ? (
-              <div className="notification-health" role="status">
-                <strong>
-                  {health.healthy ? "Provider healthy" : "Provider degraded"}
-                </strong>
-                <ul>
-                  {health.checks.map((check) => (
-                    <li key={check.kind}>
-                      <span>{check.kind}</span>
-                      <Badge
-                        variant={
-                          check.outcome === "failed" ? "destructive" : "outline"
-                        }
-                      >
-                        {check.outcome}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-      </section>
+      <SmtpProviderSummary
+        busy={busy}
+        health={health}
+        isInherited={isInherited}
+        projection={projection}
+        reason={reason}
+        recipient={recipient}
+        scope={scope}
+        setReason={setReason}
+        setRecipient={setRecipient}
+        snapshot={snapshot}
+        test={test}
+        testAttempt={testAttempt}
+      />
 
       <form
         className="notification-editor"
@@ -433,277 +371,11 @@ export function SmtpPanel({ api, csrfToken, scope, tenantId }: SmtpPanelProps) {
             {notice}
           </p>
         ) : null}
-        <div className="notification-form-grid">
-          <FormField htmlFor={`${scope}-smtp-name`} label="Name">
-            <Input
-              id={`${scope}-smtp-name`}
-              required
-              maxLength={160}
-              value={draft.name}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  name: event.target.value,
-                }))
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-host`} label="Host">
-            <Input
-              id={`${scope}-smtp-host`}
-              required
-              maxLength={253}
-              value={draft.host}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  host: event.target.value,
-                }))
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-port`} label="Port">
-            <Input
-              id={`${scope}-smtp-port`}
-              required
-              type="number"
-              min={1}
-              max={65535}
-              value={draft.port}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  port: Number(event.target.value),
-                }))
-              }
-            />
-          </FormField>
-          <label>
-            Security
-            <select
-              value={draft.security}
-              onChange={(event) => {
-                const security = parseSmtpSecurity(event.target.value);
-                if (security) {
-                  updateDraft((current) => ({ ...current, security }));
-                }
-              }}
-            >
-              <option value="tls">TLS</option>
-              <option value="starttls">STARTTLS</option>
-              <option value="plain_local">
-                Plain local (development only)
-              </option>
-            </select>
-          </label>
-          <FormField
-            htmlFor={`${scope}-smtp-username`}
-            label="Username"
-            optional
-          >
-            <Input
-              id={`${scope}-smtp-username`}
-              autoComplete="off"
-              value={draft.username ?? ""}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  username: event.target.value || null,
-                }))
-              }
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${scope}-smtp-password`}
-            label="New password"
-            optional
-            hint="Never returned by the API"
-          >
-            <Input
-              id={`${scope}-smtp-password`}
-              type="password"
-              autoComplete="new-password"
-              value={draft.password ?? ""}
-              onChange={(event) =>
-                updateDraft((current) =>
-                  withPassword(current, event.target.value),
-                )
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-from-name`} label="From name">
-            <Input
-              id={`${scope}-smtp-from-name`}
-              required
-              value={draft.fromName}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  fromName: event.target.value,
-                }))
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-from-email`} label="From email">
-            <Input
-              id={`${scope}-smtp-from-email`}
-              required
-              type="email"
-              value={draft.fromEmail}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  fromEmail: event.target.value,
-                }))
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-reply`} label="Reply-to" optional>
-            <Input
-              id={`${scope}-smtp-reply`}
-              type="email"
-              value={draft.replyToEmail ?? ""}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  replyToEmail: event.target.value || null,
-                }))
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-timeout`} label="Timeout (ms)">
-            <Input
-              id={`${scope}-smtp-timeout`}
-              required
-              type="number"
-              min={100}
-              value={draft.timeoutMs}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  timeoutMs: Number(event.target.value),
-                }))
-              }
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${scope}-smtp-connections`}
-            label="Maximum connections"
-          >
-            <Input
-              id={`${scope}-smtp-connections`}
-              required
-              type="number"
-              min={1}
-              value={draft.maximumConnections}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  maximumConnections: Number(event.target.value),
-                }))
-              }
-            />
-          </FormField>
-          <FormField htmlFor={`${scope}-smtp-rate`} label="Rate / second">
-            <Input
-              id={`${scope}-smtp-rate`}
-              required
-              type="number"
-              min={1}
-              value={draft.rateLimitPerSecond}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  rateLimitPerSecond: Number(event.target.value),
-                }))
-              }
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${scope}-smtp-max-messages`}
-            label="Messages / connection"
-          >
-            <Input
-              id={`${scope}-smtp-max-messages`}
-              required
-              type="number"
-              min={1}
-              value={draft.maximumMessagesPerConnection}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  maximumMessagesPerConnection: Number(event.target.value),
-                }))
-              }
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${scope}-smtp-dkim-domain`}
-            label="DKIM domain"
-            optional
-          >
-            <Input
-              id={`${scope}-smtp-dkim-domain`}
-              value={draft.dkim?.domainName ?? ""}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  dkim: {
-                    domainName: event.target.value,
-                    selector: current.dkim?.selector ?? "",
-                  },
-                }))
-              }
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${scope}-smtp-dkim-selector`}
-            label="DKIM selector"
-            optional
-          >
-            <Input
-              id={`${scope}-smtp-dkim-selector`}
-              value={draft.dkim?.selector ?? ""}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  dkim: {
-                    domainName: current.dkim?.domainName ?? "",
-                    selector: event.target.value,
-                    ...(current.dkim?.privateKey
-                      ? { privateKey: current.dkim.privateKey }
-                      : {}),
-                  },
-                }))
-              }
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${scope}-smtp-dkim-key`}
-            label="New DKIM private key"
-            optional
-            hint="Write-only; blank retains the pin"
-          >
-            <Input
-              id={`${scope}-smtp-dkim-key`}
-              type="password"
-              autoComplete="new-password"
-              value={draft.dkim?.privateKey ?? ""}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  dkim: {
-                    domainName: current.dkim?.domainName ?? "",
-                    selector: current.dkim?.selector ?? "",
-                    ...(event.target.value
-                      ? { privateKey: event.target.value }
-                      : {}),
-                  },
-                }))
-              }
-            />
-          </FormField>
-        </div>
+        <SmtpSettingsFields
+          draft={draft}
+          scope={scope}
+          updateDraft={updateDraft}
+        />
         <div className="notification-check-row">
           <label className="notification-check">
             <input
@@ -794,4 +466,511 @@ function parseSmtpSecurity(
   return value === "tls" || value === "starttls" || value === "plain_local"
     ? value
     : undefined;
+}
+
+interface SmtpSettingsFieldsProps {
+  draft: SmtpConfigurationWriteWritable;
+  scope: "platform" | "tenant";
+  updateDraft: (
+    change: (
+      current: SmtpConfigurationWriteWritable,
+    ) => SmtpConfigurationWriteWritable,
+  ) => void;
+}
+
+function SmtpSettingsFields({
+  draft,
+  scope,
+  updateDraft,
+}: SmtpSettingsFieldsProps): React.JSX.Element {
+  return (
+    <div className="notification-form-grid">
+      <FormField htmlFor={`${scope}-smtp-name`} label="Name">
+        <Input
+          id={`${scope}-smtp-name`}
+          required
+          maxLength={160}
+          value={draft.name}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              name: event.target.value,
+            }))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-host`} label="Host">
+        <Input
+          id={`${scope}-smtp-host`}
+          required
+          maxLength={253}
+          value={draft.host}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              host: event.target.value,
+            }))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-port`} label="Port">
+        <Input
+          id={`${scope}-smtp-port`}
+          required
+          type="number"
+          min={1}
+          max={65535}
+          value={draft.port}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              port: Number(event.target.value),
+            }))
+          }
+        />
+      </FormField>
+      <label>
+        Security
+        <select
+          value={draft.security}
+          onChange={(event) => {
+            const security = parseSmtpSecurity(event.target.value);
+            if (security) {
+              updateDraft((current) => ({ ...current, security }));
+            }
+          }}
+        >
+          <option value="tls">TLS</option>
+          <option value="starttls">STARTTLS</option>
+          <option value="plain_local">Plain local (development only)</option>
+        </select>
+      </label>
+      <FormField htmlFor={`${scope}-smtp-username`} label="Username" optional>
+        <Input
+          id={`${scope}-smtp-username`}
+          autoComplete="off"
+          value={draft.username ?? ""}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              username: event.target.value || null,
+            }))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${scope}-smtp-password`}
+        label="New password"
+        optional
+        hint="Never returned by the API"
+      >
+        <Input
+          id={`${scope}-smtp-password`}
+          type="password"
+          autoComplete="new-password"
+          value={draft.password ?? ""}
+          onChange={(event) =>
+            updateDraft((current) => withPassword(current, event.target.value))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-from-name`} label="From name">
+        <Input
+          id={`${scope}-smtp-from-name`}
+          required
+          value={draft.fromName}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              fromName: event.target.value,
+            }))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-from-email`} label="From email">
+        <Input
+          id={`${scope}-smtp-from-email`}
+          required
+          type="email"
+          value={draft.fromEmail}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              fromEmail: event.target.value,
+            }))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-reply`} label="Reply-to" optional>
+        <Input
+          id={`${scope}-smtp-reply`}
+          type="email"
+          value={draft.replyToEmail ?? ""}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              replyToEmail: event.target.value || null,
+            }))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-timeout`} label="Timeout (ms)">
+        <Input
+          id={`${scope}-smtp-timeout`}
+          required
+          type="number"
+          min={100}
+          value={draft.timeoutMs}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              timeoutMs: Number(event.target.value),
+            }))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${scope}-smtp-connections`}
+        label="Maximum connections"
+      >
+        <Input
+          id={`${scope}-smtp-connections`}
+          required
+          type="number"
+          min={1}
+          value={draft.maximumConnections}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              maximumConnections: Number(event.target.value),
+            }))
+          }
+        />
+      </FormField>
+      <FormField htmlFor={`${scope}-smtp-rate`} label="Rate / second">
+        <Input
+          id={`${scope}-smtp-rate`}
+          required
+          type="number"
+          min={1}
+          value={draft.rateLimitPerSecond}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              rateLimitPerSecond: Number(event.target.value),
+            }))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${scope}-smtp-max-messages`}
+        label="Messages / connection"
+      >
+        <Input
+          id={`${scope}-smtp-max-messages`}
+          required
+          type="number"
+          min={1}
+          value={draft.maximumMessagesPerConnection}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              maximumMessagesPerConnection: Number(event.target.value),
+            }))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${scope}-smtp-dkim-domain`}
+        label="DKIM domain"
+        optional
+      >
+        <Input
+          id={`${scope}-smtp-dkim-domain`}
+          value={draft.dkim?.domainName ?? ""}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              dkim: {
+                domainName: event.target.value,
+                selector: current.dkim?.selector ?? "",
+              },
+            }))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${scope}-smtp-dkim-selector`}
+        label="DKIM selector"
+        optional
+      >
+        <Input
+          id={`${scope}-smtp-dkim-selector`}
+          value={draft.dkim?.selector ?? ""}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              dkim: {
+                domainName: current.dkim?.domainName ?? "",
+                selector: event.target.value,
+                ...(current.dkim?.privateKey
+                  ? { privateKey: current.dkim.privateKey }
+                  : {}),
+              },
+            }))
+          }
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${scope}-smtp-dkim-key`}
+        label="New DKIM private key"
+        optional
+        hint="Write-only; blank retains the pin"
+      >
+        <Input
+          id={`${scope}-smtp-dkim-key`}
+          type="password"
+          autoComplete="new-password"
+          value={draft.dkim?.privateKey ?? ""}
+          onChange={(event) =>
+            updateDraft((current) => ({
+              ...current,
+              dkim: {
+                domainName: current.dkim?.domainName ?? "",
+                selector: current.dkim?.selector ?? "",
+                ...(event.target.value
+                  ? { privateKey: event.target.value }
+                  : {}),
+              },
+            }))
+          }
+        />
+      </FormField>
+    </div>
+  );
+}
+
+interface SmtpProviderSummaryProps {
+  busy: "save" | "test" | null;
+  health: SmtpConfigurationHealth | PlatformSmtpConfigurationHealth | null;
+  isInherited: boolean;
+  projection: SmtpConfiguration | undefined;
+  reason: string;
+  recipient: string;
+  scope: "platform" | "tenant";
+  setReason: React.Dispatch<React.SetStateAction<string>>;
+  setRecipient: React.Dispatch<React.SetStateAction<string>>;
+  snapshot: SmtpSnapshot;
+  test: () => Promise<void>;
+  testAttempt: React.RefObject<MutationAttemptReference>;
+}
+
+function SmtpProviderSummary({
+  busy,
+  health,
+  isInherited,
+  projection,
+  reason,
+  recipient,
+  scope,
+  setReason,
+  setRecipient,
+  snapshot,
+  test,
+  testAttempt,
+}: SmtpProviderSummaryProps): React.JSX.Element {
+  return (
+    <section className="notification-provider-summary">
+      <div className="notification-provider-summary__title">
+        <div className="notification-provider-icon">
+          <MailCheck aria-hidden="true" />
+        </div>
+        <div>
+          <p className="section-label">Effective provider</p>
+          <h2>{projection?.name ?? "No relay configured"}</h2>
+        </div>
+      </div>
+      {snapshot.kind === "loading" ? (
+        <NotificationLoading label="Loading SMTP configuration" />
+      ) : null}
+      {snapshot.kind === "error" ? (
+        <NotificationError
+          error={snapshot.error}
+          fallback="SMTP configuration could not be loaded."
+        />
+      ) : null}
+      {snapshot.kind === "empty" ? (
+        <NotificationEmpty
+          title="No SMTP configuration"
+          detail={
+            scope === "tenant"
+              ? "No tenant override or platform fallback is available."
+              : "Create the global relay used when tenants do not override it."
+          }
+        />
+      ) : null}
+      {projection ? (
+        <SmtpConfigurationSummary
+          isInherited={isInherited}
+          projection={projection}
+          scope={scope}
+        />
+      ) : null}
+      {projection ? (
+        <SmtpDeliveryTest
+          busy={busy}
+          health={health}
+          reason={reason}
+          recipient={recipient}
+          scope={scope}
+          setReason={setReason}
+          setRecipient={setRecipient}
+          test={test}
+          testAttempt={testAttempt}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+interface SmtpDeliveryTestProps {
+  busy: "save" | "test" | null;
+  health: SmtpConfigurationHealth | PlatformSmtpConfigurationHealth | null;
+  reason: string;
+  recipient: string;
+  scope: "platform" | "tenant";
+  setReason: React.Dispatch<React.SetStateAction<string>>;
+  setRecipient: React.Dispatch<React.SetStateAction<string>>;
+  test: () => Promise<void>;
+  testAttempt: React.RefObject<MutationAttemptReference>;
+}
+
+function SmtpDeliveryTest({
+  busy,
+  health,
+  reason,
+  recipient,
+  scope,
+  setReason,
+  setRecipient,
+  test,
+  testAttempt,
+}: SmtpDeliveryTestProps): React.JSX.Element {
+  return (
+    <section className="notification-toolbox">
+      <h3>Provider health check</h3>
+      <div className="notification-form-grid">
+        {scope === "tenant" ? (
+          <FormField
+            htmlFor={`${scope}-smtp-test-recipient`}
+            label="Optional test recipient"
+          >
+            <Input
+              id={`${scope}-smtp-test-recipient`}
+              type="email"
+              autoComplete="off"
+              value={recipient}
+              onChange={(event) => {
+                setRecipient(event.target.value);
+                resetMutationAttempt(testAttempt.current);
+              }}
+            />
+          </FormField>
+        ) : null}
+        <FormField htmlFor={`${scope}-smtp-test-reason`} label="Audited reason">
+          <Input
+            id={`${scope}-smtp-test-reason`}
+            maxLength={500}
+            value={reason}
+            onChange={(event) => {
+              setReason(event.target.value);
+              resetMutationAttempt(testAttempt.current);
+            }}
+          />
+        </FormField>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={busy !== null || !reason.trim()}
+        onClick={() => void test()}
+      >
+        <MailCheck aria-hidden="true" /> Run health check
+      </Button>
+      {health ? (
+        <div className="notification-health" role="status">
+          <strong>
+            {health.healthy ? "Provider healthy" : "Provider degraded"}
+          </strong>
+          <ul>
+            {health.checks.map((check) => (
+              <li key={check.kind}>
+                <span>{check.kind}</span>
+                <Badge
+                  variant={
+                    check.outcome === "failed" ? "destructive" : "outline"
+                  }
+                >
+                  {check.outcome}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+interface SmtpConfigurationSummaryProps {
+  isInherited: boolean;
+  projection: SmtpConfiguration;
+  scope: "platform" | "tenant";
+}
+
+function SmtpConfigurationSummary({
+  isInherited,
+  projection,
+  scope,
+}: SmtpConfigurationSummaryProps): React.JSX.Element {
+  return (
+    <dl className="notification-definition-list">
+      <div>
+        <dt>Boundary</dt>
+        <dd>
+          {isInherited ? (
+            <Badge variant="secondary">Platform fallback</Badge>
+          ) : (
+            <Badge variant="outline">
+              {scope === "tenant" ? "Tenant override" : "Platform"}
+            </Badge>
+          )}
+        </dd>
+      </div>
+      <div>
+        <dt>Endpoint</dt>
+        <dd>
+          {projection.host}:{projection.port} / {projection.security}
+        </dd>
+      </div>
+      <div>
+        <dt>Credentials</dt>
+        <dd>
+          {projection.passwordConfigured ? "Password pinned" : "No password"}
+        </dd>
+      </div>
+      <div>
+        <dt>DKIM</dt>
+        <dd>
+          {projection.dkim?.privateKeyConfigured
+            ? `${projection.dkim.selector} · key pinned`
+            : "Not configured"}
+        </dd>
+      </div>
+      <div>
+        <dt>Version</dt>
+        <dd>v{projection.version}</dd>
+      </div>
+    </dl>
+  );
 }

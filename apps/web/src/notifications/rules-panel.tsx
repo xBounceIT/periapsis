@@ -11,26 +11,24 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
 import { PencilLine, Plus } from "lucide-react";
 import { useCallback, useRef, useState, type FormEvent } from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
 
 import { FormField } from "../components/form-field";
 import { TenantInstant } from "../lib/tenant-date-time-context";
-import type { NotificationAdminApi, Versioned } from "./notification-api";
 import {
   bindMutationAttempt,
   emptyRuleWrite,
   parseCondition,
   parseRecipients,
   resetMutationAttempt,
-  safeNotificationError,
   type MutationAttemptReference,
 } from "./model";
+import type { NotificationAdminApi, Versioned } from "./notification-api";
 import {
   EditorActions,
   InventoryHeading,
@@ -38,7 +36,10 @@ import {
   NotificationError,
   NotificationLoading,
 } from "./notification-primitives";
-import { useCursorInventory } from "./use-cursor-inventory";
+import {
+  useCursorInventory,
+  type CursorInventory,
+} from "./use-cursor-inventory";
 
 const eventTypes = [
   "alert.created",
@@ -187,347 +188,23 @@ export function RulesPanel({
 
   return (
     <div className="notification-panel-grid">
-      <section
-        className="notification-inventory"
-        aria-busy={inventory.kind === "loading"}
-      >
-        <InventoryHeading
-          busy={inventory.kind === "loading"}
-          count={inventory.items.length}
-          label="Routing rules"
-          onRefresh={inventory.refresh}
-        />
-        {inventory.kind === "loading" ? (
-          <NotificationLoading label="Loading routing rules" />
-        ) : null}
-        {inventory.error ? (
-          <NotificationError
-            error={inventory.error}
-            fallback="Routing rules could not be loaded."
-          />
-        ) : null}
-        {inventory.kind === "ready" && inventory.items.length === 0 ? (
-          <NotificationEmpty
-            title="No routing rules"
-            detail="Create the first versioned rule to connect an event, audience, and channel."
-            action={
-              <Button type="button" onClick={createRule}>
-                <Plus aria-hidden="true" /> Create rule
-              </Button>
-            }
-          />
-        ) : null}
-        {inventory.items.length > 0 ? (
-          <div className="notification-table-wrap">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Rule</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inventory.items.map((rule) => (
-                  <TableRow key={rule.id}>
-                    <TableCell>
-                      <strong>{rule.name}</strong>
-                      <small>{rule.description || "No description"}</small>
-                    </TableCell>
-                    <TableCell>
-                      <code>{rule.eventType}</code>
-                      <small>
-                        {rule.channel} · priority {rule.priority}
-                      </small>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={rule.enabled ? "secondary" : "outline"}>
-                        {rule.enabled ? "Enabled" : "Paused"}
-                      </Badge>
-                      <small>
-                        v{rule.version} ·{" "}
-                        <TenantInstant value={rule.effectiveFrom} />
-                      </small>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => void editRule(rule.id)}
-                      >
-                        <PencilLine aria-hidden="true" /> Version
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : null}
-        {inventory.nextCursor ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={inventory.loadingMore}
-            onClick={() => void inventory.loadMore()}
-          >
-            Load more rules
-          </Button>
-        ) : null}
-        {inventory.items.length > 0 ? (
-          <Button type="button" variant="outline" onClick={createRule}>
-            <Plus aria-hidden="true" /> New rule
-          </Button>
-        ) : null}
-      </section>
+      <RuleInventory
+        busy={busy}
+        createRule={createRule}
+        editRule={editRule}
+        inventory={inventory}
+      />
 
-      <aside className="notification-editor" aria-label="Rule version editor">
-        {!editing ? (
-          <NotificationEmpty
-            title="Select a rule"
-            detail="Open a current rule to append a version, or start a new lineage."
-          />
-        ) : (
-          <form onSubmit={(event) => void saveRule(event)}>
-            <header>
-              <div>
-                <p className="section-label">
-                  {editing === "new"
-                    ? "New lineage"
-                    : `Rule ${editing.value.id}`}
-                </p>
-                <h2>
-                  {editing === "new"
-                    ? "Create routing rule"
-                    : `Append version ${editing.value.version + 1}`}
-                </h2>
-              </div>
-              {editing !== "new" ? (
-                <Badge variant="outline">ETag {editing.etag}</Badge>
-              ) : null}
-            </header>
-            {error ? (
-              <NotificationError
-                error={error}
-                fallback="The rule could not be saved."
-              />
-            ) : null}
-            {notice ? (
-              <p className="notification-notice" role="status">
-                {notice}
-              </p>
-            ) : null}
-            <div className="notification-form-grid">
-              <FormField htmlFor="notification-rule-name" label="Name">
-                <Input
-                  id="notification-rule-name"
-                  required
-                  maxLength={160}
-                  value={draft.name}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="notification-rule-description"
-                label="Description"
-              >
-                <Input
-                  id="notification-rule-description"
-                  required
-                  maxLength={500}
-                  value={draft.description}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <NativeSelect
-                id="notification-rule-event"
-                label="Event"
-                value={draft.eventType}
-                options={eventTypes}
-                onChange={(eventType) =>
-                  setDraft((current) => ({ ...current, eventType }))
-                }
-              />
-              <NativeSelect
-                id="notification-rule-object"
-                label="Object"
-                value={draft.objectType}
-                options={objectTypes}
-                onChange={(objectType) =>
-                  setDraft((current) => ({ ...current, objectType }))
-                }
-              />
-              <NativeSelect
-                id="notification-rule-channel"
-                label="Channel"
-                value={draft.channel}
-                options={["email", "webhook"] as const}
-                onChange={(channel) =>
-                  setDraft((current) => ({ ...current, channel }))
-                }
-              />
-              <FormField
-                htmlFor="notification-rule-template"
-                label="Template ID"
-              >
-                <Input
-                  id="notification-rule-template"
-                  required
-                  maxLength={160}
-                  value={draft.templateId}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      templateId: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="notification-rule-template-version"
-                label="Template version"
-              >
-                <Input
-                  id="notification-rule-template-version"
-                  required
-                  type="number"
-                  min={1}
-                  value={draft.templateVersion}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      templateVersion: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField htmlFor="notification-rule-priority" label="Priority">
-                <Input
-                  id="notification-rule-priority"
-                  required
-                  type="number"
-                  min={0}
-                  max={1000}
-                  value={draft.priority}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      priority: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField htmlFor="notification-rule-delay" label="Delay (ms)">
-                <Input
-                  id="notification-rule-delay"
-                  required
-                  type="number"
-                  min={0}
-                  value={draft.delayMs}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      delayMs: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="notification-rule-effective"
-                label="Effective from"
-                hint="RFC 3339 instant"
-              >
-                <Input
-                  id="notification-rule-effective"
-                  required
-                  value={draft.effectiveFrom}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      effectiveFrom: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-            </div>
-            <FormField
-              htmlFor="notification-rule-condition"
-              label="Condition JSON"
-              hint="Closed all, any, not, or predicate tree"
-            >
-              <Textarea
-                id="notification-rule-condition"
-                required
-                rows={6}
-                value={draft.condition}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    condition: event.target.value,
-                  }))
-                }
-              />
-            </FormField>
-            <FormField
-              htmlFor="notification-rule-recipients"
-              label="Recipient selectors JSON"
-            >
-              <Textarea
-                id="notification-rule-recipients"
-                required
-                rows={5}
-                value={draft.recipients}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    recipients: event.target.value,
-                  }))
-                }
-              />
-            </FormField>
-            <label className="notification-check">
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    enabled: event.target.checked,
-                  }))
-                }
-              />{" "}
-              Enable this version
-            </label>
-            <EditorActions
-              busy={busy}
-              submitLabel={editing === "new" ? "Create rule" : "Append version"}
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setEditing(null)}
-              >
-                Close editor
-              </Button>
-            </EditorActions>
-          </form>
-        )}
-      </aside>
+      <RuleEditor
+        busy={busy}
+        draft={draft}
+        editing={editing}
+        error={error}
+        notice={notice}
+        saveRule={saveRule}
+        setDraft={setDraft}
+        setEditing={setEditing}
+      />
     </div>
   );
 }
@@ -602,6 +279,375 @@ function NativeSelect<T extends string>({
   );
 }
 
-export function describeRuleError(value: unknown): string {
-  return safeNotificationError(value, "The rule could not be saved.");
+interface RuleEditorProps {
+  busy: boolean;
+  draft: RuleDraft;
+  editing: Versioned<NotificationRule> | "new" | null;
+  error: unknown;
+  notice: string | null;
+  saveRule: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  setDraft: React.Dispatch<React.SetStateAction<RuleDraft>>;
+  setEditing: React.Dispatch<
+    React.SetStateAction<Versioned<NotificationRule> | "new" | null>
+  >;
+}
+
+function RuleEditor({
+  busy,
+  draft,
+  editing,
+  error,
+  notice,
+  saveRule,
+  setDraft,
+  setEditing,
+}: RuleEditorProps): React.JSX.Element {
+  return (
+    <aside className="notification-editor" aria-label="Rule version editor">
+      {!editing ? (
+        <NotificationEmpty
+          title="Select a rule"
+          detail="Open a current rule to append a version, or start a new lineage."
+        />
+      ) : (
+        <form onSubmit={(event) => void saveRule(event)}>
+          <header>
+            <div>
+              <p className="section-label">
+                {editing === "new" ? "New lineage" : `Rule ${editing.value.id}`}
+              </p>
+              <h2>
+                {editing === "new"
+                  ? "Create routing rule"
+                  : `Append version ${editing.value.version + 1}`}
+              </h2>
+            </div>
+            {editing !== "new" ? (
+              <Badge variant="outline">ETag {editing.etag}</Badge>
+            ) : null}
+          </header>
+          {error ? (
+            <NotificationError
+              error={error}
+              fallback="The rule could not be saved."
+            />
+          ) : null}
+          {notice ? (
+            <p className="notification-notice" role="status">
+              {notice}
+            </p>
+          ) : null}
+          <div className="notification-form-grid">
+            <FormField htmlFor="notification-rule-name" label="Name">
+              <Input
+                id="notification-rule-name"
+                required
+                maxLength={160}
+                value={draft.name}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField
+              htmlFor="notification-rule-description"
+              label="Description"
+            >
+              <Input
+                id="notification-rule-description"
+                required
+                maxLength={500}
+                value={draft.description}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <NativeSelect
+              id="notification-rule-event"
+              label="Event"
+              value={draft.eventType}
+              options={eventTypes}
+              onChange={(eventType) =>
+                setDraft((current) => ({ ...current, eventType }))
+              }
+            />
+            <NativeSelect
+              id="notification-rule-object"
+              label="Object"
+              value={draft.objectType}
+              options={objectTypes}
+              onChange={(objectType) =>
+                setDraft((current) => ({ ...current, objectType }))
+              }
+            />
+            <NativeSelect
+              id="notification-rule-channel"
+              label="Channel"
+              value={draft.channel}
+              options={["email", "webhook"] as const}
+              onChange={(channel) =>
+                setDraft((current) => ({ ...current, channel }))
+              }
+            />
+            <FormField htmlFor="notification-rule-template" label="Template ID">
+              <Input
+                id="notification-rule-template"
+                required
+                maxLength={160}
+                value={draft.templateId}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    templateId: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField
+              htmlFor="notification-rule-template-version"
+              label="Template version"
+            >
+              <Input
+                id="notification-rule-template-version"
+                required
+                type="number"
+                min={1}
+                value={draft.templateVersion}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    templateVersion: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField htmlFor="notification-rule-priority" label="Priority">
+              <Input
+                id="notification-rule-priority"
+                required
+                type="number"
+                min={0}
+                max={1000}
+                value={draft.priority}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    priority: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField htmlFor="notification-rule-delay" label="Delay (ms)">
+              <Input
+                id="notification-rule-delay"
+                required
+                type="number"
+                min={0}
+                value={draft.delayMs}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    delayMs: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField
+              htmlFor="notification-rule-effective"
+              label="Effective from"
+              hint="RFC 3339 instant"
+            >
+              <Input
+                id="notification-rule-effective"
+                required
+                value={draft.effectiveFrom}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    effectiveFrom: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+          </div>
+          <FormField
+            htmlFor="notification-rule-condition"
+            label="Condition JSON"
+            hint="Closed all, any, not, or predicate tree"
+          >
+            <Textarea
+              id="notification-rule-condition"
+              required
+              rows={6}
+              value={draft.condition}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  condition: event.target.value,
+                }))
+              }
+            />
+          </FormField>
+          <FormField
+            htmlFor="notification-rule-recipients"
+            label="Recipient selectors JSON"
+          >
+            <Textarea
+              id="notification-rule-recipients"
+              required
+              rows={5}
+              value={draft.recipients}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  recipients: event.target.value,
+                }))
+              }
+            />
+          </FormField>
+          <label className="notification-check">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  enabled: event.target.checked,
+                }))
+              }
+            />{" "}
+            Enable this version
+          </label>
+          <EditorActions
+            busy={busy}
+            submitLabel={editing === "new" ? "Create rule" : "Append version"}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setEditing(null)}
+            >
+              Close editor
+            </Button>
+          </EditorActions>
+        </form>
+      )}
+    </aside>
+  );
+}
+
+interface RuleInventoryProps {
+  busy: boolean;
+  createRule: () => void;
+  editRule: (id: string) => Promise<void>;
+  inventory: CursorInventory<NotificationRule>;
+}
+
+function RuleInventory({
+  busy,
+  createRule,
+  editRule,
+  inventory,
+}: RuleInventoryProps): React.JSX.Element {
+  return (
+    <section
+      className="notification-inventory"
+      aria-busy={inventory.kind === "loading"}
+    >
+      <InventoryHeading
+        busy={inventory.kind === "loading"}
+        count={inventory.items.length}
+        label="Routing rules"
+        onRefresh={inventory.refresh}
+      />
+      {inventory.kind === "loading" ? (
+        <NotificationLoading label="Loading routing rules" />
+      ) : null}
+      {inventory.error ? (
+        <NotificationError
+          error={inventory.error}
+          fallback="Routing rules could not be loaded."
+        />
+      ) : null}
+      {inventory.kind === "ready" && inventory.items.length === 0 ? (
+        <NotificationEmpty
+          title="No routing rules"
+          detail="Create the first versioned rule to connect an event, audience, and channel."
+          action={
+            <Button type="button" onClick={createRule}>
+              <Plus aria-hidden="true" /> Create rule
+            </Button>
+          }
+        />
+      ) : null}
+      {inventory.items.length > 0 ? (
+        <div className="notification-table-wrap">
+          <Table>
+            <TableColumnHeaders
+              columns={["Rule", "Route", "State"]}
+              actionLabel="Actions"
+            />
+            <TableBody>
+              {inventory.items.map((rule) => (
+                <TableRow key={rule.id}>
+                  <TableCell>
+                    <strong>{rule.name}</strong>
+                    <small>{rule.description || "No description"}</small>
+                  </TableCell>
+                  <TableCell>
+                    <code>{rule.eventType}</code>
+                    <small>
+                      {rule.channel} · priority {rule.priority}
+                    </small>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={rule.enabled ? "secondary" : "outline"}>
+                      {rule.enabled ? "Enabled" : "Paused"}
+                    </Badge>
+                    <small>
+                      v{rule.version} ·{" "}
+                      <TenantInstant value={rule.effectiveFrom} />
+                    </small>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => void editRule(rule.id)}
+                    >
+                      <PencilLine aria-hidden="true" /> Version
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+      {inventory.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={inventory.loadingMore}
+          onClick={() => void inventory.loadMore()}
+        >
+          Load more rules
+        </Button>
+      ) : null}
+      {inventory.items.length > 0 ? (
+        <Button type="button" variant="outline" onClick={createRule}>
+          <Plus aria-hidden="true" /> New rule
+        </Button>
+      ) : null}
+    </section>
+  );
 }

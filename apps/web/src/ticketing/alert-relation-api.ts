@@ -11,12 +11,12 @@ import {
   hasGoTrimSpaceAtEdge,
   hasUnpairedSurrogate,
 } from "../lib/canonical-display-name";
+import { parseRfc3339Instant } from "../lib/rfc3339-instant";
+import { sessionAwareFetch } from "../lib/session-transition-transport";
 import {
   hasBidiControlCharacters,
   hasControlCharacters,
 } from "../lib/text-validation";
-import { parseRfc3339Instant } from "../lib/rfc3339-instant";
-import { sessionAwareFetch } from "../lib/session-transition-transport";
 
 export interface AlertRelationPage {
   items: readonly AlertRelation[];
@@ -709,7 +709,8 @@ function hasOnlyKeys(
   value: Record<string, unknown>,
   allowed: readonly string[],
 ): boolean {
-  return Object.keys(value).every((key) => allowed.includes(key));
+  const allowedKeys = new Set(allowed);
+  return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
 function hasExactKeys(

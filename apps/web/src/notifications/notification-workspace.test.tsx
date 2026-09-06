@@ -30,6 +30,27 @@ afterEach(() => {
 });
 
 describe("TenantNotificationWorkspace", () => {
+  it("preserves the focused webhook rule when an earlier rule is removed", async () => {
+    render(
+      <TenantNotificationWorkspace
+        api={createNotificationApiMock()}
+        canManage
+        csrfToken="csrf"
+        initialPanel="egress-policy"
+        tenantId={fixtureTenantId}
+      />,
+    );
+    await screen.findByRole("heading", { name: "Publish version 2" });
+    fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
+    const hostname = screen.getAllByLabelText("DNS hostname")[1]!;
+    fireEvent.change(hostname, { target: { value: "retained.example.test" } });
+    hostname.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Remove rule 1" }));
+    expect(screen.getByLabelText("DNS hostname")).toBe(hostname);
+    expect(hostname).toHaveFocus();
+    expect(hostname).toHaveValue("retained.example.test");
+  });
+
   it("denies by default without treating UI visibility as server authority", () => {
     const listRules = vi.fn<NotificationAdminApi["listRules"]>();
     render(

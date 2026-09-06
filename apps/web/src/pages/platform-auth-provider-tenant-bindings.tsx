@@ -10,8 +10,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import {
@@ -24,7 +22,19 @@ import {
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
+import { FormValidationAlert } from "./form-validation-alert";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
@@ -97,7 +107,15 @@ const emptyCreateDraft: CreateBindingDraft = {
   tenantId: "",
 };
 
-export function PlatformAuthProviderTenantBindings({
+export function PlatformAuthProviderTenantBindings(
+  props: PlatformAuthProviderTenantBindingsProps,
+): React.JSX.Element {
+  const model = usePlatformAuthProviderTenantBindingsModel(props);
+  if (model.kind === "content") return model.content;
+  return <PlatformAuthProviderTenantBindingsView model={model.data} />;
+}
+
+function usePlatformAuthProviderTenantBindingsModel({
   api,
   canManage,
   canRead,
@@ -115,39 +133,200 @@ export function PlatformAuthProviderTenantBindings({
   providerId,
   refreshRevision = 0,
   sessionId,
-}: PlatformAuthProviderTenantBindingsProps): React.JSX.Element {
+}: PlatformAuthProviderTenantBindingsProps) {
   const titleId = useId();
-  const [listState, setListState] = useState<BindingListState>({
-    kind: "loading",
-  });
-  const [listRevision, setListRevision] = useState(0);
-  const [paginationError, setPaginationError] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createDraft, setCreateDraft] =
-    useState<CreateBindingDraft>(emptyCreateDraft);
-  const [detailState, setDetailState] = useState<BindingDetailState>({
-    kind: "idle",
-  });
-  const [editDraft, setEditDraft] = useState<BindingDraft | null>(null);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [archiveReason, setArchiveReason] = useState("");
-  const [archiveConfirmation, setArchiveConfirmation] = useState("");
-  const [lifecycleCommand, setLifecycleCommand] =
-    useState<BindingLifecycleCommand | null>(null);
-  const [lifecycleReason, setLifecycleReason] = useState("");
-  const [lifecycleConfirmation, setLifecycleConfirmation] = useState("");
-  const [jitMode, setJitMode] = useState<BindingJitMode>("disabled");
-  const [noMatchPolicy, setNoMatchPolicy] =
-    useState<BindingNoMatchPolicy>("deny");
-  const [validationErrors, setValidationErrors] = useState<readonly string[]>(
-    [],
+  const handleAuthorizationError = useCallback(
+    (caught: unknown): boolean => {
+      if (caught instanceof PhaseTwoApiError && caught.status === 401) {
+        onUnauthenticated();
+        return true;
+      }
+      if (caught instanceof PhaseTwoApiError && caught.status === 403) {
+        onPermissionError();
+      }
+      return false;
+    },
+    [onUnauthenticated, onPermissionError],
   );
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<
-    "activate" | "archive" | "create" | "deactivate" | "update" | null
-  >(null);
-  const [providerActiveObserved, setProviderActiveObserved] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<PlatformAuthProviderTenantBindingsState>,
+    undefined,
+    (): PlatformAuthProviderTenantBindingsState => ({
+      listState: {
+        kind: "loading",
+      },
+      listRevision: 0,
+      paginationError: null,
+      loadingMore: false,
+      createOpen: false,
+      createDraft: emptyCreateDraft,
+      detailState: {
+        kind: "idle",
+      },
+      editDraft: null,
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      jitMode: "disabled",
+      noMatchPolicy: "deny",
+      validationErrors: [],
+      mutationError: null,
+      submitting: null,
+      providerActiveObserved: false,
+    }),
+  );
+  const {
+    listState,
+    listRevision,
+    paginationError,
+    loadingMore,
+    createOpen,
+    createDraft,
+    detailState,
+    editDraft,
+    archiveOpen,
+    archiveReason,
+    archiveConfirmation,
+    lifecycleCommand,
+    lifecycleReason,
+    lifecycleConfirmation,
+    jitMode,
+    noMatchPolicy,
+    validationErrors,
+    mutationError,
+    submitting,
+    providerActiveObserved,
+  } = workspaceState;
+  const {
+    setListState,
+    setListRevision,
+    setPaginationError,
+    setLoadingMore,
+    setCreateOpen,
+    setCreateDraft,
+    setDetailState,
+    setEditDraft,
+    setArchiveOpen,
+    setArchiveReason,
+    setArchiveConfirmation,
+    setLifecycleCommand,
+    setLifecycleReason,
+    setLifecycleConfirmation,
+    setJitMode,
+    setNoMatchPolicy,
+    setValidationErrors,
+    setMutationError,
+    setSubmitting,
+    setProviderActiveObserved,
+  } = useMemo(
+    () => ({
+      setListState: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["listState"]
+        >,
+      ) => updateWorkspaceState({ listState: value }),
+      setListRevision: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["listRevision"]
+        >,
+      ) => updateWorkspaceState({ listRevision: value }),
+      setPaginationError: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["paginationError"]
+        >,
+      ) => updateWorkspaceState({ paginationError: value }),
+      setLoadingMore: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["loadingMore"]
+        >,
+      ) => updateWorkspaceState({ loadingMore: value }),
+      setCreateOpen: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["createOpen"]
+        >,
+      ) => updateWorkspaceState({ createOpen: value }),
+      setCreateDraft: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["createDraft"]
+        >,
+      ) => updateWorkspaceState({ createDraft: value }),
+      setDetailState: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["detailState"]
+        >,
+      ) => updateWorkspaceState({ detailState: value }),
+      setEditDraft: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["editDraft"]
+        >,
+      ) => updateWorkspaceState({ editDraft: value }),
+      setArchiveOpen: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["archiveOpen"]
+        >,
+      ) => updateWorkspaceState({ archiveOpen: value }),
+      setArchiveReason: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["archiveReason"]
+        >,
+      ) => updateWorkspaceState({ archiveReason: value }),
+      setArchiveConfirmation: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["archiveConfirmation"]
+        >,
+      ) => updateWorkspaceState({ archiveConfirmation: value }),
+      setLifecycleCommand: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["lifecycleCommand"]
+        >,
+      ) => updateWorkspaceState({ lifecycleCommand: value }),
+      setLifecycleReason: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["lifecycleReason"]
+        >,
+      ) => updateWorkspaceState({ lifecycleReason: value }),
+      setLifecycleConfirmation: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["lifecycleConfirmation"]
+        >,
+      ) => updateWorkspaceState({ lifecycleConfirmation: value }),
+      setJitMode: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["jitMode"]
+        >,
+      ) => updateWorkspaceState({ jitMode: value }),
+      setNoMatchPolicy: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["noMatchPolicy"]
+        >,
+      ) => updateWorkspaceState({ noMatchPolicy: value }),
+      setValidationErrors: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["validationErrors"]
+        >,
+      ) => updateWorkspaceState({ validationErrors: value }),
+      setMutationError: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["mutationError"]
+        >,
+      ) => updateWorkspaceState({ mutationError: value }),
+      setSubmitting: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["submitting"]
+        >,
+      ) => updateWorkspaceState({ submitting: value }),
+      setProviderActiveObserved: (
+        value: React.SetStateAction<
+          PlatformAuthProviderTenantBindingsState["providerActiveObserved"]
+        >,
+      ) => updateWorkspaceState({ providerActiveObserved: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const providerExecutionActive =
     providerEnabled === true || providerActiveObserved;
   const contextRef = useRef({
@@ -172,15 +351,25 @@ export function PlatformAuthProviderTenantBindings({
     fingerprint: string;
     key: string;
   } | null>(null);
-  contextRef.current = {
+  useLayoutEffect(() => {
+    contextRef.current = {
+      canManage,
+      canRead,
+      providerArchived,
+      providerExecutionActive,
+      providerMutationBusy,
+      providerId,
+      sessionId,
+    };
+  }, [
     canManage,
     canRead,
     providerArchived,
     providerExecutionActive,
-    providerMutationBusy,
     providerId,
+    providerMutationBusy,
     sessionId,
-  };
+  ]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -196,23 +385,25 @@ export function PlatformAuthProviderTenantBindings({
   }, [onMutationBusyChange]);
 
   useEffect(() => {
-    setCreateOpen(false);
-    setCreateDraft(emptyCreateDraft);
-    setDetailState({ kind: "idle" });
-    setEditDraft(null);
-    setArchiveOpen(false);
-    setArchiveReason("");
-    setArchiveConfirmation("");
-    setLifecycleCommand(null);
-    setLifecycleReason("");
-    setLifecycleConfirmation("");
-    setJitMode("disabled");
-    setNoMatchPolicy("deny");
-    setValidationErrors([]);
-    setMutationError(null);
-    setSubmitting(null);
-    setProviderActiveObserved(false);
-    setPaginationError(null);
+    updateWorkspaceState({
+      createOpen: false,
+      createDraft: emptyCreateDraft,
+      detailState: { kind: "idle" },
+      editDraft: null,
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      jitMode: "disabled",
+      noMatchPolicy: "deny",
+      validationErrors: [],
+      mutationError: null,
+      submitting: null,
+      providerActiveObserved: false,
+      paginationError: null,
+    });
     detailAbortRef.current?.abort();
     detailAbortRef.current = null;
     paginationAbortRef.current?.abort();
@@ -228,7 +419,7 @@ export function PlatformAuthProviderTenantBindings({
 
   useEffect(() => {
     if (providerEnabled === false) setProviderActiveObserved(false);
-  }, [providerEnabled]);
+  }, [setProviderActiveObserved, providerEnabled]);
 
   useEffect(() => {
     if (canRead) return;
@@ -241,22 +432,24 @@ export function PlatformAuthProviderTenantBindings({
     paginationLockRef.current = false;
     mutationLockRef.current = null;
     onMutationBusyChange(false);
-    setCreateOpen(false);
-    setCreateDraft(emptyCreateDraft);
-    setListState({ kind: "loading" });
-    setDetailState({ kind: "idle" });
-    setEditDraft(null);
-    setArchiveOpen(false);
-    setArchiveReason("");
-    setArchiveConfirmation("");
-    setLifecycleCommand(null);
-    setLifecycleReason("");
-    setLifecycleConfirmation("");
-    setMutationError(null);
-    setValidationErrors([]);
-    setSubmitting(null);
-    setPaginationError(null);
-    setLoadingMore(false);
+    updateWorkspaceState({
+      createOpen: false,
+      createDraft: emptyCreateDraft,
+      listState: { kind: "loading" },
+      detailState: { kind: "idle" },
+      editDraft: null,
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      mutationError: null,
+      validationErrors: [],
+      submitting: null,
+      paginationError: null,
+      loadingMore: false,
+    });
     idempotencyBindingRef.current = null;
   }, [canRead, onMutationBusyChange]);
 
@@ -266,33 +459,49 @@ export function PlatformAuthProviderTenantBindings({
     mutationLockRef.current = null;
     setSubmitting(null);
     if (mutationWasPending) onMutationBusyChange(false);
-    setCreateOpen(false);
-    setCreateDraft(emptyCreateDraft);
-    setEditDraft(null);
-    setArchiveOpen(false);
-    setArchiveReason("");
-    setArchiveConfirmation("");
-    setLifecycleCommand(null);
-    setLifecycleReason("");
-    setLifecycleConfirmation("");
-    setJitMode("disabled");
-    setNoMatchPolicy("deny");
-    setValidationErrors([]);
-    setMutationError(null);
+    updateWorkspaceState({
+      createOpen: false,
+      createDraft: emptyCreateDraft,
+      editDraft: null,
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      jitMode: "disabled",
+      noMatchPolicy: "deny",
+      validationErrors: [],
+      mutationError: null,
+    });
     idempotencyBindingRef.current = null;
-  }, [canManage, onMutationBusyChange, providerArchived, providerMutationBusy]);
+  }, [
+    setSubmitting,
+    canManage,
+    onMutationBusyChange,
+    providerArchived,
+    providerMutationBusy,
+  ]);
 
   useEffect(() => {
     if (!providerExecutionActive) return;
-    setCreateOpen(false);
-    setCreateDraft(emptyCreateDraft);
+    updateWorkspaceState({ createOpen: false, createDraft: emptyCreateDraft });
     idempotencyBindingRef.current = null;
     if (submitting === "create") {
       mutationLockRef.current = null;
       setSubmitting(null);
       onMutationBusyChange(false);
     }
-  }, [onMutationBusyChange, providerExecutionActive, submitting]);
+  }, [
+    setSubmitting,
+    onMutationBusyChange,
+    providerExecutionActive,
+    submitting,
+  ]);
+
+  const refreshSelectedBinding = useEffectEvent((bindingId: string) => {
+    void inspectBinding(bindingId);
+  });
 
   useEffect(() => {
     if (externalRefreshRef.current === refreshRevision) return;
@@ -303,8 +512,8 @@ export function PlatformAuthProviderTenantBindings({
         : detailState.kind === "loading" || detailState.kind === "error"
           ? detailState.bindingId
           : null;
-    if (bindingId !== null && canRead) void inspectBinding(bindingId);
-  }, [canRead, refreshRevision]);
+    if (bindingId !== null && canRead) refreshSelectedBinding(bindingId);
+  }, [canRead, detailState, refreshRevision]);
 
   useEffect(() => {
     if (!canRead) return undefined;
@@ -317,9 +526,11 @@ export function PlatformAuthProviderTenantBindings({
     listEpochRef.current = listEpoch;
     paginationLockRef.current = true;
     cursorHistoryRef.current.clear();
-    setListState({ kind: "loading" });
-    setLoadingMore(true);
-    setPaginationError(null);
+    updateWorkspaceState({
+      listState: { kind: "loading" },
+      loadingMore: true,
+      paginationError: null,
+    });
     void api
       .listPlatformAuthProviderTenantBindings(providerId, {
         includeArchived: true,
@@ -374,7 +585,18 @@ export function PlatformAuthProviderTenantBindings({
       controller.abort();
       if (listEpochRef.current === listEpoch) listEpochRef.current += 1;
     };
-  }, [api, canRead, listRevision, providerId, refreshRevision, sessionId]);
+  }, [
+    setProviderActiveObserved,
+    setListState,
+    setLoadingMore,
+    api,
+    canRead,
+    handleAuthorizationError,
+    listRevision,
+    providerId,
+    refreshRevision,
+    sessionId,
+  ]);
 
   function contextIsCurrent(
     expectedProviderId: string,
@@ -395,17 +617,6 @@ export function PlatformAuthProviderTenantBindings({
       contextRef.current.canRead &&
       contextIsCurrent(expectedProviderId, expectedSessionId)
     );
-  }
-
-  function handleAuthorizationError(caught: unknown): boolean {
-    if (caught instanceof PhaseTwoApiError && caught.status === 401) {
-      onUnauthenticated();
-      return true;
-    }
-    if (caught instanceof PhaseTwoApiError && caught.status === 403) {
-      onPermissionError();
-    }
-    return false;
   }
 
   function mutationIsCurrent(
@@ -452,8 +663,7 @@ export function PlatformAuthProviderTenantBindings({
     paginationAbortRef.current?.abort();
     paginationAbortRef.current = controller;
     paginationLockRef.current = true;
-    setLoadingMore(true);
-    setPaginationError(null);
+    updateWorkspaceState({ loadingMore: true, paginationError: null });
     try {
       const page = await api.listPlatformAuthProviderTenantBindings(
         providerId,
@@ -530,6 +740,7 @@ export function PlatformAuthProviderTenantBindings({
       ) {
         paginationAbortRef.current = null;
         paginationLockRef.current = false;
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setLoadingMore(false);
       }
     }
@@ -552,17 +763,19 @@ export function PlatformAuthProviderTenantBindings({
     detailAbortRef.current?.abort();
     detailAbortRef.current = controller;
     detailEpochRef.current = detailEpoch;
-    setCreateOpen(false);
-    setDetailState({ bindingId, kind: "loading" });
-    setEditDraft(null);
-    setArchiveOpen(false);
-    setArchiveReason("");
-    setArchiveConfirmation("");
-    setLifecycleCommand(null);
-    setLifecycleReason("");
-    setLifecycleConfirmation("");
-    setValidationErrors([]);
-    setMutationError(null);
+    updateWorkspaceState({
+      createOpen: false,
+      detailState: { bindingId, kind: "loading" },
+      editDraft: null,
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      validationErrors: [],
+      mutationError: null,
+    });
     try {
       const detail = await api.getPlatformAuthProviderTenantBinding(
         providerId,
@@ -629,8 +842,7 @@ export function PlatformAuthProviderTenantBindings({
       return;
     }
     const errors = validateCreateDraft(createDraft);
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0) return;
     const input = {
       loginKey: createDraft.loginKey,
@@ -667,10 +879,12 @@ export function PlatformAuthProviderTenantBindings({
         return;
       }
       idempotencyBindingRef.current = null;
-      setCreateDraft(emptyCreateDraft);
-      setCreateOpen(false);
-      setDetailState({ kind: "ready", value: created });
-      setListRevision((revision) => revision + 1);
+      updateWorkspaceState({
+        createDraft: emptyCreateDraft,
+        createOpen: false,
+        detailState: { kind: "ready", value: created },
+        listRevision: (revision) => revision + 1,
+      });
       if (created.value.archivedAt !== null) {
         onNotice({
           message: `${created.value.tenant.name} binding is already archived. The safe retry returned its current state and did not create or reactivate a binding.`,
@@ -711,11 +925,13 @@ export function PlatformAuthProviderTenantBindings({
       if (caught instanceof PhaseTwoApiError && caught.status === 409) {
         onProviderProjectionStale?.();
         idempotencyBindingRef.current = null;
-        setCreateDraft(emptyCreateDraft);
-        setCreateOpen(false);
-        setValidationErrors([]);
-        setMutationError(null);
-        setListRevision((revision) => revision + 1);
+        updateWorkspaceState({
+          createDraft: emptyCreateDraft,
+          createOpen: false,
+          validationErrors: [],
+          mutationError: null,
+          listRevision: (revision) => revision + 1,
+        });
         onNotice({
           message:
             "The create request conflicted with current state. Exact replay is bounded to 24 hours; the authorized tenant-binding list is being reloaded before a new attempt.",
@@ -750,8 +966,7 @@ export function PlatformAuthProviderTenantBindings({
       return;
     }
     const errors = validateBindingDraft(editDraft);
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0) return;
     const current = detailState.value;
     const expectedProviderId = providerId;
@@ -783,9 +998,11 @@ export function PlatformAuthProviderTenantBindings({
       if (bindingRequiresActiveProvider(updated.value)) {
         setProviderActiveObserved(true);
       }
-      setEditDraft(null);
-      setValidationErrors([]);
-      setListRevision((revision) => revision + 1);
+      updateWorkspaceState({
+        editDraft: null,
+        validationErrors: [],
+        listRevision: (revision) => revision + 1,
+      });
       onNotice({
         message: `${updated.value.tenant.name} binding metadata was updated without changing its admission lifecycle.`,
         tone: "success",
@@ -858,8 +1075,7 @@ export function PlatformAuthProviderTenantBindings({
         ? []
         : [`Type ${current.value.loginKey} to confirm ${lifecycleCommand}.`]),
     ];
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0) return;
     const expectedProviderId = providerId;
     const expectedSessionId = sessionId;
@@ -904,11 +1120,13 @@ export function PlatformAuthProviderTenantBindings({
       if (bindingRequiresActiveProvider(updated.value)) {
         setProviderActiveObserved(true);
       }
-      setLifecycleCommand(null);
-      setLifecycleReason("");
-      setLifecycleConfirmation("");
-      setValidationErrors([]);
-      setListRevision((revision) => revision + 1);
+      updateWorkspaceState({
+        lifecycleCommand: null,
+        lifecycleReason: "",
+        lifecycleConfirmation: "",
+        validationErrors: [],
+        listRevision: (revision) => revision + 1,
+      });
       onNotice({
         message:
           command === "activate"
@@ -931,9 +1149,11 @@ export function PlatformAuthProviderTenantBindings({
         caught instanceof PhaseTwoApiError &&
         (caught.status === 409 || caught.status === 412)
       ) {
-        setLifecycleCommand(null);
-        setLifecycleReason("");
-        setLifecycleConfirmation("");
+        updateWorkspaceState({
+          lifecycleCommand: null,
+          lifecycleReason: "",
+          lifecycleConfirmation: "",
+        });
         refreshBindingAfterConflict(
           current.value.id,
           caught.status === 412
@@ -976,8 +1196,7 @@ export function PlatformAuthProviderTenantBindings({
         ? []
         : [`Type ${current.value.loginKey} to confirm archival.`]),
     ];
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0) return;
     const expectedProviderId = providerId;
     const expectedSessionId = sessionId;
@@ -1002,11 +1221,13 @@ export function PlatformAuthProviderTenantBindings({
       ) {
         return;
       }
-      setDetailState({ kind: "idle" });
-      setArchiveOpen(false);
-      setArchiveReason("");
-      setArchiveConfirmation("");
-      setListRevision((revision) => revision + 1);
+      updateWorkspaceState({
+        detailState: { kind: "idle" },
+        archiveOpen: false,
+        archiveReason: "",
+        archiveConfirmation: "",
+        listRevision: (revision) => revision + 1,
+      });
       onNotice({
         message: `${current.value.tenant.name} binding was archived after its admission lifecycle was disabled.`,
         tone: "success",
@@ -1046,73 +1267,105 @@ export function PlatformAuthProviderTenantBindings({
   }
 
   if (!canRead) {
-    return (
-      <section className="platform-idp-bindings" aria-labelledby={titleId}>
-        <div className="platform-idp-section-heading">
-          <div>
-            <p className="section-label">Cross-boundary admission</p>
-            <h3 id={titleId}>Tenant bindings</h3>
+    return {
+      kind: "content" as const,
+      content: (
+        <section className="platform-idp-bindings" aria-labelledby={titleId}>
+          <div className="platform-idp-section-heading">
+            <div>
+              <p className="section-label">Cross-boundary admission</p>
+              <h3 id={titleId}>Tenant bindings</h3>
+            </div>
           </div>
-        </div>
-        <Alert>
-          <ShieldCheck aria-hidden="true" />
-          <AlertTitle>Binding read permission not returned</AlertTitle>
-          <AlertDescription>
-            Provider read authority does not reveal tenant bindings. The API
-            remains the authorization boundary.
-          </AlertDescription>
-        </Alert>
-      </section>
-    );
+          <Alert>
+            <ShieldCheck aria-hidden="true" />
+            <AlertTitle>Binding read permission not returned</AlertTitle>
+            <AlertDescription>
+              Provider read authority does not reveal tenant bindings. The API
+              remains the authorization boundary.
+            </AlertDescription>
+          </Alert>
+        </section>
+      ),
+    };
   }
 
   const canMutate = canManage && !providerArchived && !providerMutationBusy;
   const canCreate = canMutate && !providerExecutionActive;
   const selected = detailState.kind === "ready" ? detailState.value : null;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      String,
+      archiveBinding,
+      archiveConfirmation,
+      archiveOpen,
+      archiveReason,
+      canCreate,
+      canMutate,
+      changeBindingAccess,
+      createBinding,
+      createDraft,
+      createOpen,
+      detailAbortRef,
+      detailEpochRef,
+      detailState,
+      editDraft,
+      idempotencyBindingRef,
+      inspectBinding,
+      jitMode,
+      lifecycleCommand,
+      lifecycleConfirmation,
+      lifecycleReason,
+      listState,
+      loadMore,
+      loadingMore,
+      mutationError,
+      noMatchPolicy,
+      paginationError,
+      providerAccountMode,
+      providerArchived,
+      providerEnabled,
+      providerExecutionActive,
+      providerKind,
+      providerMutationBusy,
+      selected,
+      setArchiveConfirmation,
+      setArchiveOpen,
+      setArchiveReason,
+      setCreateDraft,
+      setCreateOpen,
+      setDetailState,
+      setEditDraft,
+      setJitMode,
+      setLifecycleCommand,
+      setLifecycleConfirmation,
+      setLifecycleReason,
+      setListRevision,
+      setMutationError,
+      setNoMatchPolicy,
+      setValidationErrors,
+      submitting,
+      titleId,
+      updateBinding,
+      validationErrors,
+    },
+  };
+}
+
+function PlatformAuthProviderTenantBindingsView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformAuthProviderTenantBindingsModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { detailState, listState, paginationError, selected, titleId } = model;
   return (
     <section className="platform-idp-bindings" aria-labelledby={titleId}>
-      <div className="platform-idp-section-heading">
-        <div>
-          <p className="section-label">Cross-boundary admission</p>
-          <h3 id={titleId}>Tenant bindings</h3>
-        </div>
-        {canCreate ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={submitting !== null}
-            onClick={() => {
-              detailAbortRef.current?.abort();
-              detailAbortRef.current = null;
-              detailEpochRef.current += 1;
-              setCreateOpen((open) => !open);
-              setDetailState({ kind: "idle" });
-              setEditDraft(null);
-              setArchiveOpen(false);
-              setLifecycleCommand(null);
-              setLifecycleReason("");
-              setLifecycleConfirmation("");
-              setValidationErrors([]);
-              setMutationError(null);
-            }}
-          >
-            <Plus aria-hidden="true" /> Create tenant binding
-          </Button>
-        ) : (
-          <Badge variant="outline">
-            <ShieldCheck aria-hidden="true" />
-            {providerArchived
-              ? "Provider archived"
-              : providerMutationBusy
-                ? "Provider mutation in progress"
-                : providerExecutionActive
-                  ? "Provider execution active"
-                  : "Read-only authority"}
-          </Badge>
-        )}
-      </div>
+      <BindingInventoryHeading model={model} />
 
       <Alert className="platform-idp-binding-gate">
         <ShieldAlert aria-hidden="true" />
@@ -1124,501 +1377,31 @@ export function PlatformAuthProviderTenantBindings({
         </AlertDescription>
       </Alert>
 
-      {createOpen && canCreate ? (
-        <form
-          className="platform-idp-action-form"
-          aria-label="Create tenant binding"
-          aria-busy={submitting === "create"}
-          onSubmit={(event) => void createBinding(event)}
-        >
-          <h4>Create disabled-only tenant binding</h4>
-          <div className="platform-idp-binding-form-grid">
-            <BindingTextField
-              disabled={submitting !== null}
-              id="platform-idp-binding-tenant-id"
-              label="Tenant ID"
-              value={createDraft.tenantId}
-              onChange={(tenantId) =>
-                setCreateDraft({ ...createDraft, tenantId })
-              }
-            />
-            <BindingTextField
-              disabled={submitting !== null}
-              id="platform-idp-binding-create-key"
-              label="Tenant login key"
-              value={createDraft.loginKey}
-              onChange={(loginKey) =>
-                setCreateDraft({ ...createDraft, loginKey })
-              }
-            />
-            <BindingTextField
-              disabled={submitting !== null}
-              id="platform-idp-binding-create-priority"
-              label="Profile priority"
-              type="number"
-              value={createDraft.profilePriority}
-              onChange={(profilePriority) =>
-                setCreateDraft({ ...createDraft, profilePriority })
-              }
-            />
-            <BindingTextField
-              disabled={submitting !== null}
-              id="platform-idp-binding-create-reason"
-              label="Binding audit reason"
-              value={createDraft.auditReason}
-              onChange={(auditReason) =>
-                setCreateDraft({ ...createDraft, auditReason })
-              }
-            />
-          </div>
-          <BindingFormFeedback
-            errors={validationErrors}
-            requestError={mutationError}
-          />
-          <div className="platform-idp-form-actions">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={submitting !== null}
-              onClick={() => {
-                setCreateOpen(false);
-                setCreateDraft(emptyCreateDraft);
-                setValidationErrors([]);
-                setMutationError(null);
-                idempotencyBindingRef.current = null;
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting !== null}>
-              <Plus aria-hidden="true" />
-              {submitting === "create" ? "Creating…" : "Create staged binding"}
-            </Button>
-          </div>
-        </form>
-      ) : null}
+      {<BindingCreatePanel model={model} />}
 
       {listState.kind === "loading" ? (
         <p role="status">Loading tenant bindings…</p>
       ) : null}
-      {listState.kind === "error" ? (
-        <div className="platform-idp-load-error">
-          <FocusedError message={listState.message} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setListRevision((revision) => revision + 1)}
-          >
-            <RefreshCw aria-hidden="true" /> Retry tenant bindings
-          </Button>
-        </div>
-      ) : null}
-      {listState.kind === "ready" ? (
-        listState.items.length === 0 ? (
-          <div className="platform-idp-binding-empty">
-            <Link2 aria-hidden="true" />
-            <p>No tenant bindings recorded.</p>
-          </div>
-        ) : (
-          <div className="platform-idp-table-wrap">
-            <Table className="platform-idp-binding-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tenant</TableHead>
-                  <TableHead>Login key</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {listState.items.map((binding) => (
-                  <TableRow key={binding.id}>
-                    <TableCell>
-                      <div className="platform-idp-provider-cell">
-                        <strong>{binding.tenant.name}</strong>
-                        <code>{binding.tenant.slug}</code>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <code>{binding.loginKey}</code>
-                    </TableCell>
-                    <TableCell>{binding.profilePriority}</TableCell>
-                    <TableCell>
-                      <BindingStateBadge binding={binding} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        aria-label={`${canMutate ? "Manage" : "Inspect"} ${binding.tenant.name} (${binding.loginKey}) binding`}
-                        disabled={submitting !== null}
-                        onClick={() => void inspectBinding(binding.id)}
-                      >
-                        {canMutate ? "Manage binding" : "Inspect binding"}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )
-      ) : null}
+      {<BindingInventoryError model={model} />}
+      {<BindingInventoryTable model={model} />}
       {paginationError ? <FocusedError message={paginationError} /> : null}
-      {listState.kind === "ready" && listState.nextCursor ? (
-        <div className="platform-idp-pagination">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={loadingMore}
-            onClick={() => void loadMore()}
-          >
-            {loadingMore ? "Loading…" : "Load more bindings"}
-          </Button>
-        </div>
-      ) : null}
+      {<BindingInventoryPagination model={model} />}
 
       {detailState.kind === "loading" ? (
         <p role="status">Loading tenant-binding detail…</p>
       ) : null}
-      {detailState.kind === "error" ? (
-        <div className="platform-idp-load-error">
-          <FocusedError message={detailState.message} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void inspectBinding(detailState.bindingId)}
-          >
-            <RefreshCw aria-hidden="true" /> Retry binding detail
-          </Button>
-        </div>
-      ) : null}
+      {<BindingDetailError model={model} />}
       {selected ? (
         <div className="platform-idp-binding-detail">
-          <div>
-            <span>
-              <strong>{selected.value.tenant.name}</strong>
-              <small>
-                {selected.value.tenant.status} tenant · If-Match {selected.etag}
-              </small>
-            </span>
-            <Badge variant="outline">
-              {selected.value.enabled
-                ? "Tenant admission active"
-                : selected.value.archivedAt !== null
-                  ? "Archived"
-                  : selected.value.activationAvailable
-                    ? "Ready to activate"
-                    : "Staged · not ready"}
-            </Badge>
-          </div>
-          <dl className="platform-idp-binding-facts">
-            <div>
-              <dt>JIT mode</dt>
-              <dd>{humanizeBindingPolicy(selected.value.jitMode)}</dd>
-            </div>
-            <div>
-              <dt>No-match policy</dt>
-              <dd>{humanizeBindingPolicy(selected.value.noMatchPolicy)}</dd>
-            </div>
-            <div>
-              <dt>Access epoch</dt>
-              <dd>
-                {selected.value.currentAccessEpochId ?? "No live access epoch"}
-              </dd>
-            </div>
-          </dl>
-          {canMutate && selected.value.archivedAt === null ? (
-            <div className="platform-idp-action-buttons">
-              {!selected.value.enabled ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={submitting !== null}
-                  onClick={() => {
-                    setEditDraft({
-                      auditReason: "",
-                      loginKey: selected.value.loginKey,
-                      profilePriority: String(selected.value.profilePriority),
-                    });
-                    setArchiveOpen(false);
-                    setLifecycleCommand(null);
-                    setLifecycleReason("");
-                    setLifecycleConfirmation("");
-                    setValidationErrors([]);
-                    setMutationError(null);
-                  }}
-                >
-                  <Pencil aria-hidden="true" /> Edit key and priority
-                </Button>
-              ) : null}
-              {providerKind !== "saml" &&
-              providerEnabled !== false &&
-              (selected.value.enabled || selected.value.activationAvailable) ? (
-                <Button
-                  type="button"
-                  variant={selected.value.enabled ? "destructive" : "default"}
-                  disabled={submitting !== null}
-                  onClick={() => {
-                    setEditDraft(null);
-                    setArchiveOpen(false);
-                    setArchiveReason("");
-                    setArchiveConfirmation("");
-                    setLifecycleCommand(
-                      selected.value.enabled ? "deactivate" : "activate",
-                    );
-                    setLifecycleReason("");
-                    setLifecycleConfirmation("");
-                    setJitMode(selected.value.jitMode);
-                    setNoMatchPolicy(selected.value.noMatchPolicy);
-                    setValidationErrors([]);
-                    setMutationError(null);
-                  }}
-                >
-                  {selected.value.enabled
-                    ? "Deactivate tenant admission"
-                    : "Activate tenant admission"}
-                </Button>
-              ) : null}
-              {!selected.value.enabled ? (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={submitting !== null}
-                  onClick={() => {
-                    setEditDraft(null);
-                    setLifecycleCommand(null);
-                    setLifecycleReason("");
-                    setLifecycleConfirmation("");
-                    setArchiveOpen(true);
-                    setArchiveReason("");
-                    setArchiveConfirmation("");
-                    setValidationErrors([]);
-                    setMutationError(null);
-                  }}
-                >
-                  <Archive aria-hidden="true" /> Archive binding
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
+          <BindingDetailHeading model={model} />
+          <BindingFacts model={model} />
+          {<BindingActionsPanel model={model} />}
 
-          {editDraft && canMutate ? (
-            <form
-              className="platform-idp-action-form"
-              aria-label="Edit tenant binding"
-              aria-busy={submitting === "update"}
-              onSubmit={(event) => void updateBinding(event)}
-            >
-              <h4>Edit binding metadata</h4>
-              <div className="platform-idp-binding-form-grid">
-                <BindingTextField
-                  disabled={submitting !== null}
-                  id="platform-idp-binding-edit-key"
-                  label="Tenant login key"
-                  value={editDraft.loginKey}
-                  onChange={(loginKey) =>
-                    setEditDraft({ ...editDraft, loginKey })
-                  }
-                />
-                <BindingTextField
-                  disabled={submitting !== null}
-                  id="platform-idp-binding-edit-priority"
-                  label="Profile priority"
-                  type="number"
-                  value={editDraft.profilePriority}
-                  onChange={(profilePriority) =>
-                    setEditDraft({ ...editDraft, profilePriority })
-                  }
-                />
-                <BindingTextField
-                  disabled={submitting !== null}
-                  id="platform-idp-binding-edit-reason"
-                  label="Binding audit reason"
-                  value={editDraft.auditReason}
-                  onChange={(auditReason) =>
-                    setEditDraft({ ...editDraft, auditReason })
-                  }
-                />
-              </div>
-              <BindingFormFeedback
-                errors={validationErrors}
-                requestError={mutationError}
-              />
-              <div className="platform-idp-form-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={submitting !== null}
-                  onClick={() => setEditDraft(null)}
-                >
-                  Cancel edit
-                </Button>
-                <Button type="submit" disabled={submitting !== null}>
-                  <Save aria-hidden="true" />
-                  {submitting === "update"
-                    ? "Saving…"
-                    : "Save binding metadata"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+          {<BindingMetadataPanel model={model} />}
 
-          {lifecycleCommand &&
-          canMutate &&
-          providerKind !== "saml" &&
-          providerEnabled !== false ? (
-            <form
-              className="platform-idp-action-form"
-              aria-label={`${lifecycleCommand === "activate" ? "Activate" : "Deactivate"} tenant binding`}
-              aria-busy={submitting === lifecycleCommand}
-              onSubmit={(event) => void changeBindingAccess(event)}
-            >
-              <div>
-                <h4>
-                  {lifecycleCommand === "activate"
-                    ? "Activate tenant admission"
-                    : "Deactivate tenant admission"}
-                </h4>
-                <p>
-                  This command changes a tenant-scoped access epoch. It never
-                  creates roles, groups, teams, or platform authority.
-                </p>
-              </div>
-              {lifecycleCommand === "activate" ? (
-                <div className="platform-idp-binding-form-grid">
-                  <BindingSelectField
-                    disabled={submitting !== null}
-                    id="platform-idp-binding-jit-mode"
-                    label="Tenant membership JIT"
-                    value={jitMode}
-                    options={[
-                      ["disabled", "Disabled"],
-                      ...(providerAccountMode !== undefined &&
-                      providerAccountMode !== "create"
-                        ? []
-                        : ([
-                            ["create", "Create tenant membership/access"],
-                          ] as const)),
-                    ]}
-                    onChange={setJitMode}
-                  />
-                  <BindingSelectField
-                    disabled={submitting !== null}
-                    id="platform-idp-binding-no-match-policy"
-                    label="When no tenant authority matches"
-                    value={noMatchPolicy}
-                    options={[
-                      ["deny", "Deny access"],
-                      [
-                        "provider_access_only",
-                        "Provider access only (RBAC still required)",
-                      ],
-                    ]}
-                    onChange={setNoMatchPolicy}
-                  />
-                </div>
-              ) : null}
-              <BindingTextField
-                disabled={submitting !== null}
-                id="platform-idp-binding-lifecycle-reason"
-                label="Binding audit reason"
-                value={lifecycleReason}
-                onChange={setLifecycleReason}
-              />
-              <BindingTextField
-                disabled={submitting !== null}
-                id="platform-idp-binding-lifecycle-confirmation"
-                label={`Type ${selected.value.loginKey} to confirm`}
-                value={lifecycleConfirmation}
-                onChange={setLifecycleConfirmation}
-              />
-              <BindingFormFeedback
-                errors={validationErrors}
-                requestError={mutationError}
-              />
-              <div className="platform-idp-form-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={submitting !== null}
-                  onClick={() => {
-                    setLifecycleCommand(null);
-                    setLifecycleReason("");
-                    setLifecycleConfirmation("");
-                    setValidationErrors([]);
-                    setMutationError(null);
-                  }}
-                >
-                  Cancel {lifecycleCommand}
-                </Button>
-                <Button
-                  type="submit"
-                  variant={
-                    lifecycleCommand === "deactivate"
-                      ? "destructive"
-                      : "default"
-                  }
-                  disabled={submitting !== null}
-                >
-                  {submitting === lifecycleCommand
-                    ? "Submitting…"
-                    : lifecycleCommand === "activate"
-                      ? "Activate tenant admission"
-                      : "Deactivate tenant admission"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+          {<BindingLifecyclePanel model={model} />}
 
-          {archiveOpen && canMutate && !selected.value.enabled ? (
-            <form
-              className="platform-idp-action-form platform-idp-archive-form"
-              aria-label="Archive tenant binding"
-              aria-busy={submitting === "archive"}
-              onSubmit={(event) => void archiveBinding(event)}
-            >
-              <h4>Archive binding permanently</h4>
-              <BindingTextField
-                disabled={submitting !== null}
-                id="platform-idp-binding-archive-reason"
-                label="Binding audit reason"
-                value={archiveReason}
-                onChange={setArchiveReason}
-              />
-              <BindingTextField
-                disabled={submitting !== null}
-                id="platform-idp-binding-archive-confirmation"
-                label={`Type ${selected.value.loginKey} to confirm`}
-                value={archiveConfirmation}
-                onChange={setArchiveConfirmation}
-              />
-              <BindingFormFeedback
-                errors={validationErrors}
-                requestError={mutationError}
-              />
-              <div className="platform-idp-form-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={submitting !== null}
-                  onClick={() => setArchiveOpen(false)}
-                >
-                  Cancel archival
-                </Button>
-                <Button
-                  type="submit"
-                  variant="destructive"
-                  disabled={submitting !== null}
-                >
-                  <Archive aria-hidden="true" />
-                  {submitting === "archive" ? "Archiving…" : "Archive binding"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+          {<BindingArchiveForm model={model} />}
         </div>
       ) : null}
     </section>
@@ -1727,17 +1510,10 @@ function BindingFormFeedback({
   return (
     <div className="platform-idp-binding-feedback">
       {errors.length > 0 ? (
-        <Alert variant="destructive">
-          <ShieldAlert aria-hidden="true" />
-          <AlertTitle>Review the binding fields</AlertTitle>
-          <AlertDescription>
-            <ul>
-              {errors.map((error) => (
-                <li key={error}>{error}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
+        <FormValidationAlert
+          errors={errors}
+          title="Review the binding fields"
+        />
       ) : null}
       {requestError ? <FocusedError message={requestError} /> : null}
     </div>
@@ -1788,3 +1564,798 @@ function humanizeBindingPolicy(value: string): string {
 
 const canonicalUuidV7Pattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function BindingCreatePanel({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { canCreate, createOpen } = model;
+  return createOpen && canCreate ? <BindingCreateForm model={model} /> : null;
+}
+
+function BindingActionsPanel({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { canMutate, selected } = model;
+  if (!selected) return null;
+
+  return canMutate && selected.value.archivedAt === null ? (
+    <BindingActions model={model} />
+  ) : null;
+}
+
+function BindingMetadataPanel({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { canMutate, editDraft } = model;
+  return editDraft && canMutate ? <BindingMetadataForm model={model} /> : null;
+}
+
+function BindingLifecyclePanel({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const {
+    canMutate,
+    lifecycleCommand,
+    providerEnabled,
+    providerKind,
+    selected,
+  } = model;
+  if (!selected) return null;
+
+  return lifecycleCommand &&
+    canMutate &&
+    providerKind !== "saml" &&
+    providerEnabled !== false ? (
+    <BindingLifecycleForm model={model} />
+  ) : null;
+}
+
+interface PlatformAuthProviderTenantBindingsState {
+  listState: BindingListState;
+  listRevision: number;
+  paginationError: string | null;
+  loadingMore: boolean;
+  createOpen: boolean;
+  createDraft: CreateBindingDraft;
+  detailState: BindingDetailState;
+  editDraft: BindingDraft | null;
+  archiveOpen: boolean;
+  archiveReason: string;
+  archiveConfirmation: string;
+  lifecycleCommand: BindingLifecycleCommand | null;
+  lifecycleReason: string;
+  lifecycleConfirmation: string;
+  jitMode: BindingJitMode;
+  noMatchPolicy: BindingNoMatchPolicy;
+  validationErrors: readonly string[];
+  mutationError: string | null;
+  submitting:
+    "activate" | "archive" | "create" | "deactivate" | "update" | null;
+  providerActiveObserved: boolean;
+}
+
+function BindingInventoryHeading({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const {
+    canCreate,
+    detailAbortRef,
+    detailEpochRef,
+    providerArchived,
+    providerExecutionActive,
+    providerMutationBusy,
+    setArchiveOpen,
+    setCreateOpen,
+    setDetailState,
+    setEditDraft,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMutationError,
+    setValidationErrors,
+    submitting,
+    titleId,
+  } = model;
+  return (
+    <div className="platform-idp-section-heading">
+      <div>
+        <p className="section-label">Cross-boundary admission</p>
+        <h3 id={titleId}>Tenant bindings</h3>
+      </div>
+      {canCreate ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={submitting !== null}
+          onClick={() => {
+            detailAbortRef.current?.abort();
+            detailAbortRef.current = null;
+            detailEpochRef.current += 1;
+            setCreateOpen((open) => !open);
+            setDetailState({ kind: "idle" });
+            setEditDraft(null);
+            setArchiveOpen(false);
+            setLifecycleCommand(null);
+            setLifecycleReason("");
+            setLifecycleConfirmation("");
+            setValidationErrors([]);
+            setMutationError(null);
+          }}
+        >
+          <Plus aria-hidden="true" /> Create tenant binding
+        </Button>
+      ) : (
+        <Badge variant="outline">
+          <ShieldCheck aria-hidden="true" />
+          {providerArchived
+            ? "Provider archived"
+            : providerMutationBusy
+              ? "Provider mutation in progress"
+              : providerExecutionActive
+                ? "Provider execution active"
+                : "Read-only authority"}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function BindingInventoryTable({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { canMutate, inspectBinding, listState, submitting } = model;
+  return listState.kind === "ready" ? (
+    listState.items.length === 0 ? (
+      <div className="platform-idp-binding-empty">
+        <Link2 aria-hidden="true" />
+        <p>No tenant bindings recorded.</p>
+      </div>
+    ) : (
+      <div className="platform-idp-table-wrap">
+        <Table className="platform-idp-binding-table">
+          <TableColumnHeaders
+            columns={["Tenant", "Login key", "Priority", "State"]}
+            actionLabel="Action"
+            actionPresentation="visible"
+          />
+          <TableBody>
+            {listState.items.map((binding) => (
+              <TableRow key={binding.id}>
+                <TableCell>
+                  <div className="platform-idp-provider-cell">
+                    <strong>{binding.tenant.name}</strong>
+                    <code>{binding.tenant.slug}</code>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <code>{binding.loginKey}</code>
+                </TableCell>
+                <TableCell>{binding.profilePriority}</TableCell>
+                <TableCell>
+                  <BindingStateBadge binding={binding} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label={`${canMutate ? "Manage" : "Inspect"} ${binding.tenant.name} (${binding.loginKey}) binding`}
+                    disabled={submitting !== null}
+                    onClick={() => void inspectBinding(binding.id)}
+                  >
+                    {canMutate ? "Manage binding" : "Inspect binding"}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    )
+  ) : null;
+}
+
+function BindingArchiveForm({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const {
+    archiveBinding,
+    archiveConfirmation,
+    archiveOpen,
+    archiveReason,
+    canMutate,
+    mutationError,
+    selected,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    submitting,
+    validationErrors,
+  } = model;
+  if (!selected) return null;
+  return archiveOpen && canMutate && !selected.value.enabled ? (
+    <form
+      className="platform-idp-action-form platform-idp-archive-form"
+      aria-label="Archive tenant binding"
+      aria-busy={submitting === "archive"}
+      onSubmit={(event) => void archiveBinding(event)}
+    >
+      <h4>Archive binding permanently</h4>
+      <BindingTextField
+        disabled={submitting !== null}
+        id="platform-idp-binding-archive-reason"
+        label="Binding audit reason"
+        value={archiveReason}
+        onChange={setArchiveReason}
+      />
+      <BindingTextField
+        disabled={submitting !== null}
+        id="platform-idp-binding-archive-confirmation"
+        label={`Type ${selected.value.loginKey} to confirm`}
+        value={archiveConfirmation}
+        onChange={setArchiveConfirmation}
+      />
+      <BindingFormFeedback
+        errors={validationErrors}
+        requestError={mutationError}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={submitting !== null}
+          onClick={() => setArchiveOpen(false)}
+        >
+          Cancel archival
+        </Button>
+        <Button
+          type="submit"
+          variant="destructive"
+          disabled={submitting !== null}
+        >
+          <Archive aria-hidden="true" />
+          {submitting === "archive" ? "Archiving…" : "Archive binding"}
+        </Button>
+      </div>
+    </form>
+  ) : null;
+}
+
+function BindingCreateForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof BindingCreatePanel>["model"];
+}): React.ReactNode {
+  const {
+    createBinding,
+    createDraft,
+    idempotencyBindingRef,
+    mutationError,
+    setCreateDraft,
+    setCreateOpen,
+    setMutationError,
+    setValidationErrors,
+    submitting,
+    validationErrors,
+  } = model;
+  return (
+    <form
+      className="platform-idp-action-form"
+      aria-label="Create tenant binding"
+      aria-busy={submitting === "create"}
+      onSubmit={(event) => void createBinding(event)}
+    >
+      <h4>Create disabled-only tenant binding</h4>
+      <div className="platform-idp-binding-form-grid">
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-tenant-id"
+          label="Tenant ID"
+          value={createDraft.tenantId}
+          onChange={(tenantId) => setCreateDraft({ ...createDraft, tenantId })}
+        />
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-create-key"
+          label="Tenant login key"
+          value={createDraft.loginKey}
+          onChange={(loginKey) => setCreateDraft({ ...createDraft, loginKey })}
+        />
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-create-priority"
+          label="Profile priority"
+          type="number"
+          value={createDraft.profilePriority}
+          onChange={(profilePriority) =>
+            setCreateDraft({ ...createDraft, profilePriority })
+          }
+        />
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-create-reason"
+          label="Binding audit reason"
+          value={createDraft.auditReason}
+          onChange={(auditReason) =>
+            setCreateDraft({ ...createDraft, auditReason })
+          }
+        />
+      </div>
+      <BindingFormFeedback
+        errors={validationErrors}
+        requestError={mutationError}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={submitting !== null}
+          onClick={() => {
+            setCreateOpen(false);
+            setCreateDraft(emptyCreateDraft);
+            setValidationErrors([]);
+            setMutationError(null);
+            idempotencyBindingRef.current = null;
+          }}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={submitting !== null}>
+          <Plus aria-hidden="true" />
+          {submitting === "create" ? "Creating…" : "Create staged binding"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function BindingActions({
+  model,
+}: {
+  model: React.ComponentProps<typeof BindingActionsPanel>["model"];
+}): React.ReactNode {
+  const {
+    String,
+    providerEnabled,
+    providerKind,
+    selected,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    setEditDraft,
+    setJitMode,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMutationError,
+    setNoMatchPolicy,
+    setValidationErrors,
+    submitting,
+  } = model;
+  if (!selected) return null;
+  return (
+    <div className="platform-idp-action-buttons">
+      {!selected.value.enabled ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={submitting !== null}
+          onClick={() => {
+            setEditDraft({
+              auditReason: "",
+              loginKey: selected.value.loginKey,
+              profilePriority: String(selected.value.profilePriority),
+            });
+            setArchiveOpen(false);
+            setLifecycleCommand(null);
+            setLifecycleReason("");
+            setLifecycleConfirmation("");
+            setValidationErrors([]);
+            setMutationError(null);
+          }}
+        >
+          <Pencil aria-hidden="true" /> Edit key and priority
+        </Button>
+      ) : null}
+      {providerKind !== "saml" &&
+      providerEnabled !== false &&
+      (selected.value.enabled || selected.value.activationAvailable) ? (
+        <Button
+          type="button"
+          variant={selected.value.enabled ? "destructive" : "default"}
+          disabled={submitting !== null}
+          onClick={() => {
+            setEditDraft(null);
+            setArchiveOpen(false);
+            setArchiveReason("");
+            setArchiveConfirmation("");
+            setLifecycleCommand(
+              selected.value.enabled ? "deactivate" : "activate",
+            );
+            setLifecycleReason("");
+            setLifecycleConfirmation("");
+            setJitMode(selected.value.jitMode);
+            setNoMatchPolicy(selected.value.noMatchPolicy);
+            setValidationErrors([]);
+            setMutationError(null);
+          }}
+        >
+          {selected.value.enabled
+            ? "Deactivate tenant admission"
+            : "Activate tenant admission"}
+        </Button>
+      ) : null}
+      {!selected.value.enabled ? (
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={submitting !== null}
+          onClick={() => {
+            setEditDraft(null);
+            setLifecycleCommand(null);
+            setLifecycleReason("");
+            setLifecycleConfirmation("");
+            setArchiveOpen(true);
+            setArchiveReason("");
+            setArchiveConfirmation("");
+            setValidationErrors([]);
+            setMutationError(null);
+          }}
+        >
+          <Archive aria-hidden="true" /> Archive binding
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function BindingMetadataForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof BindingMetadataPanel>["model"];
+}): React.ReactNode {
+  const {
+    editDraft,
+    mutationError,
+    setEditDraft,
+    submitting,
+    updateBinding,
+    validationErrors,
+  } = model;
+  if (!editDraft) return null;
+  return (
+    <form
+      className="platform-idp-action-form"
+      aria-label="Edit tenant binding"
+      aria-busy={submitting === "update"}
+      onSubmit={(event) => void updateBinding(event)}
+    >
+      <h4>Edit binding metadata</h4>
+      <div className="platform-idp-binding-form-grid">
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-edit-key"
+          label="Tenant login key"
+          value={editDraft.loginKey}
+          onChange={(loginKey) => setEditDraft({ ...editDraft, loginKey })}
+        />
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-edit-priority"
+          label="Profile priority"
+          type="number"
+          value={editDraft.profilePriority}
+          onChange={(profilePriority) =>
+            setEditDraft({ ...editDraft, profilePriority })
+          }
+        />
+        <BindingTextField
+          disabled={submitting !== null}
+          id="platform-idp-binding-edit-reason"
+          label="Binding audit reason"
+          value={editDraft.auditReason}
+          onChange={(auditReason) =>
+            setEditDraft({ ...editDraft, auditReason })
+          }
+        />
+      </div>
+      <BindingFormFeedback
+        errors={validationErrors}
+        requestError={mutationError}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={submitting !== null}
+          onClick={() => setEditDraft(null)}
+        >
+          Cancel edit
+        </Button>
+        <Button type="submit" disabled={submitting !== null}>
+          <Save aria-hidden="true" />
+          {submitting === "update" ? "Saving…" : "Save binding metadata"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function BindingLifecycleForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof BindingLifecyclePanel>["model"];
+}): React.ReactNode {
+  const {
+    changeBindingAccess,
+    jitMode,
+    lifecycleCommand,
+    lifecycleConfirmation,
+    lifecycleReason,
+    mutationError,
+    noMatchPolicy,
+    providerAccountMode,
+    selected,
+    setJitMode,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMutationError,
+    setNoMatchPolicy,
+    setValidationErrors,
+    submitting,
+    validationErrors,
+  } = model;
+  if (!selected) return null;
+  return (
+    <form
+      className="platform-idp-action-form"
+      aria-label={`${lifecycleCommand === "activate" ? "Activate" : "Deactivate"} tenant binding`}
+      aria-busy={submitting === lifecycleCommand}
+      onSubmit={(event) => void changeBindingAccess(event)}
+    >
+      <div>
+        <h4>
+          {lifecycleCommand === "activate"
+            ? "Activate tenant admission"
+            : "Deactivate tenant admission"}
+        </h4>
+        <p>
+          This command changes a tenant-scoped access epoch. It never creates
+          roles, groups, teams, or platform authority.
+        </p>
+      </div>
+      {lifecycleCommand === "activate" ? (
+        <div className="platform-idp-binding-form-grid">
+          <BindingSelectField
+            disabled={submitting !== null}
+            id="platform-idp-binding-jit-mode"
+            label="Tenant membership JIT"
+            value={jitMode}
+            options={[
+              ["disabled", "Disabled"],
+              ...(providerAccountMode !== undefined &&
+              providerAccountMode !== "create"
+                ? []
+                : ([["create", "Create tenant membership/access"]] as const)),
+            ]}
+            onChange={setJitMode}
+          />
+          <BindingSelectField
+            disabled={submitting !== null}
+            id="platform-idp-binding-no-match-policy"
+            label="When no tenant authority matches"
+            value={noMatchPolicy}
+            options={[
+              ["deny", "Deny access"],
+              [
+                "provider_access_only",
+                "Provider access only (RBAC still required)",
+              ],
+            ]}
+            onChange={setNoMatchPolicy}
+          />
+        </div>
+      ) : null}
+      <BindingTextField
+        disabled={submitting !== null}
+        id="platform-idp-binding-lifecycle-reason"
+        label="Binding audit reason"
+        value={lifecycleReason}
+        onChange={setLifecycleReason}
+      />
+      <BindingTextField
+        disabled={submitting !== null}
+        id="platform-idp-binding-lifecycle-confirmation"
+        label={`Type ${selected.value.loginKey} to confirm`}
+        value={lifecycleConfirmation}
+        onChange={setLifecycleConfirmation}
+      />
+      <BindingFormFeedback
+        errors={validationErrors}
+        requestError={mutationError}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={submitting !== null}
+          onClick={() => {
+            setLifecycleCommand(null);
+            setLifecycleReason("");
+            setLifecycleConfirmation("");
+            setValidationErrors([]);
+            setMutationError(null);
+          }}
+        >
+          Cancel {lifecycleCommand}
+        </Button>
+        <Button
+          type="submit"
+          variant={
+            lifecycleCommand === "deactivate" ? "destructive" : "default"
+          }
+          disabled={submitting !== null}
+        >
+          {submitting === lifecycleCommand
+            ? "Submitting…"
+            : lifecycleCommand === "activate"
+              ? "Activate tenant admission"
+              : "Deactivate tenant admission"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function BindingInventoryError({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { listState, setListRevision } = model;
+  return listState.kind === "error" ? (
+    <div className="platform-idp-load-error">
+      <FocusedError message={listState.message} />
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setListRevision((revision) => revision + 1)}
+      >
+        <RefreshCw aria-hidden="true" /> Retry tenant bindings
+      </Button>
+    </div>
+  ) : null;
+}
+
+function BindingInventoryPagination({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { listState, loadMore, loadingMore } = model;
+  return listState.kind === "ready" && listState.nextCursor ? (
+    <div className="platform-idp-pagination">
+      <Button
+        type="button"
+        variant="outline"
+        disabled={loadingMore}
+        onClick={() => void loadMore()}
+      >
+        {loadingMore ? "Loading…" : "Load more bindings"}
+      </Button>
+    </div>
+  ) : null;
+}
+
+function BindingDetailError({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { detailState, inspectBinding } = model;
+  return detailState.kind === "error" ? (
+    <div className="platform-idp-load-error">
+      <FocusedError message={detailState.message} />
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => void inspectBinding(detailState.bindingId)}
+      >
+        <RefreshCw aria-hidden="true" /> Retry binding detail
+      </Button>
+    </div>
+  ) : null;
+}
+
+function BindingDetailHeading({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { selected } = model;
+  if (!selected) return null;
+  return (
+    <div>
+      <span>
+        <strong>{selected.value.tenant.name}</strong>
+        <small>
+          {selected.value.tenant.status} tenant · If-Match {selected.etag}
+        </small>
+      </span>
+      <Badge variant="outline">
+        {selected.value.enabled
+          ? "Tenant admission active"
+          : selected.value.archivedAt !== null
+            ? "Archived"
+            : selected.value.activationAvailable
+              ? "Ready to activate"
+              : "Staged · not ready"}
+      </Badge>
+    </div>
+  );
+}
+
+function BindingFacts({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderTenantBindingsView
+  >["model"];
+}): React.ReactNode {
+  const { selected } = model;
+  if (!selected) return null;
+  return (
+    <dl className="platform-idp-binding-facts">
+      <div>
+        <dt>JIT mode</dt>
+        <dd>{humanizeBindingPolicy(selected.value.jitMode)}</dd>
+      </div>
+      <div>
+        <dt>No-match policy</dt>
+        <dd>{humanizeBindingPolicy(selected.value.noMatchPolicy)}</dd>
+      </div>
+      <div>
+        <dt>Access epoch</dt>
+        <dd>{selected.value.currentAccessEpochId ?? "No live access epoch"}</dd>
+      </div>
+    </dl>
+  );
+}

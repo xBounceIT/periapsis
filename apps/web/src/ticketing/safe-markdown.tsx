@@ -18,11 +18,14 @@ export function SafeMarkdown({
     if (list.length === 0) return;
     const items = list;
     list = [];
+    const occurrences = new Map<string, number>();
     blocks.push(
       <ul key={`list-${blocks.length}`}>
-        {items.map((item, index) => (
-          <li key={`${index}-${item}`}>{renderInline(item)}</li>
-        ))}
+        {items.map((item) => {
+          const occurrence = occurrences.get(item) ?? 0;
+          occurrences.set(item, occurrence + 1);
+          return <li key={`${item}:${occurrence}`}>{renderInline(item)}</li>;
+        })}
       </ul>,
     );
   }

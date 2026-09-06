@@ -10,11 +10,11 @@ import type {
 } from "@periapsis/contracts";
 
 import { hasUnpairedSurrogate } from "../lib/canonical-display-name";
-import { formatTenantInstant } from "../lib/tenant-date-time-context";
 import {
   idempotencyKeyForPayload,
   type IdempotencyReference,
 } from "../lib/payload-idempotency";
+import { formatTenantInstant } from "../lib/tenant-date-time";
 import { hasControlCharacters } from "../lib/text-validation";
 import { NotificationApiError } from "./notification-api";
 

@@ -14,12 +14,12 @@ import {
   replaceTenantSamlAuthProviderMetadata,
   replaceTenantSamlAuthProviderSpCredential,
   updateTenantFederatedAuthProvider,
+  type TenantFederationAssurancePolicy,
+  type TenantFederationAssurancePolicyReplaceRequest,
   type TenantFederationAuthProvider,
   type TenantFederationAuthProviderCreateRequest,
   type TenantFederationAuthProviderSummary,
   type TenantFederationAuthProviderUpdateRequest,
-  type TenantFederationAssurancePolicy,
-  type TenantFederationAssurancePolicyReplaceRequest,
   type TenantFederationMappingPolicy,
   type TenantFederationMappingPolicyReplaceRequest,
   type TenantOidcTrustDocumentsRefreshRequest,
@@ -740,6 +740,19 @@ function requiredRevisionHeader(
   return value;
 }
 
+const oidcSigningAlgorithms = new Set<string>([
+  "RS256",
+  "RS384",
+  "RS512",
+  "PS256",
+  "PS384",
+  "PS512",
+  "ES256",
+  "ES384",
+  "ES512",
+  "EdDSA",
+]);
+
 function assertOidcTrustInput(
   input: TenantOidcTrustDocumentsRefreshRequest,
 ): void {
@@ -755,19 +768,7 @@ function assertOidcTrustInput(
     input.signingAlgorithms.length > 10 ||
     new Set(input.signingAlgorithms).size !== input.signingAlgorithms.length ||
     input.signingAlgorithms.some(
-      (algorithm) =>
-        ![
-          "RS256",
-          "RS384",
-          "RS512",
-          "PS256",
-          "PS384",
-          "PS512",
-          "ES256",
-          "ES384",
-          "ES512",
-          "EdDSA",
-        ].includes(algorithm),
+      (algorithm) => !oidcSigningAlgorithms.has(algorithm),
     )
   ) {
     throw new PhaseTwoApiError("The OIDC trust refresh policy is invalid.");

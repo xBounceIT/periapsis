@@ -37,7 +37,7 @@ export interface ReloadedTicketBoundary {
   version: number;
 }
 
-export function TicketWatcherPanel({
+function useTicketWatcherPanelState({
   api,
   authorityEpoch,
   canEdit,
@@ -63,7 +63,7 @@ export function TicketWatcherPanel({
   tenantId: string;
   ticketEtag: string;
   ticketVersion: number;
-}): React.JSX.Element | null {
+}) {
   const id = useId();
   const boundaryKey = JSON.stringify([
     authorityEpoch,
@@ -95,11 +95,10 @@ export function TicketWatcherPanel({
   const authorizationEpoch = useRef({});
   const attempt = useRef<IdempotencyReference>({ current: null });
   const reloadLatest = useRef(onReloadLatest);
-
   useLayoutEffect(() => {
     reloadLatest.current = onReloadLatest;
   }, [onReloadLatest]);
-
+  // react-doctor-disable-next-line react-doctor/no-derived-state-effect -- A committed authorization boundary cancels reads/writes and replaces the entire request epoch before paint; snapshot state represents asynchronous request ownership.
   useLayoutEffect(() => {
     authorizationEpoch.current = {};
     readRequest.current?.abort();
@@ -121,7 +120,6 @@ export function TicketWatcherPanel({
       mutationRequest.current?.abort();
     };
   }, [boundaryKey]);
-
   useEffect(() => {
     if (!canRead) return undefined;
     const token = authorizationEpoch.current;
@@ -174,7 +172,6 @@ export function TicketWatcherPanel({
     ticketEtag,
     ticketVersion,
   ]);
-
   const snapshotIsCurrent = snapshot.boundaryKey === boundaryKey;
   const editorIsCurrent = editorKey === boundaryKey;
   const page =
@@ -189,16 +186,109 @@ export function TicketWatcherPanel({
     pageMatchesTicket &&
     !reloadRequired &&
     savingUserId === null;
+  return {
+    api,
+    authorityEpoch,
+    canEdit,
+    canRead,
+    csrfToken,
+    kind,
+    onReloadLatest,
+    resourceId,
+    sessionId,
+    tenantId,
+    ticketEtag,
+    ticketVersion,
+    id,
+    boundaryKey,
+    snapshot,
+    setSnapshot,
+    editorKey,
+    setEditorKey,
+    userId,
+    setUserId,
+    userIdError,
+    setUserIdError,
+    problem,
+    setProblem,
+    recoveryVersionFloor,
+    setRecoveryVersionFloor,
+    reloadRequired,
+    setReloadRequired,
+    savingUserId,
+    setSavingUserId,
+    readRequest,
+    mutationRequest,
+    authorizationEpoch,
+    attempt,
+    reloadLatest,
+    snapshotIsCurrent,
+    editorIsCurrent,
+    page,
+    pageMatchesTicket,
+    mutationOpen,
+  };
+}
 
+export function TicketWatcherPanel(props: {
+  api: TicketWatcherApi;
+  authorityEpoch: string;
+  canEdit: boolean;
+  canRead: boolean;
+  csrfToken: string;
+  kind: TicketKind;
+  onReloadLatest: () => Promise<ReloadedTicketBoundary | null>;
+  resourceId: string;
+  sessionId: string;
+  tenantId: string;
+  ticketEtag: string;
+  ticketVersion: number;
+}): React.JSX.Element | null {
+  const state = useTicketWatcherPanelState(props);
+  const {
+    api,
+    canEdit,
+    canRead,
+    csrfToken,
+    kind,
+    resourceId,
+    sessionId,
+    tenantId,
+    ticketEtag,
+    ticketVersion,
+    id,
+    boundaryKey,
+    snapshot,
+    setSnapshot,
+    userId,
+    setUserId,
+    userIdError,
+    setUserIdError,
+    problem,
+    setProblem,
+    recoveryVersionFloor,
+    setRecoveryVersionFloor,
+    reloadRequired,
+    setReloadRequired,
+    savingUserId,
+    setSavingUserId,
+    readRequest,
+    mutationRequest,
+    authorizationEpoch,
+    attempt,
+    reloadLatest,
+    snapshotIsCurrent,
+    editorIsCurrent,
+    page,
+    mutationOpen,
+  } = state;
   if (!canRead) return null;
-
   const changeUserId = (value: string): void => {
     setUserId(value);
     setUserIdError(null);
     setProblem(null);
     attempt.current.current = null;
   };
-
   const addWatcher = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const normalized = userId.trim().toLowerCase();
@@ -210,7 +300,6 @@ export function TicketWatcherPanel({
     }
     void mutate("add", normalized);
   };
-
   const mutate = async (
     action: "add" | "remove",
     targetUserId: string,
@@ -304,7 +393,6 @@ export function TicketWatcherPanel({
       }
     }
   };
-
   const synchronize = async (
     token = authorizationEpoch.current,
     requiredVersion = recoveryVersionFloor,
@@ -398,107 +486,21 @@ export function TicketWatcherPanel({
         </div>
       ) : null}
       {page ? (
-        <>
-          {page.value.items.length > 0 ? (
-            <ul className="ticket-watchers__list" aria-label="Ticket watchers">
-              {page.value.items.map((watcher) => (
-                <li key={watcher.userId}>
-                  <span>
-                    <strong>{watcher.displayName}</strong>
-                    <code>{watcher.userId}</code>
-                    <small>
-                      Watching since <TenantInstant value={watcher.addedAt} />
-                    </small>
-                  </span>
-                  {mutationOpen ? (
-                    <Button
-                      aria-label={`Remove ${watcher.displayName} (${watcher.userId}) from watchers`}
-                      disabled={savingUserId !== null}
-                      onClick={() => void mutate("remove", watcher.userId)}
-                      type="button"
-                      variant="outline"
-                    >
-                      <Trash2 aria-hidden="true" />
-                      {savingUserId === watcher.userId ? "Removing…" : "Remove"}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="ticket-watchers__status">
-              No operators are watching this ticket.
-            </p>
-          )}
-
-          {canEdit && editorIsCurrent && !reloadRequired ? (
-            <form
-              className="ticket-watchers__add"
-              onSubmit={addWatcher}
-              noValidate
-            >
-              <span>
-                <Label htmlFor={`${id}-user-id`}>Operator user ID</Label>
-                <small>
-                  Enter an active tenant operator with live read access to this
-                  ticket.
-                </small>
-              </span>
-              <Input
-                aria-describedby={
-                  userIdError ? `${id}-user-id-error` : `${id}-user-id-hint`
-                }
-                aria-invalid={Boolean(userIdError)}
-                autoComplete="off"
-                disabled={savingUserId !== null}
-                id={`${id}-user-id`}
-                onChange={(event) => changeUserId(event.target.value)}
-                placeholder="018f6b31-2cc8-7b3c-9d81-9a770a4f5d32"
-                value={userId}
-              />
-              <span className="ticket-watchers__add-action">
-                <Button
-                  disabled={!mutationOpen || userId.trim() === ""}
-                  type="submit"
-                >
-                  <UserPlus aria-hidden="true" />
-                  {savingUserId ? "Updating…" : "Add watcher"}
-                </Button>
-              </span>
-              <small
-                className="ticket-watchers__hint"
-                id={`${id}-user-id-hint`}
-              >
-                Customer contacts are never eligible watchers.
-              </small>
-              {userIdError ? (
-                <small
-                  className="ticket-watchers__field-error"
-                  id={`${id}-user-id-error`}
-                  role="alert"
-                >
-                  {userIdError}
-                </small>
-              ) : null}
-            </form>
-          ) : null}
-          {!canEdit ? (
-            <p className="ticket-watchers__status">
-              Watchers are read-only under the current live tenant authority.
-            </p>
-          ) : null}
-          {reloadRequired ? (
-            <div className="ticket-watchers__reload">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void synchronize()}
-              >
-                <RefreshCw aria-hidden="true" /> Reload latest watcher snapshot
-              </Button>
-            </div>
-          ) : null}
-        </>
+        <TicketWatcherInventory
+          addWatcher={addWatcher}
+          canEdit={canEdit}
+          changeUserId={changeUserId}
+          editorIsCurrent={editorIsCurrent}
+          id={id}
+          mutate={mutate}
+          mutationOpen={mutationOpen}
+          page={page}
+          reloadRequired={reloadRequired}
+          savingUserId={savingUserId}
+          synchronize={synchronize}
+          userId={userId}
+          userIdError={userIdError}
+        />
       ) : null}
     </section>
   );
@@ -510,4 +512,137 @@ function watcherProblem(error: unknown, fallback: string): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+interface TicketWatcherInventoryProps {
+  addWatcher: (event: FormEvent<HTMLFormElement>) => void;
+  canEdit: ReturnType<typeof useTicketWatcherPanelState>["canEdit"];
+  changeUserId: (value: string) => void;
+  editorIsCurrent: ReturnType<
+    typeof useTicketWatcherPanelState
+  >["editorIsCurrent"];
+  id: ReturnType<typeof useTicketWatcherPanelState>["id"];
+  mutate: (action: "add" | "remove", targetUserId: string) => Promise<void>;
+  mutationOpen: ReturnType<typeof useTicketWatcherPanelState>["mutationOpen"];
+  page: NonNullable<ReturnType<typeof useTicketWatcherPanelState>["page"]>;
+  reloadRequired: ReturnType<
+    typeof useTicketWatcherPanelState
+  >["reloadRequired"];
+  savingUserId: ReturnType<typeof useTicketWatcherPanelState>["savingUserId"];
+  synchronize: (token?: {}, requiredVersion?: number | null) => Promise<void>;
+  userId: ReturnType<typeof useTicketWatcherPanelState>["userId"];
+  userIdError: ReturnType<typeof useTicketWatcherPanelState>["userIdError"];
+}
+
+function TicketWatcherInventory({
+  addWatcher,
+  canEdit,
+  changeUserId,
+  editorIsCurrent,
+  id,
+  mutate,
+  mutationOpen,
+  page,
+  reloadRequired,
+  savingUserId,
+  synchronize,
+  userId,
+  userIdError,
+}: TicketWatcherInventoryProps): React.JSX.Element {
+  return (
+    <>
+      {page.value.items.length > 0 ? (
+        <ul className="ticket-watchers__list" aria-label="Ticket watchers">
+          {page.value.items.map((watcher) => (
+            <li key={watcher.userId}>
+              <span>
+                <strong>{watcher.displayName}</strong>
+                <code>{watcher.userId}</code>
+                <small>
+                  Watching since <TenantInstant value={watcher.addedAt} />
+                </small>
+              </span>
+              {mutationOpen ? (
+                <Button
+                  aria-label={`Remove ${watcher.displayName} (${watcher.userId}) from watchers`}
+                  disabled={savingUserId !== null}
+                  onClick={() => void mutate("remove", watcher.userId)}
+                  type="button"
+                  variant="outline"
+                >
+                  <Trash2 aria-hidden="true" />
+                  {savingUserId === watcher.userId ? "Removing…" : "Remove"}
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="ticket-watchers__status">
+          No operators are watching this ticket.
+        </p>
+      )}
+
+      {canEdit && editorIsCurrent && !reloadRequired ? (
+        <form className="ticket-watchers__add" onSubmit={addWatcher} noValidate>
+          <span>
+            <Label htmlFor={`${id}-user-id`}>Operator user ID</Label>
+            <small>
+              Enter an active tenant operator with live read access to this
+              ticket.
+            </small>
+          </span>
+          <Input
+            aria-describedby={
+              userIdError ? `${id}-user-id-error` : `${id}-user-id-hint`
+            }
+            aria-invalid={Boolean(userIdError)}
+            autoComplete="off"
+            disabled={savingUserId !== null}
+            id={`${id}-user-id`}
+            onChange={(event) => changeUserId(event.target.value)}
+            placeholder="018f6b31-2cc8-7b3c-9d81-9a770a4f5d32"
+            value={userId}
+          />
+          <span className="ticket-watchers__add-action">
+            <Button
+              disabled={!mutationOpen || userId.trim() === ""}
+              type="submit"
+            >
+              <UserPlus aria-hidden="true" />
+              {savingUserId ? "Updating…" : "Add watcher"}
+            </Button>
+          </span>
+          <small className="ticket-watchers__hint" id={`${id}-user-id-hint`}>
+            Customer contacts are never eligible watchers.
+          </small>
+          {userIdError ? (
+            <small
+              className="ticket-watchers__field-error"
+              id={`${id}-user-id-error`}
+              role="alert"
+            >
+              {userIdError}
+            </small>
+          ) : null}
+        </form>
+      ) : null}
+      {!canEdit ? (
+        <p className="ticket-watchers__status">
+          Watchers are read-only under the current live tenant authority.
+        </p>
+      ) : null}
+      {reloadRequired ? (
+        <div className="ticket-watchers__reload">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void synchronize()}
+          >
+            <RefreshCw aria-hidden="true" /> Reload latest watcher snapshot
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
 }

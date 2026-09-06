@@ -1,4 +1,3 @@
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -10,6 +9,7 @@ import {
 } from "@periapsis/ui/components/ui/dialog";
 import { Label } from "@periapsis/ui/components/ui/label";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   Link2,
@@ -19,7 +19,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -56,7 +55,7 @@ interface RemovalDraft {
   reason: string;
 }
 
-export function CaseContactPanel({
+function useCaseContactPanelState({
   api = caseContactApi,
   authorityEpoch,
   canEdit,
@@ -80,7 +79,7 @@ export function CaseContactPanel({
   onReloadLatest: () => Promise<ReloadedCaseBoundary | null>;
   sessionId: string;
   tenantId: string;
-}): React.JSX.Element | null {
+}) {
   const id = useId();
   const queryClient = useQueryClient();
   const authorizationBoundary = JSON.stringify([
@@ -159,11 +158,9 @@ export function CaseContactPanel({
   const attempt = useRef<IdempotencyReference>({ current: null });
   const reloadLatest = useRef(onReloadLatest);
   const caseBoundaryIsCanonical = caseEtag === `"v${caseVersion}"`;
-
   useLayoutEffect(() => {
     reloadLatest.current = onReloadLatest;
   }, [onReloadLatest]);
-
   useLayoutEffect(() => {
     authorizationToken.current = {};
     mutationRequest.current?.abort();
@@ -199,15 +196,13 @@ export function CaseContactPanel({
       });
     };
   }, [authorizationBoundary, caseId, queryClient, tenantId]);
-
   useLayoutEffect(() => {
     authorizationToken.current = {};
     mutationRequest.current?.abort();
     mutationRequest.current = null;
     setSaving(null);
   }, [caseSnapshotBoundary]);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       recoveryVersionFloor !== null &&
       caseBoundaryIsCanonical &&
@@ -218,8 +213,7 @@ export function CaseContactPanel({
       setReloadRequired(false);
     }
   }, [caseBoundaryIsCanonical, caseVersion, recoveryVersionFloor]);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       selectedContactId !== "" &&
       !availableContacts.some((contact) => contact.id === selectedContactId)
@@ -228,9 +222,110 @@ export function CaseContactPanel({
       attempt.current.current = null;
     }
   }, [availableContacts, selectedContactId]);
+  return {
+    api,
+    authorityEpoch,
+    canEdit,
+    canRead,
+    caseEtag,
+    caseId,
+    caseVersion,
+    csrfToken,
+    onReloadLatest,
+    sessionId,
+    tenantId,
+    id,
+    queryClient,
+    authorizationBoundary,
+    caseSnapshotBoundary,
+    linkQueryKey,
+    inventoryQueryKey,
+    linkQuery,
+    inventoryQuery,
+    linksProjection,
+    contactsProjection,
+    links,
+    contacts,
+    linkedContactIds,
+    contactById,
+    availableContacts,
+    selectedContactId,
+    setSelectedContactId,
+    role,
+    setRole,
+    removal,
+    setRemoval,
+    problem,
+    setProblem,
+    saving,
+    setSaving,
+    recoveryVersionFloor,
+    setRecoveryVersionFloor,
+    reloadRequired,
+    setReloadRequired,
+    mutationRequest,
+    authorizationToken,
+    attempt,
+    reloadLatest,
+    caseBoundaryIsCanonical,
+  };
+}
 
+export function CaseContactPanel(props: {
+  api?: CaseContactApi;
+  authorityEpoch: string;
+  canEdit: boolean;
+  canRead: boolean;
+  caseEtag: string;
+  caseId: string;
+  caseVersion: number;
+  csrfToken: string;
+  onReloadLatest: () => Promise<ReloadedCaseBoundary | null>;
+  sessionId: string;
+  tenantId: string;
+}): React.JSX.Element | null {
+  const state = useCaseContactPanelState(props);
+  const {
+    api,
+    canEdit,
+    canRead,
+    caseEtag,
+    caseId,
+    caseVersion,
+    csrfToken,
+    sessionId,
+    tenantId,
+    id,
+    queryClient,
+    linkQueryKey,
+    linkQuery,
+    inventoryQuery,
+    linksProjection,
+    contactsProjection,
+    links,
+    contactById,
+    availableContacts,
+    selectedContactId,
+    setSelectedContactId,
+    role,
+    setRole,
+    removal,
+    setRemoval,
+    problem,
+    setProblem,
+    saving,
+    setSaving,
+    recoveryVersionFloor,
+    setRecoveryVersionFloor,
+    reloadRequired,
+    setReloadRequired,
+    mutationRequest,
+    authorizationToken,
+    attempt,
+    reloadLatest,
+    caseBoundaryIsCanonical,
+  } = state;
   if (!canRead) return null;
-
   const projectionsAreCanonical =
     linksProjection.canonical && contactsProjection.canonical;
   const mutationsAllowed =
@@ -243,13 +338,11 @@ export function CaseContactPanel({
     !inventoryQuery.isPending &&
     !linkQuery.isError &&
     !inventoryQuery.isError;
-
   const changeSelectedContact = (value: string): void => {
     setSelectedContactId(value);
     setProblem(null);
     attempt.current.current = null;
   };
-
   const changeRole = (value: string): void => {
     if (value !== "primary" && value !== "escalation" && value !== "watcher") {
       return;
@@ -258,7 +351,6 @@ export function CaseContactPanel({
     setProblem(null);
     attempt.current.current = null;
   };
-
   const closeRemoval = (): void => {
     mutationRequest.current?.abort();
     mutationRequest.current = null;
@@ -267,7 +359,6 @@ export function CaseContactPanel({
     setProblem(null);
     setSaving(null);
   };
-
   const submitLink = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const contact = availableContacts.find(
@@ -276,7 +367,6 @@ export function CaseContactPanel({
     if (!contact || !mutationsAllowed) return;
     void mutate({ kind: "link", contact, role });
   };
-
   const submitArchive = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (!removal || removal.reason.trim() === "" || !mutationsAllowed) return;
@@ -286,7 +376,6 @@ export function CaseContactPanel({
       reason: removal.reason.trim(),
     });
   };
-
   const mutate = async (
     command:
       | {
@@ -386,7 +475,6 @@ export function CaseContactPanel({
       }
     }
   };
-
   const synchronize = async (
     token = authorizationToken.current,
     minimumVersion = recoveryVersionFloor,
@@ -402,7 +490,6 @@ export function CaseContactPanel({
       (minimumVersion === null || boundary.version >= minimumVersion)
     );
   };
-
   const invalidateExactContactCaches = async (): Promise<void> => {
     await Promise.all([
       queryClient.invalidateQueries({ exact: true, queryKey: linkQueryKey }),
@@ -416,283 +503,39 @@ export function CaseContactPanel({
       }),
     ]);
   };
-
   const ownsMutation = (token: object, controller: AbortController): boolean =>
     authorizationToken.current === token &&
     mutationRequest.current === controller &&
     !controller.signal.aborted;
 
   return (
-    <div
-      aria-labelledby="ticket-tab-contacts"
-      className="case-contacts"
-      id="ticket-panel-contacts"
-      role="tabpanel"
-    >
-      <header className="case-contacts__heading">
-        <span>
-          <UsersRound aria-hidden="true" />
-          <span>
-            <h2>Customer contacts</h2>
-            <small>
-              PII is joined only from the separately authorized active-contact
-              inventory.
-            </small>
-          </span>
-        </span>
-        <Badge variant="outline">{links.length} loaded links</Badge>
-      </header>
-
-      {problem ? (
-        <p className="case-contacts__problem" role="alert">
-          {problem}
-        </p>
-      ) : null}
-      {!caseBoundaryIsCanonical || !projectionsAreCanonical ? (
-        <FocusedError message="The Case contact projection was not safe to apply. Reload the current authorized snapshot." />
-      ) : null}
-      {linkQuery.isError || inventoryQuery.isError ? (
-        <div className="case-contacts__error">
-          <FocusedError
-            message={contactProblem(
-              linkQuery.error ?? inventoryQuery.error,
-              "The Case contact inventory could not be loaded.",
-            )}
-          />
-          <Button
-            onClick={() => {
-              void linkQuery.refetch();
-              void inventoryQuery.refetch();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <RefreshCw aria-hidden="true" /> Retry contacts
-          </Button>
-        </div>
-      ) : null}
-      {linkQuery.isPending || inventoryQuery.isPending ? (
-        <div
-          aria-label="Loading Case contacts"
-          className="case-contacts__loading"
-        >
-          <span />
-          <span />
-          <span />
-        </div>
-      ) : null}
-
-      {projectionsAreCanonical &&
-      !linkQuery.isPending &&
-      !linkQuery.isError &&
-      links.length === 0 ? (
-        <div className="case-contacts__empty">
-          <Link2 aria-hidden="true" />
-          <h3>No customer contacts linked</h3>
-          <p>This Case has no active customer-contact relationship.</p>
-        </div>
-      ) : null}
-
-      {projectionsAreCanonical && links.length > 0 ? (
-        <ul className="case-contacts__list">
-          {links.map((link) => {
-            const contact = contactById.get(link.contactId);
-            return (
-              <li key={link.id}>
-                <span className="case-contacts__icon">
-                  <Link2 aria-hidden="true" />
-                </span>
-                <span className="case-contacts__identity">
-                  <strong>
-                    {contact
-                      ? `${contact.firstName} ${contact.lastName}`
-                      : `Contact ${compactIdentifier(link.contactId)}`}
-                  </strong>
-                  {contact ? (
-                    <span>{contact.email}</span>
-                  ) : (
-                    <small>
-                      Profile not loaded; no personal data is derived from the
-                      relationship.
-                    </small>
-                  )}
-                  <small>
-                    Linked <TenantInstant value={link.createdAt} /> · v
-                    {link.version}
-                  </small>
-                </span>
-                <span className="case-contacts__classification">
-                  <Badge variant="secondary">{roleLabel(link.role)}</Badge>
-                  <small>{originLabel(link)}</small>
-                </span>
-                {canEdit ? (
-                  <Button
-                    aria-label={`Remove ${contact ? `${contact.firstName} ${contact.lastName}` : `contact ${compactIdentifier(link.contactId)}`} from Case`}
-                    disabled={!mutationsAllowed}
-                    onClick={() => {
-                      attempt.current.current = null;
-                      setProblem(null);
-                      setRemoval({ link, reason: "" });
-                    }}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Trash2 aria-hidden="true" /> Remove
-                  </Button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-
-      {projectionsAreCanonical && linkQuery.hasNextPage ? (
-        <Button
-          disabled={linkQuery.isFetchingNextPage}
-          onClick={() => void linkQuery.fetchNextPage()}
-          size="sm"
-          variant="outline"
-        >
-          <ArrowDown aria-hidden="true" />
-          {linkQuery.isFetchingNextPage
-            ? "Loading relationships…"
-            : "Load more linked contacts"}
-        </Button>
-      ) : null}
-
-      {projectionsAreCanonical && inventoryQuery.hasNextPage ? (
-        <Button
-          disabled={inventoryQuery.isFetchingNextPage}
-          onClick={() => void inventoryQuery.fetchNextPage()}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          <ArrowDown aria-hidden="true" />
-          {inventoryQuery.isFetchingNextPage
-            ? "Loading contacts…"
-            : "Load more active contacts"}
-        </Button>
-      ) : null}
-
-      {canEdit && projectionsAreCanonical ? (
-        <form className="case-contacts__add" onSubmit={submitLink}>
-          <div>
-            <Label htmlFor={`${id}-contact`}>Active customer contact</Label>
-            <select
-              disabled={!mutationsAllowed || availableContacts.length === 0}
-              id={`${id}-contact`}
-              onChange={(event) =>
-                changeSelectedContact(event.currentTarget.value)
-              }
-              required
-              value={selectedContactId}
-            >
-              <option value="">Select a contact</option>
-              {availableContacts.map((contact) => (
-                <option key={contact.id} value={contact.id}>
-                  {contact.firstName} {contact.lastName} · {contact.email}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor={`${id}-role`}>Relationship role</Label>
-            <select
-              disabled={!mutationsAllowed}
-              id={`${id}-role`}
-              onChange={(event) => changeRole(event.currentTarget.value)}
-              value={role}
-            >
-              <option value="primary">Primary</option>
-              <option value="escalation">Escalation</option>
-              <option value="watcher">Watcher</option>
-            </select>
-          </div>
-          <Button
-            disabled={!mutationsAllowed || selectedContactId === ""}
-            type="submit"
-          >
-            <UserPlus aria-hidden="true" />
-            {saving === "link" ? "Linking…" : "Link contact"}
-          </Button>
-        </form>
-      ) : null}
-
-      {reloadRequired ? (
-        <div className="case-contacts__reload">
-          <p>
-            Contact changes are locked until the current Case and relationship
-            snapshots agree.
-          </p>
-          <Button
-            disabled={saving !== null}
-            onClick={() => void synchronize()}
-            size="sm"
-            variant="outline"
-          >
-            <RefreshCw aria-hidden="true" /> Reload current Case
-          </Button>
-        </div>
-      ) : null}
-
-      <Dialog
-        open={removal !== null}
-        onOpenChange={(open) => {
-          if (!open && saving === null) closeRemoval();
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove customer contact from this Case?</DialogTitle>
-            <DialogDescription>
-              The historical relationship remains archived and auditable. A
-              reason is required.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="case-contacts__remove" onSubmit={submitArchive}>
-            <Label htmlFor={`${id}-archive-reason`}>Removal reason</Label>
-            <Textarea
-              autoFocus
-              disabled={saving !== null}
-              id={`${id}-archive-reason`}
-              maxLength={500}
-              onChange={(event) => {
-                setRemoval((current) =>
-                  current
-                    ? { ...current, reason: event.currentTarget.value }
-                    : null,
-                );
-                attempt.current.current = null;
-                setProblem(null);
-              }}
-              required
-              value={removal?.reason ?? ""}
-            />
-            <div>
-              <Button
-                disabled={saving !== null}
-                onClick={closeRemoval}
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={
-                  !mutationsAllowed || (removal?.reason.trim() ?? "") === ""
-                }
-                type="submit"
-                variant="destructive"
-              >
-                <Trash2 aria-hidden="true" />
-                {saving === "archive" ? "Removing…" : "Confirm removal"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+    <CaseContactsContent
+      attempt={attempt}
+      availableContacts={availableContacts}
+      canEdit={canEdit}
+      caseBoundaryIsCanonical={caseBoundaryIsCanonical}
+      changeRole={changeRole}
+      changeSelectedContact={changeSelectedContact}
+      closeRemoval={closeRemoval}
+      contactById={contactById}
+      id={id}
+      inventoryQuery={inventoryQuery}
+      linkQuery={linkQuery}
+      links={links}
+      mutationsAllowed={mutationsAllowed}
+      problem={problem}
+      projectionsAreCanonical={projectionsAreCanonical}
+      reloadRequired={reloadRequired}
+      removal={removal}
+      role={role}
+      saving={saving}
+      selectedContactId={selectedContactId}
+      setProblem={setProblem}
+      setRemoval={setRemoval}
+      submitArchive={submitArchive}
+      submitLink={submitLink}
+      synchronize={synchronize}
+    />
   );
 }
 
@@ -763,4 +606,477 @@ function contactProblem(error: unknown, fallback: string): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+interface CaseContactsContentProps {
+  attempt: ReturnType<typeof useCaseContactPanelState>["attempt"];
+  availableContacts: ReturnType<
+    typeof useCaseContactPanelState
+  >["availableContacts"];
+  canEdit: ReturnType<typeof useCaseContactPanelState>["canEdit"];
+  caseBoundaryIsCanonical: ReturnType<
+    typeof useCaseContactPanelState
+  >["caseBoundaryIsCanonical"];
+  changeRole: (value: string) => void;
+  changeSelectedContact: (value: string) => void;
+  closeRemoval: () => void;
+  contactById: ReturnType<typeof useCaseContactPanelState>["contactById"];
+  id: ReturnType<typeof useCaseContactPanelState>["id"];
+  inventoryQuery: ReturnType<typeof useCaseContactPanelState>["inventoryQuery"];
+  linkQuery: ReturnType<typeof useCaseContactPanelState>["linkQuery"];
+  links: ReturnType<typeof useCaseContactPanelState>["links"];
+  mutationsAllowed: boolean;
+  problem: ReturnType<typeof useCaseContactPanelState>["problem"];
+  projectionsAreCanonical: boolean;
+  reloadRequired: ReturnType<typeof useCaseContactPanelState>["reloadRequired"];
+  removal: ReturnType<typeof useCaseContactPanelState>["removal"];
+  role: ReturnType<typeof useCaseContactPanelState>["role"];
+  saving: ReturnType<typeof useCaseContactPanelState>["saving"];
+  selectedContactId: ReturnType<
+    typeof useCaseContactPanelState
+  >["selectedContactId"];
+  setProblem: ReturnType<typeof useCaseContactPanelState>["setProblem"];
+  setRemoval: ReturnType<typeof useCaseContactPanelState>["setRemoval"];
+  submitArchive: (event: FormEvent<HTMLFormElement>) => void;
+  submitLink: (event: FormEvent<HTMLFormElement>) => void;
+  synchronize: (token?: {}, minimumVersion?: number | null) => Promise<boolean>;
+}
+
+function CaseContactsContent({
+  attempt,
+  availableContacts,
+  canEdit,
+  caseBoundaryIsCanonical,
+  changeRole,
+  changeSelectedContact,
+  closeRemoval,
+  contactById,
+  id,
+  inventoryQuery,
+  linkQuery,
+  links,
+  mutationsAllowed,
+  problem,
+  projectionsAreCanonical,
+  reloadRequired,
+  removal,
+  role,
+  saving,
+  selectedContactId,
+  setProblem,
+  setRemoval,
+  submitArchive,
+  submitLink,
+  synchronize,
+}: CaseContactsContentProps): React.JSX.Element {
+  return (
+    <div
+      aria-labelledby="ticket-tab-contacts"
+      className="case-contacts"
+      id="ticket-panel-contacts"
+      role="tabpanel"
+    >
+      <header className="case-contacts__heading">
+        <span>
+          <UsersRound aria-hidden="true" />
+          <span>
+            <h2>Customer contacts</h2>
+            <small>
+              PII is joined only from the separately authorized active-contact
+              inventory.
+            </small>
+          </span>
+        </span>
+        <Badge variant="outline">{links.length} loaded links</Badge>
+      </header>
+
+      <CaseContactStatus
+        caseBoundaryIsCanonical={caseBoundaryIsCanonical}
+        inventoryQuery={inventoryQuery}
+        linkQuery={linkQuery}
+        links={links}
+        problem={problem}
+        projectionsAreCanonical={projectionsAreCanonical}
+      />
+      {projectionsAreCanonical && links.length > 0 ? (
+        <CaseContactInventory
+          attempt={attempt}
+          canEdit={canEdit}
+          contactById={contactById}
+          links={links}
+          mutationsAllowed={mutationsAllowed}
+          setProblem={setProblem}
+          setRemoval={setRemoval}
+        />
+      ) : null}
+
+      {projectionsAreCanonical && linkQuery.hasNextPage ? (
+        <Button
+          disabled={linkQuery.isFetchingNextPage}
+          onClick={() => void linkQuery.fetchNextPage()}
+          size="sm"
+          variant="outline"
+        >
+          <ArrowDown aria-hidden="true" />
+          {linkQuery.isFetchingNextPage
+            ? "Loading relationships…"
+            : "Load more linked contacts"}
+        </Button>
+      ) : null}
+
+      {projectionsAreCanonical && inventoryQuery.hasNextPage ? (
+        <Button
+          disabled={inventoryQuery.isFetchingNextPage}
+          onClick={() => void inventoryQuery.fetchNextPage()}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <ArrowDown aria-hidden="true" />
+          {inventoryQuery.isFetchingNextPage
+            ? "Loading contacts…"
+            : "Load more active contacts"}
+        </Button>
+      ) : null}
+
+      {canEdit && projectionsAreCanonical ? (
+        <CaseContactLinkForm
+          availableContacts={availableContacts}
+          changeRole={changeRole}
+          changeSelectedContact={changeSelectedContact}
+          id={id}
+          mutationsAllowed={mutationsAllowed}
+          role={role}
+          saving={saving}
+          selectedContactId={selectedContactId}
+          submitLink={submitLink}
+        />
+      ) : null}
+
+      {reloadRequired ? (
+        <div className="case-contacts__reload">
+          <p>
+            Contact changes are locked until the current Case and relationship
+            snapshots agree.
+          </p>
+          <Button
+            disabled={saving !== null}
+            onClick={() => void synchronize()}
+            size="sm"
+            variant="outline"
+          >
+            <RefreshCw aria-hidden="true" /> Reload current Case
+          </Button>
+        </div>
+      ) : null}
+
+      <CaseContactRemovalDialog
+        attempt={attempt}
+        closeRemoval={closeRemoval}
+        id={id}
+        mutationsAllowed={mutationsAllowed}
+        removal={removal}
+        saving={saving}
+        setProblem={setProblem}
+        setRemoval={setRemoval}
+        submitArchive={submitArchive}
+      />
+    </div>
+  );
+}
+
+interface CaseContactRemovalDialogProps {
+  attempt: ReturnType<typeof useCaseContactPanelState>["attempt"];
+  closeRemoval: () => void;
+  id: ReturnType<typeof useCaseContactPanelState>["id"];
+  mutationsAllowed: boolean;
+  removal: ReturnType<typeof useCaseContactPanelState>["removal"];
+  saving: ReturnType<typeof useCaseContactPanelState>["saving"];
+  setProblem: ReturnType<typeof useCaseContactPanelState>["setProblem"];
+  setRemoval: ReturnType<typeof useCaseContactPanelState>["setRemoval"];
+  submitArchive: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+function CaseContactRemovalDialog({
+  attempt,
+  closeRemoval,
+  id,
+  mutationsAllowed,
+  removal,
+  saving,
+  setProblem,
+  setRemoval,
+  submitArchive,
+}: CaseContactRemovalDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open={removal !== null}
+      onOpenChange={(open) => {
+        if (!open && saving === null) closeRemoval();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Remove customer contact from this Case?</DialogTitle>
+          <DialogDescription>
+            The historical relationship remains archived and auditable. A reason
+            is required.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="case-contacts__remove" onSubmit={submitArchive}>
+          <Label htmlFor={`${id}-archive-reason`}>Removal reason</Label>
+          <Textarea
+            autoFocus
+            disabled={saving !== null}
+            id={`${id}-archive-reason`}
+            maxLength={500}
+            onChange={(event) => {
+              setRemoval((current) =>
+                current
+                  ? { ...current, reason: event.currentTarget.value }
+                  : null,
+              );
+              attempt.current.current = null;
+              setProblem(null);
+            }}
+            required
+            value={removal?.reason ?? ""}
+          />
+          <div>
+            <Button
+              disabled={saving !== null}
+              onClick={closeRemoval}
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                !mutationsAllowed || (removal?.reason.trim() ?? "") === ""
+              }
+              type="submit"
+              variant="destructive"
+            >
+              <Trash2 aria-hidden="true" />
+              {saving === "archive" ? "Removing…" : "Confirm removal"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface CaseContactInventoryProps {
+  attempt: ReturnType<typeof useCaseContactPanelState>["attempt"];
+  canEdit: ReturnType<typeof useCaseContactPanelState>["canEdit"];
+  contactById: ReturnType<typeof useCaseContactPanelState>["contactById"];
+  links: ReturnType<typeof useCaseContactPanelState>["links"];
+  mutationsAllowed: boolean;
+  setProblem: ReturnType<typeof useCaseContactPanelState>["setProblem"];
+  setRemoval: ReturnType<typeof useCaseContactPanelState>["setRemoval"];
+}
+
+function CaseContactInventory({
+  attempt,
+  canEdit,
+  contactById,
+  links,
+  mutationsAllowed,
+  setProblem,
+  setRemoval,
+}: CaseContactInventoryProps): React.JSX.Element {
+  return (
+    <ul className="case-contacts__list">
+      {links.map((link) => {
+        const contact = contactById.get(link.contactId);
+        return (
+          <li key={link.id}>
+            <span className="case-contacts__icon">
+              <Link2 aria-hidden="true" />
+            </span>
+            <span className="case-contacts__identity">
+              <strong>
+                {contact
+                  ? `${contact.firstName} ${contact.lastName}`
+                  : `Contact ${compactIdentifier(link.contactId)}`}
+              </strong>
+              {contact ? (
+                <span>{contact.email}</span>
+              ) : (
+                <small>
+                  Profile not loaded; no personal data is derived from the
+                  relationship.
+                </small>
+              )}
+              <small>
+                Linked <TenantInstant value={link.createdAt} /> · v
+                {link.version}
+              </small>
+            </span>
+            <span className="case-contacts__classification">
+              <Badge variant="secondary">{roleLabel(link.role)}</Badge>
+              <small>{originLabel(link)}</small>
+            </span>
+            {canEdit ? (
+              <Button
+                aria-label={`Remove ${contact ? `${contact.firstName} ${contact.lastName}` : `contact ${compactIdentifier(link.contactId)}`} from Case`}
+                disabled={!mutationsAllowed}
+                onClick={() => {
+                  attempt.current.current = null;
+                  setProblem(null);
+                  setRemoval({ link, reason: "" });
+                }}
+                size="sm"
+                variant="outline"
+              >
+                <Trash2 aria-hidden="true" /> Remove
+              </Button>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+interface CaseContactStatusProps {
+  caseBoundaryIsCanonical: ReturnType<
+    typeof useCaseContactPanelState
+  >["caseBoundaryIsCanonical"];
+  inventoryQuery: ReturnType<typeof useCaseContactPanelState>["inventoryQuery"];
+  linkQuery: ReturnType<typeof useCaseContactPanelState>["linkQuery"];
+  links: ReturnType<typeof useCaseContactPanelState>["links"];
+  problem: ReturnType<typeof useCaseContactPanelState>["problem"];
+  projectionsAreCanonical: boolean;
+}
+
+function CaseContactStatus({
+  caseBoundaryIsCanonical,
+  inventoryQuery,
+  linkQuery,
+  links,
+  problem,
+  projectionsAreCanonical,
+}: CaseContactStatusProps): React.JSX.Element {
+  return (
+    <>
+      {problem ? (
+        <p className="case-contacts__problem" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      {!caseBoundaryIsCanonical || !projectionsAreCanonical ? (
+        <FocusedError message="The Case contact projection was not safe to apply. Reload the current authorized snapshot." />
+      ) : null}
+      {linkQuery.isError || inventoryQuery.isError ? (
+        <div className="case-contacts__error">
+          <FocusedError
+            message={contactProblem(
+              linkQuery.error ?? inventoryQuery.error,
+              "The Case contact inventory could not be loaded.",
+            )}
+          />
+          <Button
+            onClick={() => {
+              void linkQuery.refetch();
+              void inventoryQuery.refetch();
+            }}
+            size="sm"
+            variant="outline"
+          >
+            <RefreshCw aria-hidden="true" /> Retry contacts
+          </Button>
+        </div>
+      ) : null}
+      {linkQuery.isPending || inventoryQuery.isPending ? (
+        <div
+          aria-label="Loading Case contacts"
+          className="case-contacts__loading"
+        >
+          <span />
+          <span />
+          <span />
+        </div>
+      ) : null}
+
+      {projectionsAreCanonical &&
+      !linkQuery.isPending &&
+      !linkQuery.isError &&
+      links.length === 0 ? (
+        <div className="case-contacts__empty">
+          <Link2 aria-hidden="true" />
+          <h3>No customer contacts linked</h3>
+          <p>This Case has no active customer-contact relationship.</p>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+interface CaseContactLinkFormProps {
+  availableContacts: CaseContactsContentProps["availableContacts"];
+  changeRole: CaseContactsContentProps["changeRole"];
+  changeSelectedContact: CaseContactsContentProps["changeSelectedContact"];
+  id: CaseContactsContentProps["id"];
+  mutationsAllowed: CaseContactsContentProps["mutationsAllowed"];
+  role: CaseContactsContentProps["role"];
+  saving: CaseContactsContentProps["saving"];
+  selectedContactId: CaseContactsContentProps["selectedContactId"];
+  submitLink: CaseContactsContentProps["submitLink"];
+}
+
+function CaseContactLinkForm({
+  availableContacts,
+  changeRole,
+  changeSelectedContact,
+  id,
+  mutationsAllowed,
+  role,
+  saving,
+  selectedContactId,
+  submitLink,
+}: CaseContactLinkFormProps): React.JSX.Element {
+  return (
+    <form className="case-contacts__add" onSubmit={submitLink}>
+      <div>
+        <Label htmlFor={`${id}-contact`}>Active customer contact</Label>
+        <select
+          disabled={!mutationsAllowed || availableContacts.length === 0}
+          id={`${id}-contact`}
+          onChange={(event) => changeSelectedContact(event.currentTarget.value)}
+          required
+          value={selectedContactId}
+        >
+          <option value="">Select a contact</option>
+          {availableContacts.map((contact) => (
+            <option key={contact.id} value={contact.id}>
+              {contact.firstName} {contact.lastName} · {contact.email}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <Label htmlFor={`${id}-role`}>Relationship role</Label>
+        <select
+          disabled={!mutationsAllowed}
+          id={`${id}-role`}
+          onChange={(event) => changeRole(event.currentTarget.value)}
+          value={role}
+        >
+          <option value="primary">Primary</option>
+          <option value="escalation">Escalation</option>
+          <option value="watcher">Watcher</option>
+        </select>
+      </div>
+      <Button
+        disabled={!mutationsAllowed || selectedContactId === ""}
+        type="submit"
+      >
+        <UserPlus aria-hidden="true" />
+        {saving === "link" ? "Linking…" : "Link contact"}
+      </Button>
+    </form>
+  );
 }

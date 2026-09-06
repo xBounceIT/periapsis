@@ -1,3 +1,10 @@
+import type {
+  AuditActorType,
+  AuditChainVerification,
+  AuditEvent,
+  AuditJsonDocument,
+  AuditOutcome,
+} from "@periapsis/contracts";
 import {
   Alert,
   AlertDescription,
@@ -7,13 +14,6 @@ import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import { Input } from "@periapsis/ui/components/ui/input";
 import { Label } from "@periapsis/ui/components/ui/label";
-import type {
-  AuditActorType,
-  AuditChainVerification,
-  AuditEvent,
-  AuditJsonDocument,
-  AuditOutcome,
-} from "@periapsis/contracts";
 import {
   CheckCircle2,
   ChevronRight,
@@ -32,6 +32,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -174,7 +175,12 @@ interface InventoryState {
   nextSequence?: number;
 }
 
-function AuditWorkspace({
+function AuditWorkspace(props: AuditWorkspaceProps): React.JSX.Element {
+  const model = useAuditWorkspaceModel(props);
+  return <AuditWorkspaceView model={model.data} />;
+}
+
+function useAuditWorkspaceModel({
   api,
   operationsApi,
   canExport,
@@ -184,7 +190,7 @@ function AuditWorkspace({
   onUnauthorized,
   scope,
   scopeLabel,
-}: AuditWorkspaceProps): React.JSX.Element {
+}: AuditWorkspaceProps) {
   const surface = scope.kind;
   const tenantId = scope.kind === "tenant" ? scope.tenantId : undefined;
   const [draft, setDraft] = useState<AuditFilterDraft>(() => ({
@@ -209,7 +215,9 @@ function AuditWorkspace({
   const paginationController = useRef<AbortController | null>(null);
   const verificationController = useRef<AbortController | null>(null);
   const boundaryCallbacks = useRef({ onForbidden, onUnauthorized });
-  boundaryCallbacks.current = { onForbidden, onUnauthorized };
+  useLayoutEffect(() => {
+    boundaryCallbacks.current = { onForbidden, onUnauthorized };
+  }, [onForbidden, onUnauthorized]);
 
   const notifyBoundary = useCallback((error: unknown): void => {
     if (!(error instanceof AuditApiError)) return;
@@ -328,6 +336,7 @@ function AuditWorkspace({
         paginationController.current === controller
       ) {
         paginationController.current = null;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally, react-doctor/no-unowned-async-error-clear -- This finally runs on success and failure; its request-ownership guard prevents an older request clearing a newer loading flag.
         setLoadingMore(false);
       }
     }
@@ -369,6 +378,75 @@ function AuditWorkspace({
   const permission =
     surface === "tenant" ? tenantAuditPermission : platformAuditPermission;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      applyFilters,
+      canExport,
+      canManageRetention,
+      clearFilters,
+      csrfToken,
+      draft,
+      filterError,
+      filters,
+      inventory,
+      loadMore,
+      loadingMore,
+      notifyBoundary,
+      operationsApi,
+      permission,
+      scope,
+      scopeLabel,
+      selected,
+      selectedId,
+      setDraft,
+      setRevision,
+      setSelectedId,
+      surface,
+      verification,
+      verificationError,
+      verifyChain,
+      verifying,
+    },
+  };
+}
+
+function AuditWorkspaceView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useAuditWorkspaceModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    applyFilters,
+    canExport,
+    canManageRetention,
+    clearFilters,
+    csrfToken,
+    draft,
+    filterError,
+    filters,
+    inventory,
+    loadMore,
+    loadingMore,
+    notifyBoundary,
+    operationsApi,
+    permission,
+    scope,
+    scopeLabel,
+    selected,
+    selectedId,
+    setDraft,
+    setRevision,
+    setSelectedId,
+    surface,
+    verification,
+    verificationError,
+    verifyChain,
+    verifying,
+  } = model;
   return (
     <section
       className="audit-workspace"
@@ -451,102 +529,15 @@ function AuditWorkspace({
           surface={surface}
         />
 
-        <section
-          className="audit-ledger"
-          aria-labelledby="audit-events-title"
-          aria-busy={inventory.kind === "loading"}
-        >
-          <div className="audit-ledger__toolbar">
-            <div>
-              <p className="section-label">Forward-only sequence</p>
-              <h2 id="audit-events-title">Recorded events</h2>
-              <p aria-live="polite">
-                {inventory.kind === "ready"
-                  ? `${inventory.items.length} event${inventory.items.length === 1 ? "" : "s"} loaded`
-                  : "Loading the protected audit stream"}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRevision((value) => value + 1)}
-              disabled={inventory.kind === "loading"}
-            >
-              <RefreshCw aria-hidden="true" /> Refresh
-            </Button>
-          </div>
-
-          {inventory.kind === "loading" ? (
-            <AuditLoading />
-          ) : inventory.kind === "error" ? (
-            <div className="audit-ledger__state">
-              <FocusedError
-                message={safeAuditError(
-                  inventory.error,
-                  "The protected audit stream could not be loaded.",
-                )}
-                title="Audit stream unavailable"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setRevision((value) => value + 1)}
-              >
-                Try again
-              </Button>
-            </div>
-          ) : inventory.items.length === 0 ? (
-            <div className="audit-ledger__empty">
-              <ListFilter aria-hidden="true" />
-              <strong>No events match these filters</strong>
-              <p>
-                Broaden the time range or clear exact identifiers. The reader
-                never searches before, after, or metadata documents.
-              </p>
-            </div>
-          ) : (
-            <>
-              {inventory.error ? (
-                <FocusedError
-                  autoFocus={false}
-                  message={safeAuditError(
-                    inventory.error,
-                    "The next audit page could not be loaded.",
-                  )}
-                  title="Pagination stopped"
-                />
-              ) : null}
-              <div className="audit-investigation">
-                <AuditEventList
-                  items={inventory.items}
-                  onSelect={setSelectedId}
-                  selectedId={selectedId}
-                />
-                <AuditEventDetail event={selected} />
-              </div>
-              {inventory.nextSequence !== undefined ? (
-                <div className="audit-load-more">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void loadMore()}
-                    disabled={loadingMore}
-                  >
-                    {loadingMore ? (
-                      <LoaderCircle
-                        className="is-spinning"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <ChevronRight aria-hidden="true" />
-                    )}
-                    {loadingMore ? "Loading next page" : "Load next sequence"}
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </section>
+        <AuditEventTable
+          inventory={inventory}
+          loadingMore={loadingMore}
+          loadMore={loadMore}
+          selected={selected}
+          selectedId={selectedId}
+          setRevision={setRevision}
+          setSelectedId={setSelectedId}
+        />
       </div>
     </section>
   );
@@ -1134,4 +1125,143 @@ function parseOutcomeInput(value: string): "" | AuditOutcome {
   return value === "success" || value === "failure" || value === "denied"
     ? value
     : "";
+}
+
+interface AuditEventTableProps {
+  inventory: InventoryState;
+  loadingMore: boolean;
+  loadMore: () => Promise<void>;
+  selected: AuditEvent | null;
+  selectedId: string | null;
+  setRevision: React.Dispatch<React.SetStateAction<number>>;
+  setSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
+}
+
+function AuditEventTable({
+  inventory,
+  loadingMore,
+  loadMore,
+  selected,
+  selectedId,
+  setRevision,
+  setSelectedId,
+}: AuditEventTableProps): React.JSX.Element {
+  return (
+    <section
+      className="audit-ledger"
+      aria-labelledby="audit-events-title"
+      aria-busy={inventory.kind === "loading"}
+    >
+      <div className="audit-ledger__toolbar">
+        <div>
+          <p className="section-label">Forward-only sequence</p>
+          <h2 id="audit-events-title">Recorded events</h2>
+          <p aria-live="polite">
+            {inventory.kind === "ready"
+              ? `${inventory.items.length} event${inventory.items.length === 1 ? "" : "s"} loaded`
+              : "Loading the protected audit stream"}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setRevision((value) => value + 1)}
+          disabled={inventory.kind === "loading"}
+        >
+          <RefreshCw aria-hidden="true" /> Refresh
+        </Button>
+      </div>
+
+      <AuditLedgerContent
+        inventory={inventory}
+        loadingMore={loadingMore}
+        loadMore={loadMore}
+        selected={selected}
+        selectedId={selectedId}
+        setRevision={setRevision}
+        setSelectedId={setSelectedId}
+      />
+    </section>
+  );
+}
+
+function AuditLedgerContent({
+  inventory,
+  loadingMore,
+  loadMore,
+  selected,
+  selectedId,
+  setRevision,
+  setSelectedId,
+}: AuditEventTableProps): React.JSX.Element {
+  if (inventory.kind === "loading") return <AuditLoading />;
+  if (inventory.kind === "error")
+    return (
+      <div className="audit-ledger__state">
+        <FocusedError
+          message={safeAuditError(
+            inventory.error,
+            "The protected audit stream could not be loaded.",
+          )}
+          title="Audit stream unavailable"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setRevision((value) => value + 1)}
+        >
+          Try again
+        </Button>
+      </div>
+    );
+  if (inventory.items.length === 0)
+    return (
+      <div className="audit-ledger__empty">
+        <ListFilter aria-hidden="true" />
+        <strong>No events match these filters</strong>
+        <p>
+          Broaden the time range or clear exact identifiers. The reader never
+          searches before, after, or metadata documents.
+        </p>
+      </div>
+    );
+  return (
+    <>
+      {inventory.error ? (
+        <FocusedError
+          autoFocus={false}
+          message={safeAuditError(
+            inventory.error,
+            "The next audit page could not be loaded.",
+          )}
+          title="Pagination stopped"
+        />
+      ) : null}
+      <div className="audit-investigation">
+        <AuditEventList
+          items={inventory.items}
+          onSelect={setSelectedId}
+          selectedId={selectedId}
+        />
+        <AuditEventDetail event={selected} />
+      </div>
+      {inventory.nextSequence !== undefined ? (
+        <div className="audit-load-more">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
+          >
+            {loadingMore ? (
+              <LoaderCircle className="is-spinning" aria-hidden="true" />
+            ) : (
+              <ChevronRight aria-hidden="true" />
+            )}
+            {loadingMore ? "Loading next page" : "Load next sequence"}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
 }

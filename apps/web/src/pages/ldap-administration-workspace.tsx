@@ -18,8 +18,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
@@ -34,7 +32,19 @@ import {
   Save,
   ShieldAlert,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
+import { FormValidationAlert } from "./form-validation-alert";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
@@ -69,6 +79,11 @@ import {
   type LdapMappingDraft,
 } from "./ldap-administration-model";
 
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 type BindingState =
   | { kind: "error"; message: string }
   | { kind: "loading" }
@@ -92,7 +107,14 @@ interface LdapAdministrationWorkspaceProps {
   tenantId: string;
 }
 
-export function LdapAdministrationWorkspace({
+export function LdapAdministrationWorkspace(
+  props: LdapAdministrationWorkspaceProps,
+): React.JSX.Element {
+  const model = useLdapAdministrationWorkspaceModel(props);
+  return <LdapAdministrationWorkspaceView model={model.data} />;
+}
+
+function useLdapAdministrationWorkspaceModel({
   api,
   canMappingManage,
   canMappingRead,
@@ -105,23 +127,62 @@ export function LdapAdministrationWorkspace({
   pairKey,
   providerId,
   tenantId,
-}: LdapAdministrationWorkspaceProps): React.JSX.Element {
-  const [bindingState, setBindingState] = useState<BindingState>({
-    kind: "loading",
-  });
-  const [mappings, setMappings] = useState<readonly TenantLdapMappingView[]>(
-    [],
+}: LdapAdministrationWorkspaceProps) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<LdapAdministrationWorkspaceState>,
+    undefined,
+    (): LdapAdministrationWorkspaceState => ({
+      bindingState: {
+        kind: "loading",
+      },
+      mappings: [],
+      syncStatus: null,
+      syncRuns: [],
+      loadingRelated: false,
+      relatedError: null,
+      revision: 0,
+    }),
   );
-  const [syncStatus, setSyncStatus] =
-    useState<VersionedView<TenantLdapSyncStatusView> | null>(null);
-  const [syncRuns, setSyncRuns] = useState<readonly TenantLdapSyncRunView[]>(
-    [],
-  );
-  const [loadingRelated, setLoadingRelated] = useState(false);
-  const [relatedError, setRelatedError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
+  const {
+    bindingState,
+    mappings,
+    syncStatus,
+    syncRuns,
+    loadingRelated,
+    relatedError,
+    revision,
+  } = workspaceState;
+  const { setBindingState, setLoadingRelated, setRelatedError, setRevision } =
+    useMemo(
+      () => ({
+        setBindingState: (
+          value: React.SetStateAction<
+            LdapAdministrationWorkspaceState["bindingState"]
+          >,
+        ) => updateWorkspaceState({ bindingState: value }),
+        setLoadingRelated: (
+          value: React.SetStateAction<
+            LdapAdministrationWorkspaceState["loadingRelated"]
+          >,
+        ) => updateWorkspaceState({ loadingRelated: value }),
+        setRelatedError: (
+          value: React.SetStateAction<
+            LdapAdministrationWorkspaceState["relatedError"]
+          >,
+        ) => updateWorkspaceState({ relatedError: value }),
+        setRevision: (
+          value: React.SetStateAction<
+            LdapAdministrationWorkspaceState["revision"]
+          >,
+        ) => updateWorkspaceState({ revision: value }),
+      }),
+      [updateWorkspaceState],
+    );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
 
   const handleError = useCallback(
     (caught: unknown, expectedPair: string): boolean => {
@@ -146,11 +207,13 @@ export function LdapAdministrationWorkspace({
   useEffect(() => {
     const controller = new AbortController();
     const expectedPair = pairKey;
-    setBindingState({ kind: "loading" });
-    setMappings([]);
-    setSyncStatus(null);
-    setSyncRuns([]);
-    setRelatedError(null);
+    updateWorkspaceState({
+      bindingState: { kind: "loading" },
+      mappings: [],
+      syncStatus: null,
+      syncRuns: [],
+      relatedError: null,
+    });
     void findProviderBinding(api, tenantId, providerId, controller.signal)
       .then((binding) => {
         if (controller.signal.aborted || pairRef.current !== expectedPair)
@@ -175,15 +238,22 @@ export function LdapAdministrationWorkspace({
         });
       });
     return () => controller.abort();
-  }, [api, handleError, pairKey, providerId, revision, tenantId]);
+  }, [
+    setBindingState,
+    api,
+    handleError,
+    pairKey,
+    providerId,
+    revision,
+    tenantId,
+  ]);
 
   const binding = bindingState.kind === "ready" ? bindingState.binding : null;
   useEffect(() => {
     if (!binding || !canMappingRead) return undefined;
     const controller = new AbortController();
     const expectedPair = pairKey;
-    setLoadingRelated(true);
-    setRelatedError(null);
+    updateWorkspaceState({ loadingRelated: true, relatedError: null });
     void Promise.all([
       collectMappings(api, tenantId, binding.value.id, controller.signal),
       api.getTenantLdapSyncStatus(
@@ -196,9 +266,11 @@ export function LdapAdministrationWorkspace({
       .then(([nextMappings, status, runs]) => {
         if (controller.signal.aborted || pairRef.current !== expectedPair)
           return;
-        setMappings(nextMappings);
-        setSyncStatus(status);
-        setSyncRuns(runs);
+        updateWorkspaceState({
+          mappings: nextMappings,
+          syncStatus: status,
+          syncRuns: runs,
+        });
       })
       .catch((caught: unknown) => {
         if (
@@ -220,12 +292,58 @@ export function LdapAdministrationWorkspace({
         if (pairRef.current === expectedPair) setLoadingRelated(false);
       });
     return () => controller.abort();
-  }, [api, binding, canMappingRead, handleError, pairKey, tenantId]);
+  }, [
+    setRelatedError,
+    setLoadingRelated,
+    api,
+    binding,
+    canMappingRead,
+    handleError,
+    pairKey,
+    tenantId,
+  ]);
 
   function refresh(): void {
     setRevision((value) => value + 1);
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      binding,
+      bindingState,
+      canMappingManage,
+      canMappingRead,
+      canProviderManage,
+      canProviderTest,
+      canSync,
+      csrfToken,
+      loadingRelated,
+      mappings,
+      onPermissionError,
+      onUnauthenticated,
+      pairKey,
+      providerId,
+      refresh,
+      relatedError,
+      syncRuns,
+      syncStatus,
+      tenantId,
+    },
+  };
+}
+
+function LdapAdministrationWorkspaceView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useLdapAdministrationWorkspaceModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { binding, bindingState, mappings, providerId, refresh, syncStatus } =
+    model;
   return (
     <section
       className="ldap-authority-workspace"
@@ -260,111 +378,9 @@ export function LdapAdministrationWorkspace({
       {bindingState.kind === "error" ? (
         <FocusedError message={bindingState.message} />
       ) : null}
-      {bindingState.kind === "ready" && !binding ? (
-        <Card className="ldap-authority-card">
-          <CardHeader>
-            <CardTitle>No tenant login binding</CardTitle>
-            <CardDescription>
-              Create the tenant-owned login selector before authoring mapping
-              consequences.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {canProviderManage ? (
-              <BindingEditor
-                api={api}
-                csrfToken={csrfToken}
-                onChanged={refresh}
-                onPermissionError={onPermissionError}
-                onUnauthenticated={onUnauthenticated}
-                pairKey={pairKey}
-                providerId={providerId}
-                tenantId={tenantId}
-              />
-            ) : (
-              <PermissionNote>
-                `identity_provider.manage` is required to create the binding.
-              </PermissionNote>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
+      {<LdapMissingBinding model={model} />}
 
-      {binding ? (
-        <>
-          <BindingCard
-            api={api}
-            canManage={canProviderManage}
-            csrfToken={csrfToken}
-            onChanged={refresh}
-            onPermissionError={onPermissionError}
-            onUnauthenticated={onUnauthenticated}
-            pairKey={pairKey}
-            tenantId={tenantId}
-            versioned={binding}
-          />
-
-          {canProviderTest ? (
-            <DirectoryTests
-              api={api}
-              csrfToken={csrfToken}
-              onPermissionError={onPermissionError}
-              onUnauthenticated={onUnauthenticated}
-              pairKey={pairKey}
-              providerId={providerId}
-              tenantId={tenantId}
-            />
-          ) : null}
-
-          {!canMappingRead ? (
-            <PermissionNote>
-              `identity_mapping.read` is required to inspect mappings and sync
-              provenance.
-            </PermissionNote>
-          ) : null}
-          {canMappingRead ? (
-            <>
-              {relatedError ? <FocusedError message={relatedError} /> : null}
-              <MappingInventory
-                api={api}
-                bindingId={binding.value.id}
-                canManage={canMappingManage}
-                csrfToken={csrfToken}
-                loading={loadingRelated}
-                mappings={mappings}
-                onChanged={refresh}
-                onPermissionError={onPermissionError}
-                onUnauthenticated={onUnauthenticated}
-                pairKey={pairKey}
-                tenantId={tenantId}
-              />
-              <DryRunPanel
-                api={api}
-                bindingId={binding.value.id}
-                csrfToken={csrfToken}
-                mappings={mappings}
-                onPermissionError={onPermissionError}
-                onUnauthenticated={onUnauthenticated}
-                pairKey={pairKey}
-                tenantId={tenantId}
-              />
-              <SyncPanel
-                api={api}
-                bindingId={binding.value.id}
-                canSync={canSync}
-                csrfToken={csrfToken}
-                onChanged={refresh}
-                onPermissionError={onPermissionError}
-                onUnauthenticated={onUnauthenticated}
-                pairKey={pairKey}
-                runs={syncRuns}
-                status={syncStatus}
-                tenantId={tenantId}
-              />
-            </>
-          ) : null}
-        </>
-      ) : null}
+      {<LdapBoundAdministration model={model} />}
     </section>
   );
 }
@@ -407,7 +423,22 @@ function ProvenanceRail({
   );
 }
 
-function BindingCard({
+function BindingCard(props: {
+  api: PhaseTwoApi;
+  canManage: boolean;
+  csrfToken: string;
+  onChanged: () => void;
+  onPermissionError: () => void;
+  onUnauthenticated: () => void;
+  pairKey: string;
+  tenantId: string;
+  versioned: VersionedView<TenantLdapAuthProviderBindingView>;
+}): React.JSX.Element {
+  const model = useBindingCardModel(props);
+  return <BindingCardView model={model.data} />;
+}
+
+function useBindingCardModel({
   api,
   canManage,
   csrfToken,
@@ -427,11 +458,34 @@ function BindingCard({
   pairKey: string;
   tenantId: string;
   versioned: VersionedView<TenantLdapAuthProviderBindingView>;
-}): React.JSX.Element {
-  const [editing, setEditing] = useState(false);
-  const [archiveReason, setArchiveReason] = useState("");
-  const [archiving, setArchiving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+}) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<BindingCardState>,
+    undefined,
+    (): BindingCardState => ({
+      editing: false,
+      archiveReason: "",
+      archiving: false,
+      error: null,
+    }),
+  );
+  const { editing, archiveReason, archiving, error } = workspaceState;
+  const { setEditing, setArchiveReason, setArchiving, setError } = useMemo(
+    () => ({
+      setEditing: (value: React.SetStateAction<BindingCardState["editing"]>) =>
+        updateWorkspaceState({ editing: value }),
+      setArchiveReason: (
+        value: React.SetStateAction<BindingCardState["archiveReason"]>,
+      ) => updateWorkspaceState({ archiveReason: value }),
+      setArchiving: (
+        value: React.SetStateAction<BindingCardState["archiving"]>,
+      ) => updateWorkspaceState({ archiving: value }),
+      setError: (value: React.SetStateAction<BindingCardState["error"]>) =>
+        updateWorkspaceState({ error: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const binding = versioned.value;
 
   async function archiveBinding(): Promise<void> {
@@ -440,8 +494,7 @@ function BindingCard({
       setError(validation);
       return;
     }
-    setArchiving(true);
-    setError(null);
+    updateWorkspaceState({ archiving: true, error: null });
     try {
       await api.archiveTenantLdapAuthProviderBinding(
         csrfToken,
@@ -459,6 +512,39 @@ function BindingCard({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      archiveBinding,
+      archiveReason,
+      archiving,
+      binding,
+      canManage,
+      csrfToken,
+      editing,
+      error,
+      onChanged,
+      onPermissionError,
+      onUnauthenticated,
+      pairKey,
+      setArchiveReason,
+      setEditing,
+      tenantId,
+      versioned,
+    },
+  };
+}
+
+function BindingCardView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useBindingCardModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { binding } = model;
   return (
     <Card className="ldap-authority-card">
       <CardHeader>
@@ -479,86 +565,7 @@ function BindingCard({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="ldap-authority-stack">
-        <dl className="ldap-authority-facts">
-          <div>
-            <dt>Login key</dt>
-            <dd>
-              <code>{binding.loginKey}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Version</dt>
-            <dd>v{binding.version}</dd>
-          </div>
-          <div>
-            <dt>Access epoch</dt>
-            <dd>{binding.currentAccessEpochId ?? "None"}</dd>
-          </div>
-          <div>
-            <dt>Archived at</dt>
-            <dd>
-              {binding.archivedAt
-                ? formatTimestamp(binding.archivedAt)
-                : "None"}
-            </dd>
-          </div>
-        </dl>
-        {canManage && !binding.archivedAt ? (
-          <div className="ldap-authority-actions">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing((value) => !value)}
-            >
-              <Save aria-hidden="true" />{" "}
-              {editing ? "Close editor" : "Edit binding"}
-            </Button>
-          </div>
-        ) : null}
-        {editing ? (
-          <BindingEditor
-            api={api}
-            csrfToken={csrfToken}
-            onChanged={onChanged}
-            onPermissionError={onPermissionError}
-            onUnauthenticated={onUnauthenticated}
-            pairKey={pairKey}
-            providerId={binding.providerId}
-            tenantId={tenantId}
-            versioned={versioned}
-          />
-        ) : null}
-        {canManage && !binding.archivedAt ? (
-          <div className="ldap-authority-danger-zone">
-            <FormField
-              htmlFor={`archive-binding-${binding.id}`}
-              label="Archive reason"
-            >
-              <Input
-                id={`archive-binding-${binding.id}`}
-                value={archiveReason}
-                maxLength={500}
-                onChange={(event) =>
-                  setArchiveReason(event.currentTarget.value)
-                }
-              />
-            </FormField>
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive"
-              disabled={archiving}
-              onClick={() => void archiveBinding()}
-            >
-              <Archive aria-hidden="true" />{" "}
-              {archiving ? "Archiving…" : "Archive binding"}
-            </Button>
-          </div>
-        ) : null}
-        {error ? <FocusedError message={error} /> : null}
-      </CardContent>
+      <BindingCardCardContent model={model} />
     </Card>
   );
 }
@@ -585,16 +592,38 @@ function BindingEditor({
   versioned?: VersionedView<TenantLdapAuthProviderBindingView>;
 }): React.JSX.Element {
   const id = useId();
-  const [draft, setDraft] = useState<LdapBindingDraft>(() =>
-    versioned
-      ? bindingDraftFromView(versioned.value)
-      : createLdapBindingDraft(),
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<BindingEditorState>,
+    undefined,
+    (): BindingEditorState => ({
+      draft: (() =>
+        versioned
+          ? bindingDraftFromView(versioned.value)
+          : createLdapBindingDraft())(),
+      errors: [],
+      requestError: null,
+      submitting: false,
+    }),
   );
-  const [errors, setErrors] = useState<readonly string[]>([]);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const { draft, errors, requestError, submitting } = workspaceState;
+  const { setDraft, setRequestError, setSubmitting } = useMemo(
+    () => ({
+      setDraft: (value: React.SetStateAction<BindingEditorState["draft"]>) =>
+        updateWorkspaceState({ draft: value }),
+      setRequestError: (
+        value: React.SetStateAction<BindingEditorState["requestError"]>,
+      ) => updateWorkspaceState({ requestError: value }),
+      setSubmitting: (
+        value: React.SetStateAction<BindingEditorState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
   const idempotencyRef = useRef<{ fingerprint: string; key: string } | null>(
     null,
   );
@@ -604,8 +633,7 @@ function BindingEditor({
   ): Promise<void> {
     event.preventDefault();
     const validation = validateLdapBindingDraft(draft);
-    setErrors(validation);
-    setRequestError(null);
+    updateWorkspaceState({ errors: validation, requestError: null });
     if (validation.length > 0 || submitting) return;
     const expectedPair = pairKey;
     setSubmitting(true);
@@ -646,6 +674,7 @@ function BindingEditor({
         ),
       );
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairRef.current === expectedPair) setSubmitting(false);
     }
   }
@@ -774,15 +803,11 @@ function MappingInventory({
         {loading ? <p role="status">Loading mapping inventory…</p> : null}
         <div className="ldap-authority-table-wrap">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Matcher</TableHead>
-                <TableHead>Target</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
+            <TableColumnHeaders
+              columns={["Matcher", "Target", "Mode", "Status"]}
+              actionLabel="Action"
+              actionPresentation="visible"
+            />
             <TableBody>
               {mappings.map((mapping) => (
                 <TableRow key={mapping.id}>
@@ -871,18 +896,41 @@ function MappingInspector({
   pairKey: string;
   tenantId: string;
 }): React.JSX.Element {
-  const [editing, setEditing] = useState(false);
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [archiving, setArchiving] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<MappingInspectorState>,
+    undefined,
+    (): MappingInspectorState => ({
+      editing: false,
+      reason: "",
+      error: null,
+      archiving: false,
+    }),
+  );
+  const { editing, reason, error, archiving } = workspaceState;
+  const { setEditing, setReason, setError, setArchiving } = useMemo(
+    () => ({
+      setEditing: (
+        value: React.SetStateAction<MappingInspectorState["editing"]>,
+      ) => updateWorkspaceState({ editing: value }),
+      setReason: (
+        value: React.SetStateAction<MappingInspectorState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setError: (value: React.SetStateAction<MappingInspectorState["error"]>) =>
+        updateWorkspaceState({ error: value }),
+      setArchiving: (
+        value: React.SetStateAction<MappingInspectorState["archiving"]>,
+      ) => updateWorkspaceState({ archiving: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   async function archiveMapping(): Promise<void> {
     const validation = validateLdapMutationReason(reason);
     if (validation || archiving) {
       setError(validation);
       return;
     }
-    setArchiving(true);
-    setError(null);
+    updateWorkspaceState({ archiving: true, error: null });
     try {
       await api.archiveTenantLdapMapping(
         csrfToken,
@@ -1013,14 +1061,36 @@ function MappingEditor({
   tenantId: string;
 }): React.JSX.Element {
   const id = useId();
-  const [draft, setDraft] = useState<LdapMappingDraft>(() =>
-    mapping ? mappingDraftFromView(mapping) : createLdapMappingDraft(),
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<MappingEditorState>,
+    undefined,
+    (): MappingEditorState => ({
+      draft: (() =>
+        mapping ? mappingDraftFromView(mapping) : createLdapMappingDraft())(),
+      errors: [],
+      requestError: null,
+      submitting: false,
+    }),
   );
-  const [errors, setErrors] = useState<readonly string[]>([]);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const { draft, errors, requestError, submitting } = workspaceState;
+  const { setDraft, setRequestError, setSubmitting } = useMemo(
+    () => ({
+      setDraft: (value: React.SetStateAction<MappingEditorState["draft"]>) =>
+        updateWorkspaceState({ draft: value }),
+      setRequestError: (
+        value: React.SetStateAction<MappingEditorState["requestError"]>,
+      ) => updateWorkspaceState({ requestError: value }),
+      setSubmitting: (
+        value: React.SetStateAction<MappingEditorState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
   const idempotencyRef = useRef<{ fingerprint: string; key: string } | null>(
     null,
   );
@@ -1030,8 +1100,7 @@ function MappingEditor({
   ): Promise<void> {
     event.preventDefault();
     const validation = validateLdapMappingDraft(draft);
-    setErrors(validation);
-    setRequestError(null);
+    updateWorkspaceState({ errors: validation, requestError: null });
     if (validation.length > 0 || submitting) return;
     const expectedPair = pairKey;
     setSubmitting(true);
@@ -1072,6 +1141,7 @@ function MappingEditor({
         ),
       );
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairRef.current === expectedPair) setSubmitting(false);
     }
   }
@@ -1273,21 +1343,43 @@ function DryRunPanel({
   tenantId: string;
 }): React.JSX.Element {
   const id = useId();
-  const [username, setUsername] = useState("");
-  const [included, setIncluded] = useState<readonly string[]>([]);
-  const [result, setResult] =
-    useState<TenantLdapMappingDryRunResultView | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<DryRunPanelState>,
+    undefined,
+    (): DryRunPanelState => ({
+      username: "",
+      included: [],
+      result: null,
+      error: null,
+      running: false,
+    }),
+  );
+  const { username, included, result, error, running } = workspaceState;
+  const { setUsername, setIncluded, setError, setRunning } = useMemo(
+    () => ({
+      setUsername: (
+        value: React.SetStateAction<DryRunPanelState["username"]>,
+      ) => updateWorkspaceState({ username: value }),
+      setIncluded: (
+        value: React.SetStateAction<DryRunPanelState["included"]>,
+      ) => updateWorkspaceState({ included: value }),
+      setError: (value: React.SetStateAction<DryRunPanelState["error"]>) =>
+        updateWorkspaceState({ error: value }),
+      setRunning: (value: React.SetStateAction<DryRunPanelState["running"]>) =>
+        updateWorkspaceState({ running: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
   async function run(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (username.trim() === "" || running) return;
     const expectedPair = pairKey;
-    setRunning(true);
-    setError(null);
-    setResult(null);
+    updateWorkspaceState({ running: true, error: null, result: null });
     try {
       const next = await api.dryRunTenantLdapMappings(csrfToken, tenantId, {
         bindingId,
@@ -1295,8 +1387,7 @@ function DryRunPanel({
         username,
       });
       if (pairRef.current !== expectedPair) return;
-      setUsername("");
-      setResult(next);
+      updateWorkspaceState({ username: "", result: next });
     } catch (caught) {
       if (pairRef.current !== expectedPair) return;
       handleMutationSideEffects(caught, onUnauthenticated, onPermissionError);
@@ -1307,6 +1398,10 @@ function DryRunPanel({
       if (pairRef.current === expectedPair) setRunning(false);
     }
   }
+  const disabledMappings = mappings.filter(
+    (mapping) => !mapping.enabled && !mapping.archivedAt,
+  );
+  const includedIds = new Set(included);
   return (
     <Card className="ldap-authority-card ldap-dry-run-card">
       <CardHeader>
@@ -1329,31 +1424,28 @@ function DryRunPanel({
               onChange={(event) => setUsername(event.currentTarget.value)}
             />
           </FormField>
-          {mappings.filter((mapping) => !mapping.enabled && !mapping.archivedAt)
-            .length > 0 ? (
+          {disabledMappings.length > 0 ? (
             <fieldset className="ldap-authority-disabled-mappings">
               <legend>Evaluate disabled mappings explicitly</legend>
-              {mappings
-                .filter((mapping) => !mapping.enabled && !mapping.archivedAt)
-                .map((mapping) => (
-                  <label key={mapping.id} className="ldap-authority-checkbox">
-                    <Checkbox
-                      checked={included.includes(mapping.id)}
-                      onCheckedChange={(checked) =>
-                        setIncluded(
-                          checked === true
-                            ? [...included, mapping.id]
-                            : included.filter(
-                                (idValue) => idValue !== mapping.id,
-                              ),
-                        )
-                      }
-                    />
-                    <span>
-                      {matcherLabel(mapping)} · {shortId(mapping.id)}
-                    </span>
-                  </label>
-                ))}
+              {disabledMappings.map((mapping) => (
+                <label key={mapping.id} className="ldap-authority-checkbox">
+                  <Checkbox
+                    checked={includedIds.has(mapping.id)}
+                    onCheckedChange={(checked) =>
+                      setIncluded(
+                        checked === true
+                          ? [...included, mapping.id]
+                          : included.filter(
+                              (idValue) => idValue !== mapping.id,
+                            ),
+                      )
+                    }
+                  />
+                  <span>
+                    {matcherLabel(mapping)} · {shortId(mapping.id)}
+                  </span>
+                </label>
+              ))}
             </fieldset>
           ) : null}
           <Button
@@ -1451,22 +1543,48 @@ function DirectoryTests({
   tenantId: string;
 }): React.JSX.Element {
   const id = useId();
-  const [username, setUsername] = useState("");
-  const [filterTemplate, setFilterTemplate] = useState("");
-  const [kind, setKind] = useState<"group" | "user">("user");
-  const [result, setResult] = useState<
-    TenantLdapFilterTestResultView | TenantLdapUserSearchTestResultView | null
-  >(null);
-  const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState<"filter" | "search" | null>(null);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<DirectoryTestsState>,
+    undefined,
+    (): DirectoryTestsState => ({
+      username: "",
+      filterTemplate: "",
+      kind: "user",
+      result: null,
+      error: null,
+      running: null,
+    }),
+  );
+  const { username, filterTemplate, kind, result, error, running } =
+    workspaceState;
+  const { setUsername, setFilterTemplate, setKind, setError, setRunning } =
+    useMemo(
+      () => ({
+        setUsername: (
+          value: React.SetStateAction<DirectoryTestsState["username"]>,
+        ) => updateWorkspaceState({ username: value }),
+        setFilterTemplate: (
+          value: React.SetStateAction<DirectoryTestsState["filterTemplate"]>,
+        ) => updateWorkspaceState({ filterTemplate: value }),
+        setKind: (value: React.SetStateAction<DirectoryTestsState["kind"]>) =>
+          updateWorkspaceState({ kind: value }),
+        setError: (value: React.SetStateAction<DirectoryTestsState["error"]>) =>
+          updateWorkspaceState({ error: value }),
+        setRunning: (
+          value: React.SetStateAction<DirectoryTestsState["running"]>,
+        ) => updateWorkspaceState({ running: value }),
+      }),
+      [updateWorkspaceState],
+    );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
   async function run(test: "filter" | "search"): Promise<void> {
     if (running || username.trim() === "") return;
     const expectedPair = pairKey;
-    setRunning(test);
-    setResult(null);
-    setError(null);
+    updateWorkspaceState({ running: test, result: null, error: null });
     try {
       const next =
         test === "search"
@@ -1490,9 +1608,7 @@ function DirectoryTests({
               },
             );
       if (pairRef.current !== expectedPair) return;
-      setUsername("");
-      setFilterTemplate("");
-      setResult(next);
+      updateWorkspaceState({ username: "", filterTemplate: "", result: next });
     } catch (caught) {
       if (pairRef.current !== expectedPair) return;
       handleMutationSideEffects(caught, onUnauthenticated, onPermissionError);
@@ -1629,11 +1745,28 @@ function SyncPanel({
   tenantId: string;
 }): React.JSX.Element {
   const id = useId();
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<SyncPanelState>,
+    undefined,
+    (): SyncPanelState => ({ reason: "", error: null, running: false }),
+  );
+  const { reason, error, running } = workspaceState;
+  const { setReason, setError, setRunning } = useMemo(
+    () => ({
+      setReason: (value: React.SetStateAction<SyncPanelState["reason"]>) =>
+        updateWorkspaceState({ reason: value }),
+      setError: (value: React.SetStateAction<SyncPanelState["error"]>) =>
+        updateWorkspaceState({ error: value }),
+      setRunning: (value: React.SetStateAction<SyncPanelState["running"]>) =>
+        updateWorkspaceState({ running: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const pairRef = useRef(pairKey);
-  pairRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairRef.current = pairKey;
+  }, [pairKey]);
   const idempotencyRef = useRef<{ fingerprint: string; key: string } | null>(
     null,
   );
@@ -1655,8 +1788,7 @@ function SyncPanel({
       input,
       tenantId,
     });
-    setRunning(true);
-    setError(null);
+    updateWorkspaceState({ running: true, error: null });
     try {
       await api.startTenantLdapManualSync(
         csrfToken,
@@ -1740,15 +1872,15 @@ function SyncPanel({
         {error ? <FocusedError message={error} /> : null}
         <div className="ldap-authority-table-wrap">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Run</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Enumeration</TableHead>
-                <TableHead>Observed</TableHead>
-                <TableHead>Absence revokes</TableHead>
-              </TableRow>
-            </TableHeader>
+            <TableColumnHeaders
+              columns={[
+                "Run",
+                "State",
+                "Enumeration",
+                "Observed",
+                "Absence revokes",
+              ]}
+            />
             <TableBody>
               {runs.map((run) => (
                 <TableRow key={run.id}>
@@ -1823,19 +1955,7 @@ function ValidationErrors({
   errors: readonly string[];
 }): React.JSX.Element | null {
   if (errors.length === 0) return null;
-  return (
-    <Alert variant="destructive">
-      <ShieldAlert aria-hidden="true" />
-      <AlertTitle>Review the form</AlertTitle>
-      <AlertDescription>
-        <ul>
-          {errors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
-      </AlertDescription>
-    </Alert>
-  );
+  return <FormValidationAlert errors={errors} title="Review the form" />;
 }
 
 function SelectField<T extends string>({
@@ -2005,12 +2125,327 @@ function shortId(value: string): string {
 }
 
 function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return dateTimeFormatter.format(new Date(value));
 }
 
 function isAbortError(caught: unknown): boolean {
   return caught instanceof DOMException && caught.name === "AbortError";
+}
+
+interface LdapAdministrationWorkspaceState {
+  bindingState: BindingState;
+  mappings: readonly TenantLdapMappingView[];
+  syncStatus: VersionedView<TenantLdapSyncStatusView> | null;
+  syncRuns: readonly TenantLdapSyncRunView[];
+  loadingRelated: boolean;
+  relatedError: string | null;
+  revision: number;
+}
+
+interface BindingCardState {
+  editing: boolean;
+  archiveReason: string;
+  archiving: boolean;
+  error: string | null;
+}
+
+interface BindingEditorState {
+  draft: LdapBindingDraft;
+  errors: readonly string[];
+  requestError: string | null;
+  submitting: boolean;
+}
+
+interface MappingInspectorState {
+  editing: boolean;
+  reason: string;
+  error: string | null;
+  archiving: boolean;
+}
+
+interface MappingEditorState {
+  draft: LdapMappingDraft;
+  errors: readonly string[];
+  requestError: string | null;
+  submitting: boolean;
+}
+
+interface DryRunPanelState {
+  username: string;
+  included: readonly string[];
+  result: TenantLdapMappingDryRunResultView | null;
+  error: string | null;
+  running: boolean;
+}
+
+interface DirectoryTestsState {
+  username: string;
+  filterTemplate: string;
+  kind: "group" | "user";
+  result:
+    TenantLdapFilterTestResultView | TenantLdapUserSearchTestResultView | null;
+  error: string | null;
+  running: "filter" | "search" | null;
+}
+
+interface SyncPanelState {
+  reason: string;
+  error: string | null;
+  running: boolean;
+}
+
+function LdapMissingBinding({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapAdministrationWorkspaceView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    binding,
+    bindingState,
+    canProviderManage,
+    csrfToken,
+    onPermissionError,
+    onUnauthenticated,
+    pairKey,
+    providerId,
+    refresh,
+    tenantId,
+  } = model;
+  return bindingState.kind === "ready" && !binding ? (
+    <Card className="ldap-authority-card">
+      <CardHeader>
+        <CardTitle>No tenant login binding</CardTitle>
+        <CardDescription>
+          Create the tenant-owned login selector before authoring mapping
+          consequences.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {canProviderManage ? (
+          <BindingEditor
+            api={api}
+            csrfToken={csrfToken}
+            onChanged={refresh}
+            onPermissionError={onPermissionError}
+            onUnauthenticated={onUnauthenticated}
+            pairKey={pairKey}
+            providerId={providerId}
+            tenantId={tenantId}
+          />
+        ) : (
+          <PermissionNote>
+            `identity_provider.manage` is required to create the binding.
+          </PermissionNote>
+        )}
+      </CardContent>
+    </Card>
+  ) : null;
+}
+
+function LdapBoundAdministration({
+  model,
+}: {
+  model: React.ComponentProps<typeof LdapAdministrationWorkspaceView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    binding,
+    canMappingManage,
+    canMappingRead,
+    canProviderManage,
+    canProviderTest,
+    canSync,
+    csrfToken,
+    loadingRelated,
+    mappings,
+    onPermissionError,
+    onUnauthenticated,
+    pairKey,
+    providerId,
+    refresh,
+    relatedError,
+    syncRuns,
+    syncStatus,
+    tenantId,
+  } = model;
+  return binding ? (
+    <>
+      <BindingCard
+        api={api}
+        canManage={canProviderManage}
+        csrfToken={csrfToken}
+        onChanged={refresh}
+        onPermissionError={onPermissionError}
+        onUnauthenticated={onUnauthenticated}
+        pairKey={pairKey}
+        tenantId={tenantId}
+        versioned={binding}
+      />
+
+      {canProviderTest ? (
+        <DirectoryTests
+          api={api}
+          csrfToken={csrfToken}
+          onPermissionError={onPermissionError}
+          onUnauthenticated={onUnauthenticated}
+          pairKey={pairKey}
+          providerId={providerId}
+          tenantId={tenantId}
+        />
+      ) : null}
+
+      {!canMappingRead ? (
+        <PermissionNote>
+          `identity_mapping.read` is required to inspect mappings and sync
+          provenance.
+        </PermissionNote>
+      ) : null}
+      {canMappingRead ? (
+        <>
+          {relatedError ? <FocusedError message={relatedError} /> : null}
+          <MappingInventory
+            api={api}
+            bindingId={binding.value.id}
+            canManage={canMappingManage}
+            csrfToken={csrfToken}
+            loading={loadingRelated}
+            mappings={mappings}
+            onChanged={refresh}
+            onPermissionError={onPermissionError}
+            onUnauthenticated={onUnauthenticated}
+            pairKey={pairKey}
+            tenantId={tenantId}
+          />
+          <DryRunPanel
+            api={api}
+            bindingId={binding.value.id}
+            csrfToken={csrfToken}
+            mappings={mappings}
+            onPermissionError={onPermissionError}
+            onUnauthenticated={onUnauthenticated}
+            pairKey={pairKey}
+            tenantId={tenantId}
+          />
+          <SyncPanel
+            api={api}
+            bindingId={binding.value.id}
+            canSync={canSync}
+            csrfToken={csrfToken}
+            onChanged={refresh}
+            onPermissionError={onPermissionError}
+            onUnauthenticated={onUnauthenticated}
+            pairKey={pairKey}
+            runs={syncRuns}
+            status={syncStatus}
+            tenantId={tenantId}
+          />
+        </>
+      ) : null}
+    </>
+  ) : null;
+}
+
+function BindingCardCardContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof BindingCardView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    archiveBinding,
+    archiveReason,
+    archiving,
+    binding,
+    canManage,
+    csrfToken,
+    editing,
+    error,
+    onChanged,
+    onPermissionError,
+    onUnauthenticated,
+    pairKey,
+    setArchiveReason,
+    setEditing,
+    tenantId,
+    versioned,
+  } = model;
+  return (
+    <CardContent className="ldap-authority-stack">
+      <dl className="ldap-authority-facts">
+        <div>
+          <dt>Login key</dt>
+          <dd>
+            <code>{binding.loginKey}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd>v{binding.version}</dd>
+        </div>
+        <div>
+          <dt>Access epoch</dt>
+          <dd>{binding.currentAccessEpochId ?? "None"}</dd>
+        </div>
+        <div>
+          <dt>Archived at</dt>
+          <dd>
+            {binding.archivedAt ? formatTimestamp(binding.archivedAt) : "None"}
+          </dd>
+        </div>
+      </dl>
+      {canManage && !binding.archivedAt ? (
+        <div className="ldap-authority-actions">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setEditing((value) => !value)}
+          >
+            <Save aria-hidden="true" />{" "}
+            {editing ? "Close editor" : "Edit binding"}
+          </Button>
+        </div>
+      ) : null}
+      {editing ? (
+        <BindingEditor
+          api={api}
+          csrfToken={csrfToken}
+          onChanged={onChanged}
+          onPermissionError={onPermissionError}
+          onUnauthenticated={onUnauthenticated}
+          pairKey={pairKey}
+          providerId={binding.providerId}
+          tenantId={tenantId}
+          versioned={versioned}
+        />
+      ) : null}
+      {canManage && !binding.archivedAt ? (
+        <div className="ldap-authority-danger-zone">
+          <FormField
+            htmlFor={`archive-binding-${binding.id}`}
+            label="Archive reason"
+          >
+            <Input
+              id={`archive-binding-${binding.id}`}
+              value={archiveReason}
+              maxLength={500}
+              onChange={(event) => setArchiveReason(event.currentTarget.value)}
+            />
+          </FormField>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={archiving}
+            onClick={() => void archiveBinding()}
+          >
+            <Archive aria-hidden="true" />{" "}
+            {archiving ? "Archiving…" : "Archive binding"}
+          </Button>
+        </div>
+      ) : null}
+      {error ? <FocusedError message={error} /> : null}
+    </CardContent>
+  );
 }

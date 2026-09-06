@@ -26,8 +26,6 @@ import {
   TableBody,
   TableCaption,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
@@ -41,21 +39,31 @@ import {
   ShieldX,
   UsersRound,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
 import { z } from "zod";
+import { TableColumnHeaders } from "../components/table-column-headers";
+import { mergeOperatorTeams } from "./platform-operator-teams-model";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import {
-  platformOperatorTeamMutationKey,
+  usePlatformOperatorTeamCoordinator,
   type PlatformCreateMutationRequest,
   type PlatformDetailMutationRequest,
   type PlatformOperatorTeamMutationRequest,
-  usePlatformOperatorTeamCoordinator,
 } from "../auth/platform-operator-team-coordinator";
+import { platformOperatorTeamMutationKey } from "../auth/platform-operator-team-keys";
 import { useSession } from "../auth/session-context";
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
 import { readTextField } from "../lib/form-data";
-import { hasControlCharacters } from "../lib/text-validation";
 import {
   describePhaseTwoError,
   hasPermission,
@@ -67,6 +75,7 @@ import {
   type OperatorTeamView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { hasControlCharacters } from "../lib/text-validation";
 
 type TeamListState =
   | { kind: "error"; message: string }
@@ -163,6 +172,12 @@ const administrativeReasonSchema = z
   );
 
 export function PlatformOperatorTeamsPage(): React.JSX.Element {
+  const model = usePlatformOperatorTeamsPageModel();
+  if (model.kind === "content") return model.content;
+  return <PlatformOperatorTeamsPageView model={model.data} />;
+}
+
+function usePlatformOperatorTeamsPageModel() {
   const { api, clearSession, session } = useSession();
   const {
     acknowledgeInventory,
@@ -183,22 +198,105 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
     session,
     platformOperatorTeamManagePermission,
   );
-  const [listState, setListState] = useState<TeamListState>({
-    kind: "loading",
-  });
-  const [listRevision, setListRevision] = useState(0);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [paginationError, setPaginationError] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createFieldErrors, setCreateFieldErrors] = useState<TeamFieldErrors>(
-    {},
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<PlatformOperatorTeamsPageState>,
+    undefined,
+    (): PlatformOperatorTeamsPageState => ({
+      listState: {
+        kind: "loading",
+      },
+      listRevision: 0,
+      isLoadingMore: false,
+      paginationError: null,
+      createOpen: false,
+      createError: null,
+      createFieldErrors: {},
+      isCreating: false,
+      createNotice: null,
+      selectedTeamId: null,
+      detailReconciliation: null,
+    }),
   );
-  const [isCreating, setIsCreating] = useState(false);
-  const [createNotice, setCreateNotice] = useState<CreateNotice | null>(null);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [detailReconciliation, setDetailReconciliation] =
-    useState<DetailReconciliation | null>(null);
+  const {
+    listState,
+    listRevision,
+    isLoadingMore,
+    paginationError,
+    createOpen,
+    createError,
+    createFieldErrors,
+    isCreating,
+    createNotice,
+    selectedTeamId,
+    detailReconciliation,
+  } = workspaceState;
+  const {
+    setListState,
+    setListRevision,
+    setIsLoadingMore,
+    setPaginationError,
+    setCreateOpen,
+    setCreateError,
+    setCreateFieldErrors,
+    setIsCreating,
+    setSelectedTeamId,
+    setDetailReconciliation,
+  } = useMemo(
+    () => ({
+      setListState: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["listState"]
+        >,
+      ) => updateWorkspaceState({ listState: value }),
+      setListRevision: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["listRevision"]
+        >,
+      ) => updateWorkspaceState({ listRevision: value }),
+      setIsLoadingMore: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["isLoadingMore"]
+        >,
+      ) => updateWorkspaceState({ isLoadingMore: value }),
+      setPaginationError: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["paginationError"]
+        >,
+      ) => updateWorkspaceState({ paginationError: value }),
+      setCreateOpen: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["createOpen"]
+        >,
+      ) => updateWorkspaceState({ createOpen: value }),
+      setCreateError: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["createError"]
+        >,
+      ) => updateWorkspaceState({ createError: value }),
+      setCreateFieldErrors: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["createFieldErrors"]
+        >,
+      ) => updateWorkspaceState({ createFieldErrors: value }),
+      setIsCreating: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["isCreating"]
+        >,
+      ) => updateWorkspaceState({ isCreating: value }),
+      setSelectedTeamId: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["selectedTeamId"]
+        >,
+      ) => updateWorkspaceState({ selectedTeamId: value }),
+      setDetailReconciliation: (
+        value: React.SetStateAction<
+          PlatformOperatorTeamsPageState["detailReconciliation"]
+        >,
+      ) => updateWorkspaceState({ detailReconciliation: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const sessionIdRef = useRef(session.id);
   const canReadRef = useRef(canRead);
   const canManageRef = useRef(canManage);
@@ -222,10 +320,12 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
   const selectedTeamIdRef = useRef(selectedTeamId);
   const successRef = useRef<HTMLDivElement>(null);
   const id = useId();
-  sessionIdRef.current = session.id;
-  canReadRef.current = canRead;
-  canManageRef.current = canManage;
-  selectedTeamIdRef.current = selectedTeamId;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+    canReadRef.current = canRead;
+    canManageRef.current = canManage;
+    selectedTeamIdRef.current = selectedTeamId;
+  }, [canManage, canRead, selectedTeamId, session]);
 
   const flushReconciliation = useCallback((): void => {
     if (!pageMountedRef.current || !canReadRef.current) {
@@ -266,7 +366,12 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
     detailReconciliationSequenceRef.current = attempt.id;
     detailReconciliationAttemptRef.current = attempt;
     setDetailReconciliation(attempt);
-  }, [inventoryVersions, teamVersion]);
+  }, [
+    setListRevision,
+    setDetailReconciliation,
+    inventoryVersions,
+    teamVersion,
+  ]);
 
   const registerMutation = useCallback(
     (request: PlatformMutationRequest): boolean => {
@@ -348,36 +453,47 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
 
   useEffect(() => {
     createGenerationRef.current += 1;
-    setCreateOpen(false);
-    setCreateError(null);
-    setCreateFieldErrors({});
-    setCreateNotice(null);
-    setSelectedTeamId(null);
-    setDetailReconciliation(null);
-    setPaginationError(null);
-    setIsCreating(false);
+    updateWorkspaceState({
+      createOpen: false,
+      createError: null,
+      createFieldErrors: {},
+      createNotice: null,
+      selectedTeamId: null,
+      detailReconciliation: null,
+      paginationError: null,
+      isCreating: false,
+    });
     createRequestRef.current = null;
     setIsLoadingMore(false);
     detailReconciliationAttemptRef.current = null;
     failedInventoryReconciliationVersionsRef.current.clear();
     failedTeamReconciliationVersionsRef.current.clear();
     paginationCursorsRef.current.clear();
-  }, [session.id]);
+  }, [setIsLoadingMore, session.id]);
 
   useEffect(() => {
     const request = createRequestRef.current;
     if (request) detachMutation(request);
     if (!canRead) detailReconciliationAttemptRef.current = null;
     createGenerationRef.current += 1;
-    setIsCreating(false);
-    setCreateError(null);
-    setCreateFieldErrors({});
+    updateWorkspaceState({
+      isCreating: false,
+      createError: null,
+      createFieldErrors: {},
+    });
     createRequestRef.current = null;
     if (!canRead || !canManage) {
       clearCreateBindings(session.id);
       setCreateOpen(false);
     }
-  }, [canManage, canRead, clearCreateBindings, detachMutation, session.id]);
+  }, [
+    setCreateOpen,
+    canManage,
+    canRead,
+    clearCreateBindings,
+    detachMutation,
+    session.id,
+  ]);
 
   useEffect(() => {
     pageMountedRef.current = true;
@@ -507,6 +623,9 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
       }
     };
   }, [
+    setPaginationError,
+    setIsLoadingMore,
+    setListState,
     api,
     acknowledgeInventory,
     canRead,
@@ -521,10 +640,12 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
     const request = createRequestRef.current;
     createGenerationRef.current += 1;
     createRequestRef.current = null;
-    setCreateOpen(false);
-    setCreateError(null);
-    setCreateFieldErrors({});
-    setIsCreating(false);
+    updateWorkspaceState({
+      createOpen: false,
+      createError: null,
+      createFieldErrors: {},
+      isCreating: false,
+    });
     if (request) detachMutation(request);
   }
 
@@ -572,8 +693,7 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
     const requestedSessionId = session.id;
     const controller = new AbortController();
     paginationRequestRef.current = controller;
-    setIsLoadingMore(true);
-    setPaginationError(null);
+    updateWorkspaceState({ isLoadingMore: true, paginationError: null });
     try {
       const page = await api.listPlatformOperatorTeams({
         after: requestedCursor,
@@ -625,6 +745,7 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
       if (paginationRequestRef.current === controller) {
         paginationRequestRef.current = null;
       }
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (sessionIdRef.current === requestedSessionId) setIsLoadingMore(false);
     }
   }
@@ -646,8 +767,10 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
       name: readTextField(data, "name"),
     });
     if (!parsed.success) {
-      setCreateError(null);
-      setCreateFieldErrors(teamFieldErrors(parsed.error));
+      updateWorkspaceState({
+        createError: null,
+        createFieldErrors: teamFieldErrors(parsed.error),
+      });
       return;
     }
     const description = parsed.data.description.trim();
@@ -673,9 +796,11 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
     };
     if (!registerMutation(request)) return;
     createRequestRef.current = request;
-    setCreateError(null);
-    setCreateFieldErrors({});
-    setIsCreating(true);
+    updateWorkspaceState({
+      createError: null,
+      createFieldErrors: {},
+      isCreating: true,
+    });
     try {
       const created = await api.createPlatformOperatorTeam(
         session.csrfToken,
@@ -687,18 +812,19 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
       if (!createRequestIsCurrent(request)) {
         return;
       }
-      setListState((current) =>
-        current.kind === "ready"
-          ? {
-              ...current,
-              items: mergeOperatorTeams([created.value], current.items),
-            }
-          : current,
-      );
-      setCreateOpen(false);
-      setCreateNotice({
-        name: created.value.name,
-        state: created.value.state,
+      updateWorkspaceState({
+        listState: (current) =>
+          current.kind === "ready"
+            ? {
+                ...current,
+                items: mergeOperatorTeams([created.value], current.items),
+              }
+            : current,
+        createOpen: false,
+        createNotice: {
+          name: created.value.name,
+          state: created.value.state,
+        },
       });
       requestAnimationFrame(() => successRef.current?.focus());
     } catch (caught) {
@@ -720,9 +846,57 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
   }
 
   if (!canRead) {
-    return <PlatformTeamDenied />;
+    return { kind: "content" as const, content: <PlatformTeamDenied /> };
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      abortDetailReconciliation,
+      acceptMutationRepresentation,
+      canManage,
+      closeTeamDetail,
+      createError,
+      createFieldErrors,
+      createNotice,
+      createOpen,
+      createTeam,
+      detachMutation,
+      detailReconciliation,
+      dismissCreate,
+      id,
+      isCreating,
+      isLoadingMore,
+      listState,
+      loadMore,
+      markMutationCommitted,
+      openTeamDetail,
+      paginationError,
+      registerMutation,
+      retryDetailReconciliation,
+      selectedTeamId,
+      session,
+      setCreateError,
+      setCreateFieldErrors,
+      setCreateOpen,
+      setListRevision,
+      setListState,
+      settleDetailReconciliation,
+      settleMutation,
+      successRef,
+    },
+  };
+}
+
+function PlatformOperatorTeamsPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformOperatorTeamsPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { createNotice, successRef } = model;
   return (
     <div className="content operator-team-page platform-operator-team-page">
       <section className="page-heading" aria-labelledby="platform-team-title">
@@ -766,279 +940,39 @@ export function PlatformOperatorTeamsPage(): React.JSX.Element {
         </Alert>
       ) : null}
 
-      <section
-        className="operator-team-inventory"
-        aria-labelledby="team-inventory-title"
-      >
-        <div className="operator-team-section-heading">
-          <div>
-            <p className="section-label">Global catalog</p>
-            <h2 id="team-inventory-title">Work-queue identities</h2>
-          </div>
-          <div className="operator-team-heading-actions">
-            {listState.kind === "error" ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setListRevision((value) => value + 1)}
-              >
-                <RefreshCw aria-hidden="true" /> Retry
-              </Button>
-            ) : null}
-            {canManage ? (
-              <Button
-                type="button"
-                onClick={() => {
-                  setCreateError(null);
-                  setCreateFieldErrors({});
-                  setCreateOpen(true);
-                }}
-              >
-                <Plus aria-hidden="true" /> Create operator team
-              </Button>
-            ) : null}
-          </div>
-        </div>
+      <OperatorTeamInventory model={model} />
 
-        {listState.kind === "loading" ? <OperatorTeamSkeleton /> : null}
-        {listState.kind === "error" ? (
-          <FocusedError message={listState.message} />
-        ) : null}
-        {paginationError ? (
-          <FocusedError
-            title="More operator teams could not be loaded"
-            message={paginationError}
-          />
-        ) : null}
-        {listState.kind === "ready" && listState.items.length === 0 ? (
-          <div className="operator-team-empty">
-            <UsersRound aria-hidden="true" />
-            <h3>No global teams yet</h3>
-            <p>
-              Create the first queue identity before assigning it to a tenant.
-            </p>
-          </div>
-        ) : null}
-        {listState.kind === "ready" && listState.items.length > 0 ? (
-          <Card className="operator-team-table-card">
-            <CardContent>
-              <Table className="operator-team-table">
-                <TableCaption className="sr-only">
-                  Global operator-team identities
-                </TableCaption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Team</TableHead>
-                    <TableHead>Lifecycle</TableHead>
-                    <TableHead>Active tenant epochs</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead>
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {listState.items.map((team) => (
-                    <TableRow key={team.id}>
-                      <TableCell>
-                        <span className="operator-team-name-cell">
-                          <strong>{team.name}</strong>
-                          <small>{team.key}</small>
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            team.state === "active" ? "secondary" : "outline"
-                          }
-                        >
-                          {team.state}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="operator-team-count">
-                          {team.activeAssignmentCount}
-                        </span>
-                      </TableCell>
-                      <TableCell>{formatDateTime(team.updatedAt)}</TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Open ${team.name} (${team.key})`}
-                          onClick={() => openTeamDetail(team.id)}
-                        >
-                          <Eye aria-hidden="true" /> Open
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        ) : null}
-        {listState.kind === "ready" && listState.nextCursor ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isLoadingMore}
-            onClick={() => void loadMore()}
-          >
-            <ArrowDown aria-hidden="true" />
-            {isLoadingMore ? "Loading teams…" : "Load more operator teams"}
-          </Button>
-        ) : null}
-      </section>
+      <OperatorTeamCreatePanel model={model} />
 
-      <Dialog
-        open={createOpen && canManage}
-        onOpenChange={(open) => {
-          if (!open) dismissCreate();
-          else if (canManage) setCreateOpen(true);
-        }}
-      >
-        <DialogContent className="operator-team-create-dialog">
-          <DialogHeader>
-            <DialogTitle>Create operator team</DialogTitle>
-            <DialogDescription>
-              The immutable key identifies this team across tenant epoch
-              history. Creation alone grants no tenant access.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="operator-team-form" onSubmit={createTeam} noValidate>
-            {createError ? <FocusedError message={createError} /> : null}
-            <FormField
-              htmlFor={`${id}-team-key`}
-              label="Immutable key"
-              hint="Lowercase letters, numbers, and underscores; for example soc_l2."
-              {...(createFieldErrors.key
-                ? { error: createFieldErrors.key }
-                : {})}
-            >
-              <Input
-                id={`${id}-team-key`}
-                name="key"
-                required
-                minLength={3}
-                maxLength={64}
-                pattern="[a-z][a-z0-9_]{1,63}"
-                disabled={isCreating}
-                aria-invalid={createFieldErrors.key ? "true" : undefined}
-                aria-describedby={`${id}-team-key-${createFieldErrors.key ? "error" : "hint"}`}
-                onChange={() =>
-                  setCreateFieldErrors((current) =>
-                    withoutTeamFieldError(current, "key"),
-                  )
-                }
-              />
-            </FormField>
-            <FormField
-              htmlFor={`${id}-team-name`}
-              label="Team name"
-              {...(createFieldErrors.name
-                ? { error: createFieldErrors.name }
-                : {})}
-            >
-              <Input
-                id={`${id}-team-name`}
-                name="name"
-                required
-                maxLength={120}
-                disabled={isCreating}
-                aria-invalid={createFieldErrors.name ? "true" : undefined}
-                aria-describedby={
-                  createFieldErrors.name ? `${id}-team-name-error` : undefined
-                }
-                onChange={() =>
-                  setCreateFieldErrors((current) =>
-                    withoutTeamFieldError(current, "name"),
-                  )
-                }
-              />
-            </FormField>
-            <FormField
-              htmlFor={`${id}-team-description`}
-              label="Description"
-              optional
-              {...(createFieldErrors.description
-                ? { error: createFieldErrors.description }
-                : {})}
-            >
-              <Textarea
-                id={`${id}-team-description`}
-                name="description"
-                maxLength={500}
-                disabled={isCreating}
-                aria-invalid={
-                  createFieldErrors.description ? "true" : undefined
-                }
-                aria-describedby={
-                  createFieldErrors.description
-                    ? `${id}-team-description-error`
-                    : undefined
-                }
-                onChange={() =>
-                  setCreateFieldErrors((current) =>
-                    withoutTeamFieldError(current, "description"),
-                  )
-                }
-              />
-            </FormField>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={dismissCreate}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isCreating}>
-                <Plus aria-hidden="true" />
-                {isCreating ? "Creating team…" : "Create operator team"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {selectedTeamId ? (
-        <OperatorTeamDetail
-          key={`${session.id}:${selectedTeamId}`}
-          teamId={selectedTeamId}
-          canManage={canManage}
-          reconciliation={
-            detailReconciliation?.teamId === selectedTeamId
-              ? detailReconciliation
-              : undefined
-          }
-          onAbortReconciliation={abortDetailReconciliation}
-          onAcceptMutationRepresentation={acceptMutationRepresentation}
-          onClose={closeTeamDetail}
-          onDetachMutation={detachMutation}
-          onChanged={(team) => {
-            setListState((current) =>
-              current.kind === "ready"
-                ? {
-                    ...current,
-                    items: mergeOperatorTeams(current.items, [team]),
-                  }
-                : current,
-            );
-          }}
-          onArchived={() => {
-            closeTeamDetail();
-            setListRevision((value) => value + 1);
-          }}
-          onMutationCommitted={markMutationCommitted}
-          onRegisterMutation={registerMutation}
-          onRetryReconciliation={retryDetailReconciliation}
-          onSettleMutation={settleMutation}
-          onSettleReconciliation={settleDetailReconciliation}
-        />
-      ) : null}
+      {<SelectedOperatorTeamDetail model={model} />}
     </div>
   );
 }
 
-function OperatorTeamDetail({
+function OperatorTeamDetail(props: {
+  canManage: boolean;
+  onAcceptMutationRepresentation: (request: DetailMutationRequest) => void;
+  onAbortReconciliation: (attempt: DetailReconciliation) => void;
+  onArchived: () => void;
+  onChanged: (team: OperatorTeamView) => void;
+  onClose: () => void;
+  onDetachMutation: (request: DetailMutationRequest) => void;
+  onMutationCommitted: (request: DetailMutationRequest) => void;
+  onRegisterMutation: (request: DetailMutationRequest) => boolean;
+  onRetryReconciliation: (teamId: string) => boolean;
+  onSettleMutation: (request: DetailMutationRequest) => void;
+  onSettleReconciliation: (
+    attempt: DetailReconciliation,
+    succeeded: boolean,
+  ) => void;
+  reconciliation: DetailReconciliation | undefined;
+  teamId: string;
+}): React.JSX.Element {
+  const model = useOperatorTeamDetailModel(props);
+  return <OperatorTeamDetailView model={model.data} />;
+}
+
+function useOperatorTeamDetailModel({
   canManage,
   onAcceptMutationRepresentation,
   onAbortReconciliation,
@@ -1071,21 +1005,83 @@ function OperatorTeamDetail({
   ) => void;
   reconciliation: DetailReconciliation | undefined;
   teamId: string;
-}): React.JSX.Element {
+}) {
   const { api, clearSession, session } = useSession();
-  const [detail, setDetail] = useState<DetailState>({ kind: "loading" });
-  const [revision, setRevision] = useState(0);
-  const [draft, setDraft] = useState<TeamDraft>({ description: "", name: "" });
-  const [touched, setTouched] = useState<TouchedDraft>(untouchedDraft);
-  const [fieldErrors, setFieldErrors] = useState<TeamFieldErrors>({});
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [stale, setStale] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [archiveReason, setArchiveReason] = useState("");
-  const [archiveReasonError, setArchiveReasonError] = useState<string | null>(
-    null,
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<OperatorTeamDetailState>,
+    undefined,
+    (): OperatorTeamDetailState => ({
+      detail: { kind: "loading" },
+      revision: 0,
+      draft: { description: "", name: "" },
+      touched: untouchedDraft,
+      fieldErrors: {},
+      mutationError: null,
+      stale: false,
+      isSaving: false,
+      archiveReason: "",
+      archiveReasonError: null,
+      isArchiving: false,
+    }),
   );
-  const [isArchiving, setIsArchiving] = useState(false);
+  const {
+    detail,
+    revision,
+    draft,
+    touched,
+    fieldErrors,
+    mutationError,
+    stale,
+    isSaving,
+    archiveReason,
+    archiveReasonError,
+    isArchiving,
+  } = workspaceState;
+  const {
+    setDetail,
+    setRevision,
+    setDraft,
+    setTouched,
+    setFieldErrors,
+    setIsSaving,
+    setArchiveReason,
+    setArchiveReasonError,
+    setIsArchiving,
+  } = useMemo(
+    () => ({
+      setDetail: (
+        value: React.SetStateAction<OperatorTeamDetailState["detail"]>,
+      ) => updateWorkspaceState({ detail: value }),
+      setRevision: (
+        value: React.SetStateAction<OperatorTeamDetailState["revision"]>,
+      ) => updateWorkspaceState({ revision: value }),
+      setDraft: (
+        value: React.SetStateAction<OperatorTeamDetailState["draft"]>,
+      ) => updateWorkspaceState({ draft: value }),
+      setTouched: (
+        value: React.SetStateAction<OperatorTeamDetailState["touched"]>,
+      ) => updateWorkspaceState({ touched: value }),
+      setFieldErrors: (
+        value: React.SetStateAction<OperatorTeamDetailState["fieldErrors"]>,
+      ) => updateWorkspaceState({ fieldErrors: value }),
+      setIsSaving: (
+        value: React.SetStateAction<OperatorTeamDetailState["isSaving"]>,
+      ) => updateWorkspaceState({ isSaving: value }),
+      setArchiveReason: (
+        value: React.SetStateAction<OperatorTeamDetailState["archiveReason"]>,
+      ) => updateWorkspaceState({ archiveReason: value }),
+      setArchiveReasonError: (
+        value: React.SetStateAction<
+          OperatorTeamDetailState["archiveReasonError"]
+        >,
+      ) => updateWorkspaceState({ archiveReasonError: value }),
+      setIsArchiving: (
+        value: React.SetStateAction<OperatorTeamDetailState["isArchiving"]>,
+      ) => updateWorkspaceState({ isArchiving: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const mountedRef = useRef(false);
   const canManageRef = useRef(canManage);
   const manageGenerationRef = useRef(0);
@@ -1096,11 +1092,13 @@ function OperatorTeamDetail({
   const serverDraftRef = useRef<TeamDraft>({ description: "", name: "" });
   const touchedRef = useRef(touched);
   const id = useId();
-  canManageRef.current = canManage;
-  sessionIdRef.current = session.id;
-  teamIdRef.current = teamId;
-  draftRef.current = draft;
-  touchedRef.current = touched;
+  useLayoutEffect(() => {
+    canManageRef.current = canManage;
+    sessionIdRef.current = session.id;
+    teamIdRef.current = teamId;
+    draftRef.current = draft;
+    touchedRef.current = touched;
+  }, [canManage, draft, session, teamId, touched]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1120,15 +1118,17 @@ function OperatorTeamDetail({
     const currentDraft = serverDraftRef.current;
     draftRef.current = currentDraft;
     touchedRef.current = untouchedDraft;
-    setDraft(currentDraft);
-    setTouched(untouchedDraft);
-    setFieldErrors({});
-    setArchiveReason("");
-    setArchiveReasonError(null);
-    setMutationError(null);
-    setStale(false);
-    setIsSaving(false);
-    setIsArchiving(false);
+    updateWorkspaceState({
+      draft: currentDraft,
+      touched: untouchedDraft,
+      fieldErrors: {},
+      archiveReason: "",
+      archiveReasonError: null,
+      mutationError: null,
+      stale: false,
+      isSaving: false,
+      isArchiving: false,
+    });
   }, [canManage, onDetachMutation, session.id, teamId]);
 
   function beginMutation(
@@ -1188,17 +1188,19 @@ function OperatorTeamDetail({
           description: resource.value.description,
           name: resource.value.name,
         };
-        setDetail({ kind: "ready", resource });
-        setDraft({
-          description: touchedRef.current.description
-            ? draftRef.current.description
-            : resource.value.description,
-          name: touchedRef.current.name
-            ? draftRef.current.name
-            : resource.value.name,
+        updateWorkspaceState({
+          detail: { kind: "ready", resource },
+          draft: {
+            description: touchedRef.current.description
+              ? draftRef.current.description
+              : resource.value.description,
+            name: touchedRef.current.name
+              ? draftRef.current.name
+              : resource.value.name,
+          },
+          mutationError: null,
+          stale: false,
         });
-        setMutationError(null);
-        setStale(false);
         if (reconciliationAttempt) {
           onSettleReconciliation(reconciliationAttempt, true);
         }
@@ -1227,11 +1229,12 @@ function OperatorTeamDetail({
       }
     };
   }, [
+    setDetail,
     api,
     clearSession,
     onAbortReconciliation,
     onSettleReconciliation,
-    reconciliation?.id,
+    reconciliation,
     revision,
     session.id,
     teamId,
@@ -1242,9 +1245,11 @@ function OperatorTeamDetail({
     if (!canManageRef.current || detail.kind !== "ready") return;
     const parsed = teamMetadataSchema.safeParse(draft);
     if (!parsed.success) {
-      setMutationError(null);
-      setStale(false);
-      setFieldErrors(teamFieldErrors(parsed.error));
+      updateWorkspaceState({
+        mutationError: null,
+        stale: false,
+        fieldErrors: teamFieldErrors(parsed.error),
+      });
       return;
     }
     const input: OperatorTeamPatchInput = {
@@ -1256,9 +1261,11 @@ function OperatorTeamDetail({
     if (Object.keys(input).length === 0) return;
     const request = beginMutation("save");
     if (!request) return;
-    setMutationError(null);
-    setFieldErrors({});
-    setIsSaving(true);
+    updateWorkspaceState({
+      mutationError: null,
+      fieldErrors: {},
+      isSaving: true,
+    });
     try {
       const updated = await api.updatePlatformOperatorTeam(
         session.csrfToken,
@@ -1274,14 +1281,16 @@ function OperatorTeamDetail({
         description: updated.value.description,
         name: updated.value.name,
       };
-      setDetail({ kind: "ready", resource: updated });
-      setDraft({
-        description: updated.value.description,
-        name: updated.value.name,
+      updateWorkspaceState({
+        detail: { kind: "ready", resource: updated },
+        draft: {
+          description: updated.value.description,
+          name: updated.value.name,
+        },
+        touched: untouchedDraft,
+        fieldErrors: {},
+        stale: false,
       });
-      setTouched(untouchedDraft);
-      setFieldErrors({});
-      setStale(false);
       onAcceptMutationRepresentation(request);
       onChanged(updated.value);
     } catch (caught) {
@@ -1290,11 +1299,15 @@ function OperatorTeamDetail({
         clearSession(session.id);
         return;
       }
-      setStale(caught instanceof PhaseTwoApiError && caught.status === 412);
-      setMutationError(
-        describePhaseTwoError(caught, "The team metadata was not saved."),
-      );
+      updateWorkspaceState({
+        stale: caught instanceof PhaseTwoApiError && caught.status === 412,
+        mutationError: describePhaseTwoError(
+          caught,
+          "The team metadata was not saved.",
+        ),
+      });
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       finishMutation(request);
       onSettleMutation(request);
     }
@@ -1304,19 +1317,22 @@ function OperatorTeamDetail({
     if (!canManageRef.current || detail.kind !== "ready") return;
     const parsedReason = administrativeReasonSchema.safeParse(archiveReason);
     if (!parsedReason.success) {
-      setMutationError(null);
-      setStale(false);
-      setArchiveReasonError(
-        parsedReason.error.issues[0]?.message ??
+      updateWorkspaceState({
+        mutationError: null,
+        stale: false,
+        archiveReasonError:
+          parsedReason.error.issues[0]?.message ??
           "Enter an administrative reason.",
-      );
+      });
       return;
     }
     const request = beginMutation("archive");
     if (!request) return;
-    setMutationError(null);
-    setArchiveReasonError(null);
-    setIsArchiving(true);
+    updateWorkspaceState({
+      mutationError: null,
+      archiveReasonError: null,
+      isArchiving: true,
+    });
     try {
       await api.archivePlatformOperatorTeam(
         session.csrfToken,
@@ -1335,19 +1351,229 @@ function OperatorTeamDetail({
         clearSession(session.id);
         return;
       }
-      setStale(caught instanceof PhaseTwoApiError && caught.status === 412);
-      setMutationError(
-        describePhaseTwoError(
+      updateWorkspaceState({
+        stale: caught instanceof PhaseTwoApiError && caught.status === 412,
+        mutationError: describePhaseTwoError(
           caught,
           "The team was not archived. End every active tenant epoch first.",
         ),
-      );
+      });
     } finally {
       finishMutation(request);
       onSettleMutation(request);
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      archive,
+      archiveReason,
+      archiveReasonError,
+      canManage,
+      detail,
+      dismissDetail,
+      draft,
+      fieldErrors,
+      id,
+      isArchiving,
+      isSaving,
+      mutationError,
+      onRetryReconciliation,
+      save,
+      setArchiveReason,
+      setArchiveReasonError,
+      setDraft,
+      setFieldErrors,
+      setRevision,
+      setTouched,
+      stale,
+      teamId,
+      touched,
+    },
+  };
+}
+
+function OperatorTeamDetailView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useOperatorTeamDetailModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <OperatorTeamDetailContent model={model} />;
+}
+
+function PlatformTeamDenied(): React.JSX.Element {
+  return (
+    <div className="content content--narrow">
+      <section
+        className="page-heading"
+        aria-labelledby="platform-team-denied-title"
+      >
+        <div>
+          <p className="section-label">Platform administration</p>
+          <h1 id="platform-team-denied-title">
+            Operator teams are not available.
+          </h1>
+          <p>
+            The current session did not return explicit platform operator-team
+            read authority.
+          </p>
+        </div>
+      </section>
+      <Alert variant="destructive">
+        <ShieldX aria-hidden="true" />
+        <AlertTitle>Permission not returned</AlertTitle>
+        <AlertDescription>
+          Tenant authority never grants access to the global team catalog.
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+}
+
+function OperatorTeamSkeleton(): React.JSX.Element {
+  return (
+    <div
+      className="operator-team-list-skeleton"
+      aria-label="Loading operator teams"
+    >
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+function OperatorTeamDetailSkeleton(): React.JSX.Element {
+  return (
+    <div
+      className="operator-team-detail-skeleton"
+      aria-label="Loading operator-team detail"
+    >
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+function teamFieldErrors(error: z.ZodError): TeamFieldErrors {
+  const errors: TeamFieldErrors = {};
+  for (const issue of error.issues) {
+    const field = issue.path[0];
+    if (
+      (field === "description" || field === "key" || field === "name") &&
+      errors[field] === undefined
+    ) {
+      errors[field] = issue.message;
+    }
+  }
+  return errors;
+}
+
+function withoutTeamFieldError(
+  errors: TeamFieldErrors,
+  field: keyof TeamFieldErrors,
+): TeamFieldErrors {
+  if (errors[field] === undefined) return errors;
+  const remaining = { ...errors };
+  delete remaining[field];
+  return remaining;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function OperatorTeamInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformOperatorTeamsPageView>["model"];
+}): React.ReactNode {
+  const { isLoadingMore, listState, loadMore, paginationError } = model;
+  return (
+    <section
+      className="operator-team-inventory"
+      aria-labelledby="team-inventory-title"
+    >
+      <OperatorTeamInventoryHeading model={model} />
+
+      {listState.kind === "loading" ? <OperatorTeamSkeleton /> : null}
+      {listState.kind === "error" ? (
+        <FocusedError message={listState.message} />
+      ) : null}
+      {paginationError ? (
+        <FocusedError
+          title="More operator teams could not be loaded"
+          message={paginationError}
+        />
+      ) : null}
+      {listState.kind === "ready" && listState.items.length === 0 ? (
+        <div className="operator-team-empty">
+          <UsersRound aria-hidden="true" />
+          <h3>No global teams yet</h3>
+          <p>
+            Create the first queue identity before assigning it to a tenant.
+          </p>
+        </div>
+      ) : null}
+      {<OperatorTeamInventoryTable model={model} />}
+      {listState.kind === "ready" && listState.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isLoadingMore}
+          onClick={() => void loadMore()}
+        >
+          <ArrowDown aria-hidden="true" />
+          {isLoadingMore ? "Loading teams…" : "Load more operator teams"}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+function OperatorTeamCreatePanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformOperatorTeamsPageView>["model"];
+}): React.ReactNode {
+  const { canManage, createOpen, dismissCreate, setCreateOpen } = model;
+  return (
+    <Dialog
+      open={createOpen && canManage}
+      onOpenChange={(open) => {
+        if (!open) dismissCreate();
+        else if (canManage) setCreateOpen(true);
+      }}
+    >
+      <OperatorTeamCreateDialog model={model} />
+    </Dialog>
+  );
+}
+
+function OperatorTeamDetailContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamDetailView>["model"];
+}): React.ReactNode {
+  const {
+    detail,
+    dismissDetail,
+    mutationError,
+    onRetryReconciliation,
+    setRevision,
+    stale,
+    teamId,
+  } = model;
   return (
     <Dialog
       open
@@ -1429,152 +1655,8 @@ function OperatorTeamDetail({
                 ) : null}
               </div>
             ) : null}
-            <form className="operator-team-form" onSubmit={save} noValidate>
-              <FormField
-                htmlFor={`${id}-edit-name`}
-                label="Team name"
-                {...(fieldErrors.name ? { error: fieldErrors.name } : {})}
-              >
-                <Input
-                  id={`${id}-edit-name`}
-                  value={draft.name}
-                  required
-                  maxLength={120}
-                  disabled={
-                    !canManage ||
-                    isSaving ||
-                    isArchiving ||
-                    detail.resource.value.state === "archived"
-                  }
-                  aria-invalid={fieldErrors.name ? "true" : undefined}
-                  aria-describedby={
-                    fieldErrors.name ? `${id}-edit-name-error` : undefined
-                  }
-                  onChange={(event) => {
-                    setFieldErrors((current) =>
-                      withoutTeamFieldError(current, "name"),
-                    );
-                    setDraft((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }));
-                    setTouched((current) => ({ ...current, name: true }));
-                  }}
-                />
-              </FormField>
-              <FormField
-                htmlFor={`${id}-edit-description`}
-                label="Description"
-                {...(fieldErrors.description
-                  ? { error: fieldErrors.description }
-                  : {})}
-              >
-                <Textarea
-                  id={`${id}-edit-description`}
-                  value={draft.description}
-                  maxLength={500}
-                  disabled={
-                    !canManage ||
-                    isSaving ||
-                    isArchiving ||
-                    detail.resource.value.state === "archived"
-                  }
-                  aria-invalid={fieldErrors.description ? "true" : undefined}
-                  aria-describedby={
-                    fieldErrors.description
-                      ? `${id}-edit-description-error`
-                      : undefined
-                  }
-                  onChange={(event) => {
-                    setFieldErrors((current) =>
-                      withoutTeamFieldError(current, "description"),
-                    );
-                    setDraft((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }));
-                    setTouched((current) => ({
-                      ...current,
-                      description: true,
-                    }));
-                  }}
-                />
-              </FormField>
-              {canManage && detail.resource.value.state === "active" ? (
-                <Button
-                  type="submit"
-                  disabled={
-                    isSaving ||
-                    isArchiving ||
-                    (!touched.name && !touched.description)
-                  }
-                >
-                  {isSaving ? "Saving changes…" : "Save changes"}
-                </Button>
-              ) : null}
-            </form>
-            {canManage && detail.resource.value.state === "active" ? (
-              <Card className="operator-team-archive-card">
-                <CardHeader>
-                  <CardTitle>Archive global identity</CardTitle>
-                  <CardDescription>
-                    Archiving is blocked while any tenant epoch is active.
-                    History remains addressable.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <FormField
-                    htmlFor={`${id}-archive-reason`}
-                    label="Archive reason"
-                    {...(archiveReasonError
-                      ? { error: archiveReasonError }
-                      : {})}
-                  >
-                    <Textarea
-                      id={`${id}-archive-reason`}
-                      value={archiveReason}
-                      required
-                      maxLength={500}
-                      disabled={isSaving || isArchiving}
-                      aria-invalid={archiveReasonError ? "true" : undefined}
-                      aria-describedby={
-                        archiveReasonError
-                          ? `${id}-archive-reason-error`
-                          : undefined
-                      }
-                      onChange={(event) => {
-                        setArchiveReasonError(null);
-                        setArchiveReason(event.target.value);
-                      }}
-                    />
-                  </FormField>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={
-                      isSaving ||
-                      isArchiving ||
-                      archiveReason.trim().length === 0 ||
-                      detail.resource.value.activeAssignmentCount > 0
-                    }
-                    onClick={() => void archive()}
-                  >
-                    <Archive aria-hidden="true" />
-                    {isArchiving ? "Archiving team…" : "Archive operator team"}
-                  </Button>
-                  {detail.resource.value.activeAssignmentCount > 0 ? (
-                    <p className="operator-team-inline-note">
-                      End {detail.resource.value.activeAssignmentCount} active
-                      tenant{" "}
-                      {detail.resource.value.activeAssignmentCount === 1
-                        ? "epoch"
-                        : "epochs"}{" "}
-                      first.
-                    </p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ) : null}
+            <OperatorTeamMetadataForm model={model} />
+            {<OperatorTeamArchivePanel model={model} />}
           </div>
         ) : null}
         <DialogFooter>
@@ -1587,113 +1669,525 @@ function OperatorTeamDetail({
   );
 }
 
-function PlatformTeamDenied(): React.JSX.Element {
+interface PlatformOperatorTeamsPageState {
+  listState: TeamListState;
+  listRevision: number;
+  isLoadingMore: boolean;
+  paginationError: string | null;
+  createOpen: boolean;
+  createError: string | null;
+  createFieldErrors: TeamFieldErrors;
+  isCreating: boolean;
+  createNotice: CreateNotice | null;
+  selectedTeamId: string | null;
+  detailReconciliation: DetailReconciliation | null;
+}
+
+interface OperatorTeamDetailState {
+  detail: DetailState;
+  revision: number;
+  draft: TeamDraft;
+  touched: TouchedDraft;
+  fieldErrors: TeamFieldErrors;
+  mutationError: string | null;
+  stale: boolean;
+  isSaving: boolean;
+  archiveReason: string;
+  archiveReasonError: string | null;
+  isArchiving: boolean;
+}
+
+function SelectedOperatorTeamDetail({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformOperatorTeamsPageView>["model"];
+}): React.ReactNode {
+  const {
+    abortDetailReconciliation,
+    acceptMutationRepresentation,
+    canManage,
+    closeTeamDetail,
+    detachMutation,
+    detailReconciliation,
+    markMutationCommitted,
+    registerMutation,
+    retryDetailReconciliation,
+    selectedTeamId,
+    session,
+    setListRevision,
+    setListState,
+    settleDetailReconciliation,
+    settleMutation,
+  } = model;
+  return selectedTeamId ? (
+    <OperatorTeamDetail
+      key={`${session.id}:${selectedTeamId}`}
+      teamId={selectedTeamId}
+      canManage={canManage}
+      reconciliation={
+        detailReconciliation?.teamId === selectedTeamId
+          ? detailReconciliation
+          : undefined
+      }
+      onAbortReconciliation={abortDetailReconciliation}
+      onAcceptMutationRepresentation={acceptMutationRepresentation}
+      onClose={closeTeamDetail}
+      onDetachMutation={detachMutation}
+      onChanged={(team) => {
+        setListState((current) =>
+          current.kind === "ready"
+            ? {
+                ...current,
+                items: mergeOperatorTeams(current.items, [team]),
+              }
+            : current,
+        );
+      }}
+      onArchived={() => {
+        closeTeamDetail();
+        setListRevision((value) => value + 1);
+      }}
+      onMutationCommitted={markMutationCommitted}
+      onRegisterMutation={registerMutation}
+      onRetryReconciliation={retryDetailReconciliation}
+      onSettleMutation={settleMutation}
+      onSettleReconciliation={settleDetailReconciliation}
+    />
+  ) : null;
+}
+
+function OperatorTeamInventoryHeading({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamInventory>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    listState,
+    setCreateError,
+    setCreateFieldErrors,
+    setCreateOpen,
+    setListRevision,
+  } = model;
   return (
-    <div className="content content--narrow">
-      <section
-        className="page-heading"
-        aria-labelledby="platform-team-denied-title"
-      >
-        <div>
-          <p className="section-label">Platform administration</p>
-          <h1 id="platform-team-denied-title">
-            Operator teams are not available.
-          </h1>
-          <p>
-            The current session did not return explicit platform operator-team
-            read authority.
+    <div className="operator-team-section-heading">
+      <div>
+        <p className="section-label">Global catalog</p>
+        <h2 id="team-inventory-title">Work-queue identities</h2>
+      </div>
+      <div className="operator-team-heading-actions">
+        {listState.kind === "error" ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setListRevision((value) => value + 1)}
+          >
+            <RefreshCw aria-hidden="true" /> Retry
+          </Button>
+        ) : null}
+        {canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setCreateError(null);
+              setCreateFieldErrors({});
+              setCreateOpen(true);
+            }}
+          >
+            <Plus aria-hidden="true" /> Create operator team
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function OperatorTeamInventoryTable({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamInventory>["model"];
+}): React.ReactNode {
+  const { listState, openTeamDetail } = model;
+  return listState.kind === "ready" && listState.items.length > 0 ? (
+    <Card className="operator-team-table-card">
+      <CardContent>
+        <Table className="operator-team-table">
+          <TableCaption className="sr-only">
+            Global operator-team identities
+          </TableCaption>
+          <TableColumnHeaders
+            columns={["Team", "Lifecycle", "Active tenant epochs", "Updated"]}
+            actionLabel="Actions"
+          />
+          <TableBody>
+            {listState.items.map((team) => (
+              <TableRow key={team.id}>
+                <TableCell>
+                  <span className="operator-team-name-cell">
+                    <strong>{team.name}</strong>
+                    <small>{team.key}</small>
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={team.state === "active" ? "secondary" : "outline"}
+                  >
+                    {team.state}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <span className="operator-team-count">
+                    {team.activeAssignmentCount}
+                  </span>
+                </TableCell>
+                <TableCell>{formatDateTime(team.updatedAt)}</TableCell>
+                <TableCell>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Open ${team.name} (${team.key})`}
+                    onClick={() => openTeamDetail(team.id)}
+                  >
+                    <Eye aria-hidden="true" /> Open
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  ) : null;
+}
+
+function OperatorTeamCreateDialog({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamCreatePanel>["model"];
+}): React.ReactNode {
+  const {
+    createError,
+    createFieldErrors,
+    createTeam,
+    dismissCreate,
+    id,
+    isCreating,
+    setCreateFieldErrors,
+  } = model;
+  return (
+    <DialogContent className="operator-team-create-dialog">
+      <DialogHeader>
+        <DialogTitle>Create operator team</DialogTitle>
+        <DialogDescription>
+          The immutable key identifies this team across tenant epoch history.
+          Creation alone grants no tenant access.
+        </DialogDescription>
+      </DialogHeader>
+      <form className="operator-team-form" onSubmit={createTeam} noValidate>
+        {createError ? <FocusedError message={createError} /> : null}
+        <FormField
+          htmlFor={`${id}-team-key`}
+          label="Immutable key"
+          hint="Lowercase letters, numbers, and underscores; for example soc_l2."
+          {...(createFieldErrors.key ? { error: createFieldErrors.key } : {})}
+        >
+          <Input
+            id={`${id}-team-key`}
+            name="key"
+            required
+            minLength={3}
+            maxLength={64}
+            pattern="[a-z][a-z0-9_]{1,63}"
+            disabled={isCreating}
+            aria-invalid={createFieldErrors.key ? "true" : undefined}
+            aria-describedby={`${id}-team-key-${createFieldErrors.key ? "error" : "hint"}`}
+            onChange={() =>
+              setCreateFieldErrors((current) =>
+                withoutTeamFieldError(current, "key"),
+              )
+            }
+          />
+        </FormField>
+        <FormField
+          htmlFor={`${id}-team-name`}
+          label="Team name"
+          {...(createFieldErrors.name ? { error: createFieldErrors.name } : {})}
+        >
+          <Input
+            id={`${id}-team-name`}
+            name="name"
+            required
+            maxLength={120}
+            disabled={isCreating}
+            aria-invalid={createFieldErrors.name ? "true" : undefined}
+            aria-describedby={
+              createFieldErrors.name ? `${id}-team-name-error` : undefined
+            }
+            onChange={() =>
+              setCreateFieldErrors((current) =>
+                withoutTeamFieldError(current, "name"),
+              )
+            }
+          />
+        </FormField>
+        <FormField
+          htmlFor={`${id}-team-description`}
+          label="Description"
+          optional
+          {...(createFieldErrors.description
+            ? { error: createFieldErrors.description }
+            : {})}
+        >
+          <Textarea
+            id={`${id}-team-description`}
+            name="description"
+            maxLength={500}
+            disabled={isCreating}
+            aria-invalid={createFieldErrors.description ? "true" : undefined}
+            aria-describedby={
+              createFieldErrors.description
+                ? `${id}-team-description-error`
+                : undefined
+            }
+            onChange={() =>
+              setCreateFieldErrors((current) =>
+                withoutTeamFieldError(current, "description"),
+              )
+            }
+          />
+        </FormField>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={dismissCreate}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isCreating}>
+            <Plus aria-hidden="true" />
+            {isCreating ? "Creating team…" : "Create operator team"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+function OperatorTeamMetadataForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamDetailContent>["model"];
+}): React.ReactNode {
+  const { canManage, detail, isArchiving, isSaving, save, touched } = model;
+  if (detail.kind !== "ready") return null;
+  return (
+    <form className="operator-team-form" onSubmit={save} noValidate>
+      <OperatorTeamNameField model={model} />
+      <OperatorTeamDescriptionField model={model} />
+      {canManage && detail.resource.value.state === "active" ? (
+        <Button
+          type="submit"
+          disabled={
+            isSaving || isArchiving || (!touched.name && !touched.description)
+          }
+        >
+          {isSaving ? "Saving changes…" : "Save changes"}
+        </Button>
+      ) : null}
+    </form>
+  );
+}
+
+function OperatorTeamArchivePanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamDetailContent>["model"];
+}): React.ReactNode {
+  const { canManage, detail } = model;
+  if (detail.kind !== "ready") return null;
+  return canManage && detail.resource.value.state === "active" ? (
+    <OperatorTeamArchiveForm model={model} />
+  ) : null;
+}
+
+function OperatorTeamNameField({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamMetadataForm>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    detail,
+    draft,
+    fieldErrors,
+    id,
+    isArchiving,
+    isSaving,
+    setDraft,
+    setFieldErrors,
+    setTouched,
+  } = model;
+  if (detail.kind !== "ready") return null;
+  return (
+    <FormField
+      htmlFor={`${id}-edit-name`}
+      label="Team name"
+      {...(fieldErrors.name ? { error: fieldErrors.name } : {})}
+    >
+      <Input
+        id={`${id}-edit-name`}
+        value={draft.name}
+        required
+        maxLength={120}
+        disabled={
+          !canManage ||
+          isSaving ||
+          isArchiving ||
+          detail.resource.value.state === "archived"
+        }
+        aria-invalid={fieldErrors.name ? "true" : undefined}
+        aria-describedby={
+          fieldErrors.name ? `${id}-edit-name-error` : undefined
+        }
+        onChange={(event) => {
+          setFieldErrors((current) => withoutTeamFieldError(current, "name"));
+          setDraft((current) => ({
+            ...current,
+            name: event.target.value,
+          }));
+          setTouched((current) => ({ ...current, name: true }));
+        }}
+      />
+    </FormField>
+  );
+}
+
+function OperatorTeamDescriptionField({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamMetadataForm>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    detail,
+    draft,
+    fieldErrors,
+    id,
+    isArchiving,
+    isSaving,
+    setDraft,
+    setFieldErrors,
+    setTouched,
+  } = model;
+  if (detail.kind !== "ready") return null;
+  return (
+    <FormField
+      htmlFor={`${id}-edit-description`}
+      label="Description"
+      {...(fieldErrors.description ? { error: fieldErrors.description } : {})}
+    >
+      <Textarea
+        id={`${id}-edit-description`}
+        value={draft.description}
+        maxLength={500}
+        disabled={
+          !canManage ||
+          isSaving ||
+          isArchiving ||
+          detail.resource.value.state === "archived"
+        }
+        aria-invalid={fieldErrors.description ? "true" : undefined}
+        aria-describedby={
+          fieldErrors.description ? `${id}-edit-description-error` : undefined
+        }
+        onChange={(event) => {
+          setFieldErrors((current) =>
+            withoutTeamFieldError(current, "description"),
+          );
+          setDraft((current) => ({
+            ...current,
+            description: event.target.value,
+          }));
+          setTouched((current) => ({
+            ...current,
+            description: true,
+          }));
+        }}
+      />
+    </FormField>
+  );
+}
+
+function OperatorTeamArchiveForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof OperatorTeamArchivePanel>["model"];
+}): React.ReactNode {
+  const {
+    archive,
+    archiveReason,
+    archiveReasonError,
+    detail,
+    id,
+    isArchiving,
+    isSaving,
+    setArchiveReason,
+    setArchiveReasonError,
+  } = model;
+  if (detail.kind !== "ready") return null;
+  return (
+    <Card className="operator-team-archive-card">
+      <CardHeader>
+        <CardTitle>Archive global identity</CardTitle>
+        <CardDescription>
+          Archiving is blocked while any tenant epoch is active. History remains
+          addressable.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <FormField
+          htmlFor={`${id}-archive-reason`}
+          label="Archive reason"
+          {...(archiveReasonError ? { error: archiveReasonError } : {})}
+        >
+          <Textarea
+            id={`${id}-archive-reason`}
+            value={archiveReason}
+            required
+            maxLength={500}
+            disabled={isSaving || isArchiving}
+            aria-invalid={archiveReasonError ? "true" : undefined}
+            aria-describedby={
+              archiveReasonError ? `${id}-archive-reason-error` : undefined
+            }
+            onChange={(event) => {
+              setArchiveReasonError(null);
+              setArchiveReason(event.target.value);
+            }}
+          />
+        </FormField>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={
+            isSaving ||
+            isArchiving ||
+            archiveReason.trim().length === 0 ||
+            detail.resource.value.activeAssignmentCount > 0
+          }
+          onClick={() => void archive()}
+        >
+          <Archive aria-hidden="true" />
+          {isArchiving ? "Archiving team…" : "Archive operator team"}
+        </Button>
+        {detail.resource.value.activeAssignmentCount > 0 ? (
+          <p className="operator-team-inline-note">
+            End {detail.resource.value.activeAssignmentCount} active tenant{" "}
+            {detail.resource.value.activeAssignmentCount === 1
+              ? "epoch"
+              : "epochs"}{" "}
+            first.
           </p>
-        </div>
-      </section>
-      <Alert variant="destructive">
-        <ShieldX aria-hidden="true" />
-        <AlertTitle>Permission not returned</AlertTitle>
-        <AlertDescription>
-          Tenant authority never grants access to the global team catalog.
-        </AlertDescription>
-      </Alert>
-    </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
-}
-
-function OperatorTeamSkeleton(): React.JSX.Element {
-  return (
-    <div
-      className="operator-team-list-skeleton"
-      aria-label="Loading operator teams"
-    >
-      <span />
-      <span />
-      <span />
-    </div>
-  );
-}
-
-function OperatorTeamDetailSkeleton(): React.JSX.Element {
-  return (
-    <div
-      className="operator-team-detail-skeleton"
-      aria-label="Loading operator-team detail"
-    >
-      <span />
-      <span />
-      <span />
-    </div>
-  );
-}
-
-export function mergeOperatorTeams(
-  current: readonly OperatorTeamView[],
-  incoming: readonly OperatorTeamView[],
-): readonly OperatorTeamView[] {
-  const byId = new Map(current.map((team) => [team.id, team]));
-  for (const team of incoming) {
-    const existing = byId.get(team.id);
-    if (!existing || team.version > existing.version) {
-      byId.set(team.id, team);
-    } else if (
-      team.version === existing.version &&
-      JSON.stringify(team) !== JSON.stringify(existing)
-    ) {
-      throw new Error(
-        "Operator-team pages returned conflicting representations.",
-      );
-    }
-  }
-  return [...byId.values()].toSorted((left, right) =>
-    left.key.localeCompare(right.key),
-  );
-}
-
-function teamFieldErrors(error: z.ZodError): TeamFieldErrors {
-  const errors: TeamFieldErrors = {};
-  for (const issue of error.issues) {
-    const field = issue.path[0];
-    if (
-      (field === "description" || field === "key" || field === "name") &&
-      errors[field] === undefined
-    ) {
-      errors[field] = issue.message;
-    }
-  }
-  return errors;
-}
-
-function withoutTeamFieldError(
-  errors: TeamFieldErrors,
-  field: keyof TeamFieldErrors,
-): TeamFieldErrors {
-  if (errors[field] === undefined) return errors;
-  const remaining = { ...errors };
-  delete remaining[field];
-  return remaining;
-}
-
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
 }

@@ -7,13 +7,13 @@ import { Textarea } from "@periapsis/ui/components/ui/textarea";
 import {
   canEditDefinition,
   draftText,
+  presentDraft,
+  visibleDefinitions,
   type CustomFieldAudience,
   type CustomFieldDefinitionView,
   type CustomFieldDraft,
   type CustomFieldDrafts,
   type CustomFieldWritePhase,
-  presentDraft,
-  visibleDefinitions,
 } from "./model";
 // oxlint-disable-next-line import/no-unassigned-import -- Vite extracts this component-owned stylesheet.
 import "./dynamic-field-form.css";
@@ -171,28 +171,7 @@ function FieldControl({
 
   if (definition.dataType === "boolean") {
     return (
-      <select
-        {...common}
-        value={
-          draft.presence === "present"
-            ? draft.value === true
-              ? "true"
-              : "false"
-            : ""
-        }
-        onChange={(event) => {
-          const value = event.currentTarget.value;
-          onChange(
-            value === ""
-              ? { presence: "missing" }
-              : presentDraft(value === "true"),
-          );
-        }}
-      >
-        <option value="">Not set</option>
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </select>
+      <BooleanFieldControl common={common} draft={draft} onChange={onChange} />
     );
   }
   if (
@@ -247,32 +226,12 @@ function FieldControl({
         ? draft.value
         : [];
     return (
-      <select
-        {...common}
-        multiple
-        value={selected.filter(
-          (value): value is string => typeof value === "string",
-        )}
-        onChange={(event) =>
-          onChange(
-            presentDraft(
-              Array.from(
-                event.currentTarget.selectedOptions,
-                (option) => option.value,
-              ),
-            ),
-          )
-        }
-      >
-        {(definition.options ?? [])
-          .filter((option) => !option.archived)
-          .toSorted((left, right) => left.position - right.position)
-          .map((option) => (
-            <option key={option.id} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-      </select>
+      <MultiSelectFieldControl
+        common={common}
+        definition={definition}
+        onChange={onChange}
+        selected={selected}
+      />
     );
   }
 
@@ -395,5 +354,95 @@ function preservesEmptyString(
 ): boolean {
   return ["short_text", "long_text", "url", "email", "ip", "cidr"].includes(
     dataType,
+  );
+}
+
+interface BooleanFieldControlProps {
+  common: {
+    readonly id: string;
+    readonly disabled: boolean;
+    readonly "aria-describedby": string | undefined;
+    readonly "aria-invalid": true | undefined;
+  };
+  draft: CustomFieldDraft;
+  onChange: (draft: CustomFieldDraft) => void;
+}
+
+function BooleanFieldControl({
+  common,
+  draft,
+  onChange,
+}: BooleanFieldControlProps): React.JSX.Element {
+  return (
+    <select
+      {...common}
+      value={
+        draft.presence === "present"
+          ? draft.value === true
+            ? "true"
+            : "false"
+          : ""
+      }
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        onChange(
+          value === ""
+            ? { presence: "missing" }
+            : presentDraft(value === "true"),
+        );
+      }}
+    >
+      <option value="">Not set</option>
+      <option value="true">Yes</option>
+      <option value="false">No</option>
+    </select>
+  );
+}
+
+interface MultiSelectFieldControlProps {
+  common: {
+    readonly id: string;
+    readonly disabled: boolean;
+    readonly "aria-describedby": string | undefined;
+    readonly "aria-invalid": true | undefined;
+  };
+  definition: CustomFieldDefinitionView;
+  onChange: (draft: CustomFieldDraft) => void;
+  selected: any[];
+}
+
+function MultiSelectFieldControl({
+  common,
+  definition,
+  onChange,
+  selected,
+}: MultiSelectFieldControlProps): React.JSX.Element {
+  return (
+    <select
+      {...common}
+      multiple
+      value={selected.filter(
+        (value): value is string => typeof value === "string",
+      )}
+      onChange={(event) =>
+        onChange(
+          presentDraft(
+            Array.from(
+              event.currentTarget.selectedOptions,
+              (option) => option.value,
+            ),
+          ),
+        )
+      }
+    >
+      {(definition.options ?? [])
+        .filter((option) => !option.archived)
+        .toSorted((left, right) => left.position - right.position)
+        .map((option) => (
+          <option key={option.id} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+    </select>
   );
 }

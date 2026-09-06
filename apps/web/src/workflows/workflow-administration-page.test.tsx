@@ -9,10 +9,8 @@ import type {
   TenantPermissionKeyView,
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
-import {
-  TenantWorkflowAdministrationPage,
-  workflowAdministrationRoutes,
-} from "./workflow-administration-page";
+import { TenantWorkflowAdministrationPage } from "./workflow-administration-page";
+import { workflowAdministrationRoutes } from "./workflow-administration-page-routes";
 import type { WorkflowAdministrationApi } from "./workflow-api";
 import {
   createWorkflowApiMock,

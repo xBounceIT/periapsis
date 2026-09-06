@@ -1,3 +1,4 @@
+import { formatExpiry } from "./format-expiry";
 import type { MfaStepUpChallenge, TotpEnrollment } from "@periapsis/contracts";
 import {
   Alert,
@@ -59,12 +60,12 @@ interface FederatedMfaFlowProps {
   onRestart: () => void;
 }
 
-export function FederatedMfaFlow({
+function useFederatedMfaFlow({
   api = defaultApi,
   credentials,
   onAuthenticated,
   onRestart,
-}: FederatedMfaFlowProps): React.JSX.Element {
+}: FederatedMfaFlowProps) {
   const [state, setState] = useState<FlowState>({ kind: "choice" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -95,6 +96,7 @@ export function FederatedMfaFlow({
   }
 
   async function startLocalChallenge(): Promise<void> {
+    // eslint-disable-next-line react-doctor/no-impure-state-updater -- run executes this async command once; it never passes the callback to a React state setter.
     await run(async () => {
       const challenge = await api.startLocalStepUp();
       const method: LocalMethod = challenge.methods.includes("totp")
@@ -155,6 +157,7 @@ export function FederatedMfaFlow({
   }
 
   async function startEnrollment(): Promise<void> {
+    // eslint-disable-next-line react-doctor/no-impure-state-updater -- run executes this async command once; it never passes the callback to a React state setter.
     await run(async () => {
       const enrollment = await api.startTotpEnrollment();
       setNotice(null);
@@ -170,6 +173,7 @@ export function FederatedMfaFlow({
     const form = event.currentTarget;
     const code = readTextField(new FormData(form), "code").trim();
     await run(
+      // eslint-disable-next-line react-doctor/no-impure-state-updater -- This async command runs once through run, outside any React state updater.
       async () => {
         await api.completeTotpEnrollment(state.enrollment.enrollmentId, code);
         form.reset();
@@ -195,6 +199,7 @@ export function FederatedMfaFlow({
   }
 
   async function discardCeremony(): Promise<void> {
+    // eslint-disable-next-line react-doctor/no-impure-state-updater -- run executes this async command once; it never passes the callback to a React state setter.
     await run(async () => {
       await api.cancelCeremony();
       setNotice(null);
@@ -209,6 +214,29 @@ export function FederatedMfaFlow({
     }, "Federated browser state could not be cleared. Retry before starting another organization sign in.");
   }
 
+  return {
+    state,
+    setState,
+    error,
+    notice,
+    isPending,
+    id,
+    startLocalChallenge,
+    completeLocalChallenge,
+    completeWithPasskey,
+    startEnrollment,
+    completeEnrollment,
+    changeMethod,
+    discardCeremony,
+    restartSignIn,
+  };
+}
+
+export function FederatedMfaFlow(
+  props: FederatedMfaFlowProps,
+): React.JSX.Element {
+  const controller = useFederatedMfaFlow(props);
+  const { state, error, notice } = controller;
   return (
     <AccessLayout
       activeStep={1}
@@ -226,260 +254,15 @@ export function FederatedMfaFlow({
       ) : null}
 
       {state.kind === "choice" ? (
-        <>
-          <Card className="access-card">
-            <CardHeader>
-              <CardTitle>Authenticator or recovery code</CardTitle>
-              <CardDescription>
-                Start one bounded challenge. The server reveals only methods
-                allowed by the exact pending continuation.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="access-form">
-              <Button
-                type="button"
-                size="lg"
-                disabled={isPending}
-                onClick={() => void startLocalChallenge()}
-              >
-                <ShieldCheck aria-hidden="true" />
-                {isPending ? "Starting proof…" : "Use local verification"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="access-card">
-            <CardHeader>
-              <CardTitle>Passkey</CardTitle>
-              <CardDescription>
-                Use an enrolled, user-verified authenticator bound to this
-                Periapsis origin.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="access-form">
-              <Button
-                type="button"
-                size="lg"
-                variant="outline"
-                disabled={isPending}
-                onClick={() => void completeWithPasskey()}
-              >
-                <Fingerprint aria-hidden="true" />
-                {isPending ? "Checking passkey…" : "Verify with passkey"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="access-card">
-            <CardHeader>
-              <CardTitle>Enrollment grace</CardTitle>
-              <CardDescription>
-                If tenant policy allows a bounded first-login grace period,
-                enroll an authenticator here. Enrollment alone does not create a
-                session.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="access-form">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={isPending}
-                onClick={() => void startEnrollment()}
-              >
-                <Smartphone aria-hidden="true" /> Set up an authenticator
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={isPending}
-                onClick={() => void restartSignIn()}
-              >
-                <ArrowLeft aria-hidden="true" /> Restart organization sign in
-              </Button>
-            </CardContent>
-          </Card>
-        </>
+        <ContinuationChoices controller={controller} />
       ) : null}
 
       {state.kind === "challenge" ? (
-        <Card className="access-card">
-          <CardHeader>
-            <CardTitle>Verify the local factor</CardTitle>
-            <CardDescription>
-              This one-use challenge expires{" "}
-              {formatExpiry(state.challenge.expiresAt)}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="access-form" onSubmit={completeLocalChallenge}>
-              {state.challenge.methods.length > 1 ? (
-                <fieldset className="method-picker">
-                  <legend>Verification method</legend>
-                  <div>
-                    {state.challenge.methods.map((method) => (
-                      <Button
-                        key={method}
-                        type="button"
-                        variant={
-                          state.method === method ? "secondary" : "outline"
-                        }
-                        aria-pressed={state.method === method}
-                        disabled={isPending}
-                        onClick={() => changeMethod(method)}
-                      >
-                        {method === "totp" ? (
-                          <ShieldCheck aria-hidden="true" />
-                        ) : (
-                          <KeyRound aria-hidden="true" />
-                        )}
-                        {method === "totp" ? "Authenticator" : "Recovery code"}
-                      </Button>
-                    ))}
-                  </div>
-                </fieldset>
-              ) : null}
-
-              {state.method === "totp" &&
-              state.challenge.totpFactorIds.length > 1 ? (
-                <FormField
-                  htmlFor={`${id}-factor`}
-                  label="Authenticator"
-                  hint="Choose the factor that generated the current code."
-                >
-                  <select
-                    id={`${id}-factor`}
-                    value={state.factorId}
-                    disabled={isPending}
-                    onChange={(event) =>
-                      setState({
-                        ...state,
-                        factorId: event.currentTarget.value,
-                      })
-                    }
-                    aria-describedby={`${id}-factor-hint`}
-                  >
-                    {state.challenge.totpFactorIds.map((factorId, index) => (
-                      <option key={factorId} value={factorId}>
-                        Authenticator {index + 1}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-              ) : null}
-
-              <FormField
-                htmlFor={`${id}-proof-code`}
-                label={
-                  state.method === "totp"
-                    ? "Authenticator code"
-                    : "Recovery code"
-                }
-                hint={
-                  state.method === "totp"
-                    ? "Enter the current six-digit code."
-                    : "Each recovery code can be used only once."
-                }
-              >
-                <Input
-                  id={`${id}-proof-code`}
-                  name="code"
-                  type="text"
-                  autoComplete="one-time-code"
-                  inputMode={state.method === "totp" ? "numeric" : "text"}
-                  pattern={state.method === "totp" ? "[0-9]{6}" : undefined}
-                  minLength={state.method === "totp" ? 6 : 16}
-                  maxLength={state.method === "totp" ? 6 : 128}
-                  required
-                  autoFocus
-                  disabled={isPending}
-                  aria-describedby={`${id}-proof-code-hint`}
-                />
-              </FormField>
-              <div className="form-actions">
-                <Button type="submit" size="lg" disabled={isPending}>
-                  <ShieldCheck aria-hidden="true" />
-                  {isPending ? "Verifying…" : "Verify and create session"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={isPending}
-                  onClick={() => void discardCeremony()}
-                >
-                  <ArrowLeft aria-hidden="true" /> Choose another method
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <ContinuationChallenge controller={controller} state={state} />
       ) : null}
 
       {state.kind === "enrollment" ? (
-        <Card className="access-card">
-          <CardHeader>
-            <CardTitle>Enroll an authenticator</CardTitle>
-            <CardDescription>
-              Add the URI or manual secret to an approved authenticator, then
-              verify the current code before this one-use enrollment expires.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="access-form" onSubmit={completeEnrollment}>
-              <Alert>
-                <ShieldAlert aria-hidden="true" />
-                <AlertTitle>One-time enrollment material</AlertTitle>
-                <AlertDescription>
-                  It is displayed only in this live flow and is never accepted
-                  back by the server except through the generated TOTP proof.
-                </AlertDescription>
-              </Alert>
-              <SecretValue
-                label="Provisioning URI"
-                value={state.enrollment.provisioningUri}
-              />
-              <SecretValue
-                label="Manual secret"
-                value={state.enrollment.secret}
-              />
-              <FormField
-                htmlFor={`${id}-enrollment-code`}
-                label="Current six-digit code"
-                hint={`Enrollment expires ${formatExpiry(state.enrollment.expiresAt)}.`}
-              >
-                <Input
-                  id={`${id}-enrollment-code`}
-                  name="code"
-                  type="text"
-                  autoComplete="one-time-code"
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  minLength={6}
-                  maxLength={6}
-                  required
-                  autoFocus
-                  disabled={isPending}
-                  aria-describedby={`${id}-enrollment-code-hint`}
-                />
-              </FormField>
-              <div className="form-actions">
-                <Button type="submit" size="lg" disabled={isPending}>
-                  <Smartphone aria-hidden="true" />
-                  {isPending
-                    ? "Verifying enrollment…"
-                    : "Confirm authenticator"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={isPending}
-                  onClick={() => void discardCeremony()}
-                >
-                  Discard one-time secret
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <ContinuationEnrollment controller={controller} state={state} />
       ) : null}
     </AccessLayout>
   );
@@ -498,12 +281,287 @@ function continuationError(caught: unknown, fallback: string): string {
   return fallback;
 }
 
-function formatExpiry(value: string): string {
-  const expiry = new Date(value);
-  if (Number.isNaN(expiry.valueOf())) return "soon";
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(expiry);
+function ContinuationChoices({
+  controller,
+}: {
+  controller: ReturnType<typeof useFederatedMfaFlow>;
+}): React.JSX.Element {
+  const {
+    isPending,
+    startLocalChallenge,
+    completeWithPasskey,
+    startEnrollment,
+    restartSignIn,
+  } = controller;
+  return (
+    <>
+      <Card className="access-card">
+        <CardHeader>
+          <CardTitle>Authenticator or recovery code</CardTitle>
+          <CardDescription>
+            Start one bounded challenge. The server reveals only methods allowed
+            by the exact pending continuation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="access-form">
+          <Button
+            type="button"
+            size="lg"
+            disabled={isPending}
+            onClick={() => void startLocalChallenge()}
+          >
+            <ShieldCheck aria-hidden="true" />
+            {isPending ? "Starting proof…" : "Use local verification"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="access-card">
+        <CardHeader>
+          <CardTitle>Passkey</CardTitle>
+          <CardDescription>
+            Use an enrolled, user-verified authenticator bound to this Periapsis
+            origin.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="access-form">
+          <Button
+            type="button"
+            size="lg"
+            variant="outline"
+            disabled={isPending}
+            onClick={() => void completeWithPasskey()}
+          >
+            <Fingerprint aria-hidden="true" />
+            {isPending ? "Checking passkey…" : "Verify with passkey"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="access-card">
+        <CardHeader>
+          <CardTitle>Enrollment grace</CardTitle>
+          <CardDescription>
+            If tenant policy allows a bounded first-login grace period, enroll
+            an authenticator here. Enrollment alone does not create a session.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="access-form">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isPending}
+            onClick={() => void startEnrollment()}
+          >
+            <Smartphone aria-hidden="true" /> Set up an authenticator
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isPending}
+            onClick={() => void restartSignIn()}
+          >
+            <ArrowLeft aria-hidden="true" /> Restart organization sign in
+          </Button>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function ContinuationChallenge({
+  controller,
+  state,
+}: {
+  controller: ReturnType<typeof useFederatedMfaFlow>;
+  state: Extract<FlowState, { kind: "challenge" }>;
+}): React.JSX.Element {
+  const {
+    isPending,
+    id,
+    completeLocalChallenge,
+    changeMethod,
+    discardCeremony,
+    setState,
+  } = controller;
+  return (
+    <Card className="access-card">
+      <CardHeader>
+        <CardTitle>Verify the local factor</CardTitle>
+        <CardDescription>
+          This one-use challenge expires{" "}
+          {formatExpiry(state.challenge.expiresAt)}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form className="access-form" onSubmit={completeLocalChallenge}>
+          {state.challenge.methods.length > 1 ? (
+            <fieldset className="method-picker">
+              <legend>Verification method</legend>
+              <div>
+                {state.challenge.methods.map((method) => (
+                  <Button
+                    key={method}
+                    type="button"
+                    variant={state.method === method ? "secondary" : "outline"}
+                    aria-pressed={state.method === method}
+                    disabled={isPending}
+                    onClick={() => changeMethod(method)}
+                  >
+                    {method === "totp" ? (
+                      <ShieldCheck aria-hidden="true" />
+                    ) : (
+                      <KeyRound aria-hidden="true" />
+                    )}
+                    {method === "totp" ? "Authenticator" : "Recovery code"}
+                  </Button>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
+          {state.method === "totp" &&
+          state.challenge.totpFactorIds.length > 1 ? (
+            <FormField
+              htmlFor={`${id}-factor`}
+              label="Authenticator"
+              hint="Choose the factor that generated the current code."
+            >
+              <select
+                id={`${id}-factor`}
+                value={state.factorId}
+                disabled={isPending}
+                onChange={(event) =>
+                  setState({
+                    ...state,
+                    factorId: event.currentTarget.value,
+                  })
+                }
+                aria-describedby={`${id}-factor-hint`}
+              >
+                {state.challenge.totpFactorIds.map((factorId, index) => (
+                  <option key={factorId} value={factorId}>
+                    Authenticator {index + 1}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          ) : null}
+
+          <FormField
+            htmlFor={`${id}-proof-code`}
+            label={
+              state.method === "totp" ? "Authenticator code" : "Recovery code"
+            }
+            hint={
+              state.method === "totp"
+                ? "Enter the current six-digit code."
+                : "Each recovery code can be used only once."
+            }
+          >
+            <Input
+              id={`${id}-proof-code`}
+              name="code"
+              type="text"
+              autoComplete="one-time-code"
+              inputMode={state.method === "totp" ? "numeric" : "text"}
+              pattern={state.method === "totp" ? "[0-9]{6}" : undefined}
+              minLength={state.method === "totp" ? 6 : 16}
+              maxLength={state.method === "totp" ? 6 : 128}
+              required
+              autoFocus
+              disabled={isPending}
+              aria-describedby={`${id}-proof-code-hint`}
+            />
+          </FormField>
+          <div className="form-actions">
+            <Button type="submit" size="lg" disabled={isPending}>
+              <ShieldCheck aria-hidden="true" />
+              {isPending ? "Verifying…" : "Verify and create session"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => void discardCeremony()}
+            >
+              <ArrowLeft aria-hidden="true" /> Choose another method
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ContinuationEnrollment({
+  controller,
+  state,
+}: {
+  controller: ReturnType<typeof useFederatedMfaFlow>;
+  state: Extract<FlowState, { kind: "enrollment" }>;
+}): React.JSX.Element {
+  const { isPending, id, completeEnrollment, discardCeremony } = controller;
+  return (
+    <Card className="access-card">
+      <CardHeader>
+        <CardTitle>Enroll an authenticator</CardTitle>
+        <CardDescription>
+          Add the URI or manual secret to an approved authenticator, then verify
+          the current code before this one-use enrollment expires.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form className="access-form" onSubmit={completeEnrollment}>
+          <Alert>
+            <ShieldAlert aria-hidden="true" />
+            <AlertTitle>One-time enrollment material</AlertTitle>
+            <AlertDescription>
+              It is displayed only in this live flow and is never accepted back
+              by the server except through the generated TOTP proof.
+            </AlertDescription>
+          </Alert>
+          <SecretValue
+            label="Provisioning URI"
+            value={state.enrollment.provisioningUri}
+          />
+          <SecretValue label="Manual secret" value={state.enrollment.secret} />
+          <FormField
+            htmlFor={`${id}-enrollment-code`}
+            label="Current six-digit code"
+            hint={`Enrollment expires ${formatExpiry(state.enrollment.expiresAt)}.`}
+          >
+            <Input
+              id={`${id}-enrollment-code`}
+              name="code"
+              type="text"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              minLength={6}
+              maxLength={6}
+              required
+              autoFocus
+              disabled={isPending}
+              aria-describedby={`${id}-enrollment-code-hint`}
+            />
+          </FormField>
+          <div className="form-actions">
+            <Button type="submit" size="lg" disabled={isPending}>
+              <Smartphone aria-hidden="true" />
+              {isPending ? "Verifying enrollment…" : "Confirm authenticator"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => void discardCeremony()}
+            >
+              Discard one-time secret
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
 }

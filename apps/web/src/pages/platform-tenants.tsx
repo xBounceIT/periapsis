@@ -34,7 +34,7 @@ import {
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { useSession } from "../auth/session-context";
 import { FocusedError } from "../components/focused-error";
@@ -44,24 +44,32 @@ import {
   describePhaseTwoError,
   hasPermission,
   PhaseTwoApiError,
-  platformTenantCreatePermission,
+  platformSettingsReadPermission,
   platformTenantAccessPermission,
+  platformTenantCreatePermission,
   platformTenantManagePermission,
   platformTenantReadPermission,
-  platformSettingsReadPermission,
   type TenantLifecycleAction,
   type TenantLifecycleReceiptView,
   type TenantView,
 } from "../lib/phase-two-types";
-import {
-  TenantLifecycleClientError,
-  TenantLifecycleProvider,
-  isMutableTenantLifecycleVersion,
-  tenantLifecycleReasonBytes,
-  useTenantLifecycle,
-  validateTenantLifecycleReason,
-} from "../platform/tenant-lifecycle-context";
 import { platformOperationsApi } from "../platform/platform-operations-api";
+import {
+  TenantLifecycleProvider,
+  useTenantLifecycle,
+} from "../platform/tenant-lifecycle-context";
+import {
+  isMutableTenantLifecycleVersion,
+  TenantLifecycleClientError,
+  tenantLifecycleReasonBytes,
+  validateTenantLifecycleReason,
+} from "../platform/tenant-lifecycle-model";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
 
 type TenantListState =
   | { kind: "error"; message: string }
@@ -99,6 +107,12 @@ export function PlatformTenantsPage(): React.JSX.Element {
 }
 
 function PlatformTenantsContent(): React.JSX.Element {
+  const model = usePlatformTenantsContentModel();
+  if (model.kind === "content") return model.content;
+  return <PlatformTenantsContentView model={model.data} />;
+}
+
+function usePlatformTenantsContentModel() {
   const { api, clearSession, refreshMemberships, session } = useSession();
   const lifecycle = useTenantLifecycle();
   const canRead = hasPermission(session, platformTenantReadPermission);
@@ -156,7 +170,9 @@ function PlatformTenantsContent(): React.JSX.Element {
   const accessSuccessRef = useRef<HTMLDivElement>(null);
   const accessReasonRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef(session.id);
-  sessionIdRef.current = session.id;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session]);
   const id = useId();
 
   useEffect(() => {
@@ -294,6 +310,7 @@ function PlatformTenantsContent(): React.JSX.Element {
       );
     } finally {
       if (sessionIdRef.current === requestedSessionId) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setIsLoadingMore(false);
       }
     }
@@ -581,28 +598,98 @@ function PlatformTenantsContent(): React.JSX.Element {
   }
 
   if (!canRead) {
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading" aria-labelledby="tenant-denied-title">
-          <p className="section-label">Platform administration</p>
-          <h1 id="tenant-denied-title">Tenant inventory is not available.</h1>
-          <p>
-            The current session did not return the explicit platform tenant read
-            permission. The API remains the authorization boundary.
-          </p>
-        </section>
-        <Alert variant="destructive">
-          <ShieldX aria-hidden="true" />
-          <AlertTitle>Permission not returned</AlertTitle>
-          <AlertDescription>
-            Ask a platform administrator to review this identity. Tenant
-            membership alone does not grant platform administration.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <div className="content content--narrow">
+          <section
+            className="page-heading"
+            aria-labelledby="tenant-denied-title"
+          >
+            <p className="section-label">Platform administration</p>
+            <h1 id="tenant-denied-title">Tenant inventory is not available.</h1>
+            <p>
+              The current session did not return the explicit platform tenant
+              read permission. The API remains the authorization boundary.
+            </p>
+          </section>
+          <Alert variant="destructive">
+            <ShieldX aria-hidden="true" />
+            <AlertTitle>Permission not returned</AlertTitle>
+            <AlertDescription>
+              Ask a platform administrator to review this identity. Tenant
+              membership alone does not grant platform administration.
+            </AlertDescription>
+          </Alert>
+        </div>
+      ),
+    };
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      accessAnnouncement,
+      accessConfirmation,
+      accessConflict,
+      accessError,
+      accessReason,
+      accessReasonError,
+      accessReasonRef,
+      accessSuccessRef,
+      authorizeTenantAccess,
+      canAccess,
+      canCreate,
+      canManage,
+      changeTenantLifecycle,
+      createError,
+      createTenant,
+      createdName,
+      creationDefaults,
+      dismissAccessConfirmation,
+      dismissLifecycleConfirmation,
+      id,
+      isAuthorizingAccess,
+      isCreating,
+      isLoadingMore,
+      lifecycle,
+      lifecycleAnnouncement,
+      lifecycleConfirmation,
+      lifecycleConflict,
+      lifecycleError,
+      lifecyclePending,
+      lifecycleReason,
+      lifecycleReasonError,
+      lifecycleReasonRef,
+      lifecycleSuccessRef,
+      listState,
+      loadMore,
+      openAccessConfirmation,
+      openLifecycleConfirmation,
+      paginationError,
+      reloadAfterAccessConflict,
+      reloadTenantInventory,
+      session,
+      setAccessError,
+      setAccessReason,
+      setAccessReasonError,
+      setLifecycleError,
+      setLifecycleReason,
+      setLifecycleReasonError,
+      setListAttempt,
+      successRef,
+    },
+  };
+}
+
+function PlatformTenantsContentView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformTenantsContentModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
   return (
     <div className="content tenant-page">
       <section className="page-heading" aria-labelledby="tenant-page-title">
@@ -620,577 +707,13 @@ function PlatformTenantsContent(): React.JSX.Element {
         </Badge>
       </section>
 
-      {canCreate ? (
-        <Card className="tenant-create-card">
-          <CardHeader>
-            <CardTitle>Create tenant</CardTitle>
-            <CardDescription>
-              This operation uses the current in-memory CSRF value and is
-              independently authorized and audited by the API.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {creationDefaults.kind === "loading" ||
-            creationDefaults.sessionKey !== session.id ? (
-              <p role="status">Loading platform tenant defaults…</p>
-            ) : (
-              <form
-                key={creationDefaults.sessionKey}
-                className="tenant-create-form"
-                onSubmit={createTenant}
-              >
-                {createError ? <FocusedError message={createError} /> : null}
-                {createdName ? (
-                  <Alert
-                    ref={successRef}
-                    tabIndex={-1}
-                    className="success-alert"
-                  >
-                    <CheckCircle2 aria-hidden="true" />
-                    <AlertTitle>Tenant created</AlertTitle>
-                    <AlertDescription>
-                      {createdName} is now in the platform inventory. Its
-                      server-created membership is being refreshed separately.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                <div className="tenant-create-grid">
-                  <FormField htmlFor={`${id}-tenant-name`} label="Tenant name">
-                    <Input
-                      id={`${id}-tenant-name`}
-                      name="name"
-                      autoComplete="organization"
-                      required
-                      maxLength={160}
-                      disabled={isCreating}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`${id}-tenant-slug`}
-                    label="Tenant slug"
-                    hint="Lowercase DNS label, for example acme-soc."
-                  >
-                    <Input
-                      id={`${id}-tenant-slug`}
-                      name="slug"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-                      required
-                      maxLength={63}
-                      disabled={isCreating}
-                      aria-describedby={`${id}-tenant-slug-hint`}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`${id}-tenant-timezone`}
-                    label="IANA time zone"
-                    hint="Use a canonical region such as Europe/Rome or UTC."
-                  >
-                    <Input
-                      id={`${id}-tenant-timezone`}
-                      name="timezone"
-                      defaultValue={creationDefaults.timezone}
-                      required
-                      maxLength={64}
-                      disabled={isCreating}
-                      aria-describedby={`${id}-tenant-timezone-hint`}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor={`${id}-tenant-locale`}
-                    label="Locale"
-                    hint="BCP 47 language tag, for example en or it-IT."
-                  >
-                    <Input
-                      id={`${id}-tenant-locale`}
-                      name="locale"
-                      defaultValue={creationDefaults.locale}
-                      required
-                      maxLength={35}
-                      pattern="[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*"
-                      disabled={isCreating}
-                      aria-describedby={`${id}-tenant-locale-hint`}
-                    />
-                  </FormField>
-                </div>
-                <Button type="submit" disabled={isCreating}>
-                  <Plus aria-hidden="true" />
-                  {isCreating ? "Creating tenant…" : "Create tenant"}
-                </Button>
-              </form>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
+      {<TenantCreatePanel model={model} />}
 
-      <section className="tenant-inventory" aria-labelledby="inventory-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-label">Isolation boundaries</p>
-            <h2 id="inventory-title">Platform tenants</h2>
-          </div>
-          {listState.kind === "error" ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setListAttempt((attempt) => attempt + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Retry
-            </Button>
-          ) : null}
-        </div>
+      <PlatformTenantInventory model={model} />
 
-        {!canManage ? (
-          <Alert className="tenant-lifecycle-permission">
-            <LockKeyhole aria-hidden="true" />
-            <AlertTitle>Lifecycle controls are read-only</AlertTitle>
-            <AlertDescription>
-              This session did not return platform.tenant.manage. The API
-              independently authorizes every lifecycle request.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {!canAccess ? (
-          <Alert className="tenant-lifecycle-permission">
-            <KeyRound aria-hidden="true" />
-            <AlertTitle>Elevated tenant access is unavailable</AlertTitle>
-            <AlertDescription>
-              This session did not return platform.tenant.access. Tenant data
-              remains inaccessible unless an explicit ordinary membership is
-              created by the independently authorized API command.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {lifecycleAnnouncement ? (
-          <Alert
-            ref={lifecycleSuccessRef}
-            tabIndex={-1}
-            className="success-alert tenant-lifecycle-success"
-          >
-            <CheckCircle2 aria-hidden="true" />
-            <AlertTitle>Lifecycle state changed</AlertTitle>
-            <AlertDescription>{lifecycleAnnouncement}</AlertDescription>
-          </Alert>
-        ) : null}
-        {accessAnnouncement ? (
-          <Alert
-            ref={accessSuccessRef}
-            tabIndex={-1}
-            className="success-alert tenant-lifecycle-success"
-          >
-            <CheckCircle2 aria-hidden="true" />
-            <AlertTitle>Tenant access authorized</AlertTitle>
-            <AlertDescription>{accessAnnouncement}</AlertDescription>
-          </Alert>
-        ) : null}
+      <PlatformTenantsContentDialog model={model} />
 
-        {listState.kind === "loading" ? <TenantListSkeleton /> : null}
-        {listState.kind === "error" ? (
-          <FocusedError message={listState.message} />
-        ) : null}
-        {paginationError ? (
-          <FocusedError
-            message={paginationError}
-            title="More tenants could not be loaded"
-          />
-        ) : null}
-        {listState.kind === "ready" && listState.items.length === 0 ? (
-          <div className="tenant-empty">
-            <Building2 aria-hidden="true" />
-            <h3>No tenants yet</h3>
-            <p>
-              Create the first customer isolation boundary when its ownership,
-              time zone, and locale are known.
-            </p>
-          </div>
-        ) : null}
-        {listState.kind === "ready" && listState.items.length > 0 ? (
-          <div className="tenant-table-wrap">
-            <table className="tenant-table">
-              <caption className="sr-only">
-                Platform tenant isolation boundaries
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Tenant</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Time zone</th>
-                  <th scope="col">Locale</th>
-                  <th scope="col">Created</th>
-                  {canManage ? <th scope="col">Lifecycle action</th> : null}
-                  {canAccess ? <th scope="col">Explicit access</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {listState.items.map((tenant) => {
-                  const mutable = isMutableLifecycleTenant(tenant);
-                  const pending = lifecycle.isPending(tenant.id);
-                  const action =
-                    tenant.status === "active" ? "suspend" : "reactivate";
-                  return (
-                    <tr key={tenant.id} data-lifecycle-state={tenant.status}>
-                      <th scope="row">
-                        <strong>{tenant.name}</strong>
-                        <small>{tenant.slug}</small>
-                        {tenant.id === session.activeTenantId ? (
-                          <Badge variant="outline">Active context</Badge>
-                        ) : null}
-                      </th>
-                      <td>
-                        <Badge
-                          variant={
-                            tenant.status === "active" ? "secondary" : "outline"
-                          }
-                        >
-                          {formatStatus(tenant.status)}
-                        </Badge>
-                        <small className="tenant-lifecycle-revision">
-                          {tenant.version === undefined
-                            ? "Revision unavailable"
-                            : `Revision ${tenant.version}`}
-                        </small>
-                      </td>
-                      <td>{tenant.timezone}</td>
-                      <td>{tenant.locale}</td>
-                      <td>{formatDate(tenant.createdAt)}</td>
-                      {canManage ? (
-                        <td className="tenant-lifecycle-action">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={
-                              tenant.status === "active"
-                                ? "destructive"
-                                : "outline"
-                            }
-                            disabled={!mutable || pending}
-                            aria-describedby={
-                              mutable
-                                ? undefined
-                                : `${id}-tenant-lifecycle-unavailable-${tenant.id}`
-                            }
-                            aria-label={`${formatLifecycleAction(action)} ${tenant.name}`}
-                            onClick={() => openLifecycleConfirmation(tenant)}
-                          >
-                            {pending
-                              ? "Changing state…"
-                              : formatLifecycleAction(action)}
-                          </Button>
-                          {!mutable ? (
-                            <small
-                              id={`${id}-tenant-lifecycle-unavailable-${tenant.id}`}
-                            >
-                              {tenant.version === undefined
-                                ? "Current revision is not available."
-                                : "This revision can no longer advance."}
-                            </small>
-                          ) : null}
-                        </td>
-                      ) : null}
-                      {canAccess ? (
-                        <td className="tenant-lifecycle-action">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={
-                              tenant.status !== "active" ||
-                              !mutable ||
-                              isAuthorizingAccess ||
-                              tenant.id === session.activeTenantId
-                            }
-                            aria-label={`Authorize explicit access to ${tenant.name}`}
-                            onClick={() => openAccessConfirmation(tenant)}
-                          >
-                            <KeyRound aria-hidden="true" />
-                            {tenant.id === session.activeTenantId
-                              ? "Current tenant"
-                              : "Authorize access"}
-                          </Button>
-                          {tenant.status !== "active" ? (
-                            <small>Only active tenants can be entered.</small>
-                          ) : tenant.id === session.activeTenantId ? (
-                            <small>The active tenant is already visible.</small>
-                          ) : null}
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-        {listState.kind === "ready" && listState.nextCursor ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void loadMore()}
-            disabled={isLoadingMore}
-          >
-            <ArrowDown aria-hidden="true" />
-            {isLoadingMore ? "Loading tenants…" : "Load more tenants"}
-          </Button>
-        ) : null}
-      </section>
-
-      <Dialog
-        open={lifecycleConfirmation !== null}
-        onOpenChange={(open) => {
-          if (!open && lifecycleConfirmation && !lifecyclePending) {
-            dismissLifecycleConfirmation();
-          }
-        }}
-      >
-        {lifecycleConfirmation ? (
-          <DialogContent
-            className="tenant-lifecycle-dialog"
-            showCloseButton={!lifecyclePending}
-          >
-            <DialogHeader>
-              <p className="section-label">Lifecycle confirmation</p>
-              <DialogTitle>
-                {formatLifecycleAction(lifecycleConfirmation.action)}{" "}
-                {lifecycleConfirmation.tenant.name}
-              </DialogTitle>
-              <DialogDescription>
-                {lifecycleConfirmation.action === "suspend"
-                  ? "Suspension blocks the tenant from active platform use until an authorized operator reactivates it."
-                  : "Reactivation restores the tenant to active platform use after the cause of suspension has been resolved."}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div
-              className="tenant-lifecycle-boundary"
-              data-action={lifecycleConfirmation.action}
-              role="group"
-              aria-label={`Lifecycle state changes from ${lifecycleConfirmation.tenant.status} to ${lifecycleTarget(lifecycleConfirmation.action)}`}
-            >
-              <div>
-                <span>Current</span>
-                <strong>
-                  {formatStatus(lifecycleConfirmation.tenant.status)}
-                </strong>
-              </div>
-              <ArrowRight aria-hidden="true" />
-              <div>
-                <span>After confirmation</span>
-                <strong>
-                  {formatStatus(lifecycleTarget(lifecycleConfirmation.action))}
-                </strong>
-              </div>
-              <p>
-                <ShieldCheck aria-hidden="true" /> Exact boundary · revision{" "}
-                {lifecycleConfirmation.tenant.version}
-              </p>
-            </div>
-
-            <form
-              className="tenant-lifecycle-form"
-              onSubmit={changeTenantLifecycle}
-              noValidate
-            >
-              {lifecycleError ? (
-                <FocusedError
-                  title={
-                    lifecycleConflict
-                      ? "Tenant state changed"
-                      : "Lifecycle change failed"
-                  }
-                  message={lifecycleError}
-                />
-              ) : null}
-              <FormField
-                htmlFor={`${id}-tenant-lifecycle-reason`}
-                label="Administrative reason"
-                hint={`${tenantLifecycleReasonBytes(lifecycleReason)} of 2048 UTF-8 bytes. Retained in the audit trail; do not include secrets, tokens, credentials, or customer data.`}
-                {...(lifecycleReasonError
-                  ? { error: lifecycleReasonError }
-                  : {})}
-              >
-                <Textarea
-                  ref={lifecycleReasonRef}
-                  id={`${id}-tenant-lifecycle-reason`}
-                  name="reason"
-                  value={lifecycleReason}
-                  required
-                  maxLength={2048}
-                  autoFocus
-                  disabled={lifecyclePending}
-                  aria-invalid={lifecycleReasonError ? "true" : undefined}
-                  aria-describedby={`${id}-tenant-lifecycle-reason-${lifecycleReasonError ? "error" : "hint"}`}
-                  onChange={(event) => {
-                    setLifecycleReason(event.currentTarget.value);
-                    setLifecycleReasonError(null);
-                    if (!lifecycleConflict) setLifecycleError(null);
-                  }}
-                />
-              </FormField>
-              <DialogFooter>
-                {lifecycleConflict ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={reloadTenantInventory}
-                  >
-                    <RefreshCw aria-hidden="true" /> Reload tenant inventory
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={lifecyclePending}
-                    onClick={dismissLifecycleConfirmation}
-                  >
-                    Cancel
-                  </Button>
-                )}
-                <Button
-                  type="submit"
-                  variant={
-                    lifecycleConfirmation.action === "suspend"
-                      ? "destructive"
-                      : "default"
-                  }
-                  disabled={lifecyclePending || lifecycleConflict}
-                >
-                  {lifecyclePending
-                    ? "Changing lifecycle state…"
-                    : `${formatLifecycleAction(lifecycleConfirmation.action)} tenant`}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        ) : null}
-      </Dialog>
-
-      <Dialog
-        open={accessConfirmation !== null}
-        onOpenChange={(open) => {
-          if (!open && accessConfirmation && !isAuthorizingAccess) {
-            dismissAccessConfirmation();
-          }
-        }}
-      >
-        {accessConfirmation ? (
-          <DialogContent
-            className="tenant-lifecycle-dialog"
-            showCloseButton={!isAuthorizingAccess}
-          >
-            <DialogHeader>
-              <p className="section-label">Explicit elevated access</p>
-              <DialogTitle>
-                Authorize access to {accessConfirmation.tenant.name}
-              </DialogTitle>
-              <DialogDescription>
-                This creates a real tenant-admin membership for your user; it
-                does not bypass row-level security. A fresh MFA proof within 15
-                minutes is required by the database.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div
-              className="tenant-lifecycle-boundary"
-              role="group"
-              aria-label={`Explicit tenant access at revision ${accessConfirmation.tenant.version}`}
-            >
-              <div>
-                <span>Before</span>
-                <strong>No implicit access</strong>
-              </div>
-              <ArrowRight aria-hidden="true" />
-              <div>
-                <span>After confirmation</span>
-                <strong>Tenant administrator</strong>
-              </div>
-              <p>
-                <ShieldCheck aria-hidden="true" /> Platform and tenant audit ·
-                revision {accessConfirmation.tenant.version}
-              </p>
-            </div>
-
-            <Alert>
-              <LockKeyhole aria-hidden="true" />
-              <AlertTitle>Context does not switch automatically</AlertTitle>
-              <AlertDescription>
-                After authorization, choose this tenant in the tenant switcher.
-                That separate context change is also checked and audited.
-              </AlertDescription>
-            </Alert>
-
-            <form
-              className="tenant-lifecycle-form"
-              onSubmit={authorizeTenantAccess}
-              noValidate
-            >
-              {accessError ? (
-                <FocusedError
-                  title={
-                    accessConflict
-                      ? "Tenant state changed"
-                      : "Tenant access failed"
-                  }
-                  message={accessError}
-                />
-              ) : null}
-              <FormField
-                htmlFor={`${id}-tenant-access-reason`}
-                label="Access justification"
-                hint={`${tenantLifecycleReasonBytes(accessReason)} of 2048 UTF-8 bytes. Stored in both audit streams; do not include secrets, credentials, or customer data.`}
-                {...(accessReasonError ? { error: accessReasonError } : {})}
-              >
-                <Textarea
-                  ref={accessReasonRef}
-                  id={`${id}-tenant-access-reason`}
-                  name="reason"
-                  value={accessReason}
-                  required
-                  maxLength={2048}
-                  autoFocus
-                  disabled={isAuthorizingAccess}
-                  aria-invalid={accessReasonError ? "true" : undefined}
-                  aria-describedby={`${id}-tenant-access-reason-${accessReasonError ? "error" : "hint"}`}
-                  onChange={(event) => {
-                    setAccessReason(event.currentTarget.value);
-                    setAccessReasonError(null);
-                    if (!accessConflict) setAccessError(null);
-                  }}
-                />
-              </FormField>
-              <DialogFooter>
-                {accessConflict ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={reloadAfterAccessConflict}
-                  >
-                    <RefreshCw aria-hidden="true" /> Reload tenant inventory
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isAuthorizingAccess}
-                    onClick={dismissAccessConfirmation}
-                  >
-                    Cancel
-                  </Button>
-                )}
-                <Button
-                  type="submit"
-                  disabled={isAuthorizingAccess || accessConflict}
-                >
-                  <KeyRound aria-hidden="true" />
-                  {isAuthorizingAccess
-                    ? "Authorizing access…"
-                    : "Create tenant-admin membership"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        ) : null}
-      </Dialog>
+      <PlatformTenantsContentDialog4 model={model} />
     </div>
   );
 }
@@ -1221,11 +744,7 @@ function formatDate(value: string): string {
   if (Number.isNaN(date.valueOf())) {
     return "Unavailable";
   }
-  return new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  return dateTimeFormatter.format(date);
 }
 
 function formatStatus(value: string): string {
@@ -1251,4 +770,745 @@ function lifecycleTarget(action: TenantLifecycleAction): TenantView["status"] {
 
 function formatLifecycleAction(action: TenantLifecycleAction): string {
   return action === "suspend" ? "Suspend" : "Reactivate";
+}
+
+function TenantCreatePanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantsContentView>["model"];
+}): React.ReactNode {
+  const { canCreate } = model;
+  return canCreate ? <TenantCreateForm model={model} /> : null;
+}
+
+function PlatformTenantInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantsContentView>["model"];
+}): React.ReactNode {
+  const { canManage, listState, paginationError } = model;
+  return (
+    <section className="tenant-inventory" aria-labelledby="inventory-title">
+      <PlatformTenantInventoryHeading model={model} />
+
+      {!canManage ? (
+        <Alert className="tenant-lifecycle-permission">
+          <LockKeyhole aria-hidden="true" />
+          <AlertTitle>Lifecycle controls are read-only</AlertTitle>
+          <AlertDescription>
+            This session did not return platform.tenant.manage. The API
+            independently authorizes every lifecycle request.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {<PlatformTenantAccessNotice model={model} />}
+      {<PlatformTenantLifecycleNotice model={model} />}
+      {<PlatformTenantAccessSuccess model={model} />}
+
+      {listState.kind === "loading" ? <TenantListSkeleton /> : null}
+      {listState.kind === "error" ? (
+        <FocusedError message={listState.message} />
+      ) : null}
+      {paginationError ? (
+        <FocusedError
+          message={paginationError}
+          title="More tenants could not be loaded"
+        />
+      ) : null}
+      {listState.kind === "ready" && listState.items.length === 0 ? (
+        <div className="tenant-empty">
+          <Building2 aria-hidden="true" />
+          <h3>No tenants yet</h3>
+          <p>
+            Create the first customer isolation boundary when its ownership,
+            time zone, and locale are known.
+          </p>
+        </div>
+      ) : null}
+      {listState.kind === "ready" && listState.items.length > 0 ? (
+        <div className="tenant-table-wrap">
+          <table className="tenant-table">
+            <caption className="sr-only">
+              Platform tenant isolation boundaries
+            </caption>
+            <PlatformTenantTableHeaders model={model} />
+            <PlatformTenantsContentPlatformTenantsTbody model={model} />
+          </table>
+        </div>
+      ) : null}
+      {<PlatformTenantPagination model={model} />}
+    </section>
+  );
+}
+
+function PlatformTenantsContentDialog({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantsContentView>["model"];
+}): React.ReactNode {
+  const {
+    dismissLifecycleConfirmation,
+    lifecycleConfirmation,
+    lifecyclePending,
+  } = model;
+  return (
+    <Dialog
+      open={lifecycleConfirmation !== null}
+      onOpenChange={(open) => {
+        if (!open && lifecycleConfirmation && !lifecyclePending) {
+          dismissLifecycleConfirmation();
+        }
+      }}
+    >
+      {lifecycleConfirmation ? (
+        <DialogContent
+          className="tenant-lifecycle-dialog"
+          showCloseButton={!lifecyclePending}
+        >
+          <DialogHeader>
+            <p className="section-label">Lifecycle confirmation</p>
+            <DialogTitle>
+              {formatLifecycleAction(lifecycleConfirmation.action)}{" "}
+              {lifecycleConfirmation.tenant.name}
+            </DialogTitle>
+            <DialogDescription>
+              {lifecycleConfirmation.action === "suspend"
+                ? "Suspension blocks the tenant from active platform use until an authorized operator reactivates it."
+                : "Reactivation restores the tenant to active platform use after the cause of suspension has been resolved."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div
+            className="tenant-lifecycle-boundary"
+            data-action={lifecycleConfirmation.action}
+            role="group"
+            aria-label={`Lifecycle state changes from ${lifecycleConfirmation.tenant.status} to ${lifecycleTarget(lifecycleConfirmation.action)}`}
+          >
+            <div>
+              <span>Current</span>
+              <strong>
+                {formatStatus(lifecycleConfirmation.tenant.status)}
+              </strong>
+            </div>
+            <ArrowRight aria-hidden="true" />
+            <div>
+              <span>After confirmation</span>
+              <strong>
+                {formatStatus(lifecycleTarget(lifecycleConfirmation.action))}
+              </strong>
+            </div>
+            <p>
+              <ShieldCheck aria-hidden="true" /> Exact boundary · revision{" "}
+              {lifecycleConfirmation.tenant.version}
+            </p>
+          </div>
+
+          <PlatformTenantsContentDialogForm model={model} />
+        </DialogContent>
+      ) : null}
+    </Dialog>
+  );
+}
+
+function PlatformTenantsContentDialog4({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantsContentView>["model"];
+}): React.ReactNode {
+  const { accessConfirmation, dismissAccessConfirmation, isAuthorizingAccess } =
+    model;
+  return (
+    <Dialog
+      open={accessConfirmation !== null}
+      onOpenChange={(open) => {
+        if (!open && accessConfirmation && !isAuthorizingAccess) {
+          dismissAccessConfirmation();
+        }
+      }}
+    >
+      {accessConfirmation ? (
+        <DialogContent
+          className="tenant-lifecycle-dialog"
+          showCloseButton={!isAuthorizingAccess}
+        >
+          <DialogHeader>
+            <p className="section-label">Explicit elevated access</p>
+            <DialogTitle>
+              Authorize access to {accessConfirmation.tenant.name}
+            </DialogTitle>
+            <DialogDescription>
+              This creates a real tenant-admin membership for your user; it does
+              not bypass row-level security. A fresh MFA proof within 15 minutes
+              is required by the database.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div
+            className="tenant-lifecycle-boundary"
+            role="group"
+            aria-label={`Explicit tenant access at revision ${accessConfirmation.tenant.version}`}
+          >
+            <div>
+              <span>Before</span>
+              <strong>No implicit access</strong>
+            </div>
+            <ArrowRight aria-hidden="true" />
+            <div>
+              <span>After confirmation</span>
+              <strong>Tenant administrator</strong>
+            </div>
+            <p>
+              <ShieldCheck aria-hidden="true" /> Platform and tenant audit ·
+              revision {accessConfirmation.tenant.version}
+            </p>
+          </div>
+
+          <Alert>
+            <LockKeyhole aria-hidden="true" />
+            <AlertTitle>Context does not switch automatically</AlertTitle>
+            <AlertDescription>
+              After authorization, choose this tenant in the tenant switcher.
+              That separate context change is also checked and audited.
+            </AlertDescription>
+          </Alert>
+
+          <PlatformTenantsContentDialog4Form model={model} />
+        </DialogContent>
+      ) : null}
+    </Dialog>
+  );
+}
+
+function TenantCreateForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantCreatePanel>["model"];
+}): React.ReactNode {
+  const {
+    createError,
+    createTenant,
+    createdName,
+    creationDefaults,
+    id,
+    isCreating,
+    session,
+    successRef,
+  } = model;
+  return (
+    <Card className="tenant-create-card">
+      <CardHeader>
+        <CardTitle>Create tenant</CardTitle>
+        <CardDescription>
+          This operation uses the current in-memory CSRF value and is
+          independently authorized and audited by the API.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {creationDefaults.kind === "loading" ||
+        creationDefaults.sessionKey !== session.id ? (
+          <p role="status">Loading platform tenant defaults…</p>
+        ) : (
+          <form
+            key={creationDefaults.sessionKey}
+            className="tenant-create-form"
+            onSubmit={createTenant}
+          >
+            {createError ? <FocusedError message={createError} /> : null}
+            {createdName ? (
+              <Alert ref={successRef} tabIndex={-1} className="success-alert">
+                <CheckCircle2 aria-hidden="true" />
+                <AlertTitle>Tenant created</AlertTitle>
+                <AlertDescription>
+                  {createdName} is now in the platform inventory. Its
+                  server-created membership is being refreshed separately.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            <div className="tenant-create-grid">
+              <FormField htmlFor={`${id}-tenant-name`} label="Tenant name">
+                <Input
+                  id={`${id}-tenant-name`}
+                  name="name"
+                  autoComplete="organization"
+                  required
+                  maxLength={160}
+                  disabled={isCreating}
+                />
+              </FormField>
+              <FormField
+                htmlFor={`${id}-tenant-slug`}
+                label="Tenant slug"
+                hint="Lowercase DNS label, for example acme-soc."
+              >
+                <Input
+                  id={`${id}-tenant-slug`}
+                  name="slug"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+                  required
+                  maxLength={63}
+                  disabled={isCreating}
+                  aria-describedby={`${id}-tenant-slug-hint`}
+                />
+              </FormField>
+              <FormField
+                htmlFor={`${id}-tenant-timezone`}
+                label="IANA time zone"
+                hint="Use a canonical region such as Europe/Rome or UTC."
+              >
+                <Input
+                  id={`${id}-tenant-timezone`}
+                  name="timezone"
+                  defaultValue={creationDefaults.timezone}
+                  required
+                  maxLength={64}
+                  disabled={isCreating}
+                  aria-describedby={`${id}-tenant-timezone-hint`}
+                />
+              </FormField>
+              <FormField
+                htmlFor={`${id}-tenant-locale`}
+                label="Locale"
+                hint="BCP 47 language tag, for example en or it-IT."
+              >
+                <Input
+                  id={`${id}-tenant-locale`}
+                  name="locale"
+                  defaultValue={creationDefaults.locale}
+                  required
+                  maxLength={35}
+                  pattern="[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*"
+                  disabled={isCreating}
+                  aria-describedby={`${id}-tenant-locale-hint`}
+                />
+              </FormField>
+            </div>
+            <Button type="submit" disabled={isCreating}>
+              <Plus aria-hidden="true" />
+              {isCreating ? "Creating tenant…" : "Create tenant"}
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PlatformTenantsContentPlatformTenantsTbody({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const {
+    canAccess,
+    canManage,
+    id,
+    isAuthorizingAccess,
+    lifecycle,
+    listState,
+    openAccessConfirmation,
+    openLifecycleConfirmation,
+    session,
+  } = model;
+  if (listState.kind !== "ready") return null;
+  return (
+    <tbody>
+      {listState.items.map((tenant) => {
+        const mutable = isMutableLifecycleTenant(tenant);
+        const pending = lifecycle.isPending(tenant.id);
+        const action = tenant.status === "active" ? "suspend" : "reactivate";
+        return (
+          <tr key={tenant.id} data-lifecycle-state={tenant.status}>
+            <th scope="row">
+              <strong>{tenant.name}</strong>
+              <small>{tenant.slug}</small>
+              {tenant.id === session.activeTenantId ? (
+                <Badge variant="outline">Active context</Badge>
+              ) : null}
+            </th>
+            <td>
+              <Badge
+                variant={tenant.status === "active" ? "secondary" : "outline"}
+              >
+                {formatStatus(tenant.status)}
+              </Badge>
+              <small className="tenant-lifecycle-revision">
+                {tenant.version === undefined
+                  ? "Revision unavailable"
+                  : `Revision ${tenant.version}`}
+              </small>
+            </td>
+            <td>{tenant.timezone}</td>
+            <td>{tenant.locale}</td>
+            <td>{formatDate(tenant.createdAt)}</td>
+            {canManage ? (
+              <td className="tenant-lifecycle-action">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    tenant.status === "active" ? "destructive" : "outline"
+                  }
+                  disabled={!mutable || pending}
+                  aria-describedby={
+                    mutable
+                      ? undefined
+                      : `${id}-tenant-lifecycle-unavailable-${tenant.id}`
+                  }
+                  aria-label={`${formatLifecycleAction(action)} ${tenant.name}`}
+                  onClick={() => openLifecycleConfirmation(tenant)}
+                >
+                  {pending ? "Changing state…" : formatLifecycleAction(action)}
+                </Button>
+                {!mutable ? (
+                  <small id={`${id}-tenant-lifecycle-unavailable-${tenant.id}`}>
+                    {tenant.version === undefined
+                      ? "Current revision is not available."
+                      : "This revision can no longer advance."}
+                  </small>
+                ) : null}
+              </td>
+            ) : null}
+            {canAccess ? (
+              <td className="tenant-lifecycle-action">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    tenant.status !== "active" ||
+                    !mutable ||
+                    isAuthorizingAccess ||
+                    tenant.id === session.activeTenantId
+                  }
+                  aria-label={`Authorize explicit access to ${tenant.name}`}
+                  onClick={() => openAccessConfirmation(tenant)}
+                >
+                  <KeyRound aria-hidden="true" />
+                  {tenant.id === session.activeTenantId
+                    ? "Current tenant"
+                    : "Authorize access"}
+                </Button>
+                {tenant.status !== "active" ? (
+                  <small>Only active tenants can be entered.</small>
+                ) : tenant.id === session.activeTenantId ? (
+                  <small>The active tenant is already visible.</small>
+                ) : null}
+              </td>
+            ) : null}
+          </tr>
+        );
+      })}
+    </tbody>
+  );
+}
+
+function PlatformTenantsContentDialogForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantsContentDialog>["model"];
+}): React.ReactNode {
+  const {
+    changeTenantLifecycle,
+    dismissLifecycleConfirmation,
+    id,
+    lifecycleConfirmation,
+    lifecycleConflict,
+    lifecycleError,
+    lifecyclePending,
+    lifecycleReason,
+    lifecycleReasonError,
+    lifecycleReasonRef,
+    reloadTenantInventory,
+    setLifecycleError,
+    setLifecycleReason,
+    setLifecycleReasonError,
+  } = model;
+  if (!lifecycleConfirmation) return null;
+  return (
+    <form
+      className="tenant-lifecycle-form"
+      onSubmit={changeTenantLifecycle}
+      noValidate
+    >
+      {lifecycleError ? (
+        <FocusedError
+          title={
+            lifecycleConflict
+              ? "Tenant state changed"
+              : "Lifecycle change failed"
+          }
+          message={lifecycleError}
+        />
+      ) : null}
+      <FormField
+        htmlFor={`${id}-tenant-lifecycle-reason`}
+        label="Administrative reason"
+        hint={`${tenantLifecycleReasonBytes(lifecycleReason)} of 2048 UTF-8 bytes. Retained in the audit trail; do not include secrets, tokens, credentials, or customer data.`}
+        {...(lifecycleReasonError ? { error: lifecycleReasonError } : {})}
+      >
+        <Textarea
+          ref={lifecycleReasonRef}
+          id={`${id}-tenant-lifecycle-reason`}
+          name="reason"
+          value={lifecycleReason}
+          required
+          maxLength={2048}
+          autoFocus
+          disabled={lifecyclePending}
+          aria-invalid={lifecycleReasonError ? "true" : undefined}
+          aria-describedby={`${id}-tenant-lifecycle-reason-${lifecycleReasonError ? "error" : "hint"}`}
+          onChange={(event) => {
+            setLifecycleReason(event.currentTarget.value);
+            setLifecycleReasonError(null);
+            if (!lifecycleConflict) setLifecycleError(null);
+          }}
+        />
+      </FormField>
+      <DialogFooter>
+        {lifecycleConflict ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={reloadTenantInventory}
+          >
+            <RefreshCw aria-hidden="true" /> Reload tenant inventory
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={lifecyclePending}
+            onClick={dismissLifecycleConfirmation}
+          >
+            Cancel
+          </Button>
+        )}
+        <Button
+          type="submit"
+          variant={
+            lifecycleConfirmation.action === "suspend"
+              ? "destructive"
+              : "default"
+          }
+          disabled={lifecyclePending || lifecycleConflict}
+        >
+          {lifecyclePending
+            ? "Changing lifecycle state…"
+            : `${formatLifecycleAction(lifecycleConfirmation.action)} tenant`}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function PlatformTenantsContentDialog4Form({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantsContentDialog4>["model"];
+}): React.ReactNode {
+  const {
+    accessConflict,
+    accessError,
+    accessReason,
+    accessReasonError,
+    accessReasonRef,
+    authorizeTenantAccess,
+    dismissAccessConfirmation,
+    id,
+    isAuthorizingAccess,
+    reloadAfterAccessConflict,
+    setAccessError,
+    setAccessReason,
+    setAccessReasonError,
+  } = model;
+  return (
+    <form
+      className="tenant-lifecycle-form"
+      onSubmit={authorizeTenantAccess}
+      noValidate
+    >
+      {accessError ? (
+        <FocusedError
+          title={
+            accessConflict ? "Tenant state changed" : "Tenant access failed"
+          }
+          message={accessError}
+        />
+      ) : null}
+      <FormField
+        htmlFor={`${id}-tenant-access-reason`}
+        label="Access justification"
+        hint={`${tenantLifecycleReasonBytes(accessReason)} of 2048 UTF-8 bytes. Stored in both audit streams; do not include secrets, credentials, or customer data.`}
+        {...(accessReasonError ? { error: accessReasonError } : {})}
+      >
+        <Textarea
+          ref={accessReasonRef}
+          id={`${id}-tenant-access-reason`}
+          name="reason"
+          value={accessReason}
+          required
+          maxLength={2048}
+          autoFocus
+          disabled={isAuthorizingAccess}
+          aria-invalid={accessReasonError ? "true" : undefined}
+          aria-describedby={`${id}-tenant-access-reason-${accessReasonError ? "error" : "hint"}`}
+          onChange={(event) => {
+            setAccessReason(event.currentTarget.value);
+            setAccessReasonError(null);
+            if (!accessConflict) setAccessError(null);
+          }}
+        />
+      </FormField>
+      <DialogFooter>
+        {accessConflict ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={reloadAfterAccessConflict}
+          >
+            <RefreshCw aria-hidden="true" /> Reload tenant inventory
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isAuthorizingAccess}
+            onClick={dismissAccessConfirmation}
+          >
+            Cancel
+          </Button>
+        )}
+        <Button type="submit" disabled={isAuthorizingAccess || accessConflict}>
+          <KeyRound aria-hidden="true" />
+          {isAuthorizingAccess
+            ? "Authorizing access…"
+            : "Create tenant-admin membership"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function PlatformTenantInventoryHeading({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const { listState, setListAttempt } = model;
+  return (
+    <div className="section-heading">
+      <div>
+        <p className="section-label">Isolation boundaries</p>
+        <h2 id="inventory-title">Platform tenants</h2>
+      </div>
+      {listState.kind === "error" ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setListAttempt((attempt) => attempt + 1)}
+        >
+          <RefreshCw aria-hidden="true" /> Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function PlatformTenantAccessNotice({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const { canAccess } = model;
+  return !canAccess ? (
+    <Alert className="tenant-lifecycle-permission">
+      <KeyRound aria-hidden="true" />
+      <AlertTitle>Elevated tenant access is unavailable</AlertTitle>
+      <AlertDescription>
+        This session did not return platform.tenant.access. Tenant data remains
+        inaccessible unless an explicit ordinary membership is created by the
+        independently authorized API command.
+      </AlertDescription>
+    </Alert>
+  ) : null;
+}
+
+function PlatformTenantLifecycleNotice({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const { lifecycleAnnouncement, lifecycleSuccessRef } = model;
+  return lifecycleAnnouncement ? (
+    <Alert
+      ref={lifecycleSuccessRef}
+      tabIndex={-1}
+      className="success-alert tenant-lifecycle-success"
+    >
+      <CheckCircle2 aria-hidden="true" />
+      <AlertTitle>Lifecycle state changed</AlertTitle>
+      <AlertDescription>{lifecycleAnnouncement}</AlertDescription>
+    </Alert>
+  ) : null;
+}
+
+function PlatformTenantAccessSuccess({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const { accessAnnouncement, accessSuccessRef } = model;
+  return accessAnnouncement ? (
+    <Alert
+      ref={accessSuccessRef}
+      tabIndex={-1}
+      className="success-alert tenant-lifecycle-success"
+    >
+      <CheckCircle2 aria-hidden="true" />
+      <AlertTitle>Tenant access authorized</AlertTitle>
+      <AlertDescription>{accessAnnouncement}</AlertDescription>
+    </Alert>
+  ) : null;
+}
+
+function PlatformTenantTableHeaders({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const { canAccess, canManage } = model;
+  return (
+    <thead>
+      <tr>
+        <th scope="col">Tenant</th>
+        <th scope="col">Status</th>
+        <th scope="col">Time zone</th>
+        <th scope="col">Locale</th>
+        <th scope="col">Created</th>
+        {canManage ? <th scope="col">Lifecycle action</th> : null}
+        {canAccess ? <th scope="col">Explicit access</th> : null}
+      </tr>
+    </thead>
+  );
+}
+
+function PlatformTenantPagination({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformTenantInventory>["model"];
+}): React.ReactNode {
+  const { isLoadingMore, listState, loadMore } = model;
+  return listState.kind === "ready" && listState.nextCursor ? (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => void loadMore()}
+      disabled={isLoadingMore}
+    >
+      <ArrowDown aria-hidden="true" />
+      {isLoadingMore ? "Loading tenants…" : "Load more tenants"}
+    </Button>
+  ) : null;
 }

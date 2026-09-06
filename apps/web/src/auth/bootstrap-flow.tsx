@@ -1,3 +1,4 @@
+import { formatExpiry } from "./format-expiry";
 import {
   Alert,
   AlertDescription,
@@ -32,10 +33,7 @@ interface BootstrapFlowProps {
   onConfirmed: (confirmation: BootstrapConfirmationView) => void;
 }
 
-export function BootstrapFlow({
-  api,
-  onConfirmed,
-}: BootstrapFlowProps): React.JSX.Element {
+function useBootstrapFlow({ api, onConfirmed }: BootstrapFlowProps) {
   const [enrollment, setEnrollment] = useState<BootstrapEnrollmentView | null>(
     null,
   );
@@ -127,6 +125,29 @@ export function BootstrapFlow({
     }
   }
 
+  return {
+    enrollment,
+    reservedEmail,
+    error,
+    passwordError,
+    isPending,
+    id,
+    reserveEnrollment,
+    confirmEnrollment,
+  };
+}
+
+export function BootstrapFlow(props: BootstrapFlowProps): React.JSX.Element {
+  const {
+    enrollment,
+    reservedEmail,
+    error,
+    passwordError,
+    isPending,
+    id,
+    reserveEnrollment,
+    confirmEnrollment,
+  } = useBootstrapFlow(props);
   if (!enrollment) {
     return (
       <AccessLayout
@@ -334,16 +355,4 @@ export function BootstrapFlow({
       </Card>
     </AccessLayout>
   );
-}
-
-function formatExpiry(value: string): string {
-  const expiry = new Date(value);
-  if (Number.isNaN(expiry.valueOf())) {
-    return "soon";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(expiry);
 }

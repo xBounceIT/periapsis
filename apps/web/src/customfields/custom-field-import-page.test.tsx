@@ -20,14 +20,12 @@ import {
   CustomFieldImportApiError,
   type CustomFieldImportApi,
 } from "./custom-field-import-api";
-import {
-  TenantCustomFieldImportPage,
-  customFieldImportRoutes,
-} from "./custom-field-import-page";
 import type {
   CustomFieldImportJobView,
   CustomFieldImportResultView,
 } from "./custom-field-import-model";
+import { TenantCustomFieldImportPage } from "./custom-field-import-page";
+import { customFieldImportRoutes } from "./custom-field-import-page-routes";
 
 const tenantId = "0198c97d-cf4f-7000-8000-000000000001";
 const jobId = "0198c97d-cf4f-7000-8000-000000000002";

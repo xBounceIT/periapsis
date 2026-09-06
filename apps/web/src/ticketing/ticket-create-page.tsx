@@ -9,8 +9,16 @@ import {
   BriefcaseBusiness,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link, useNavigate } from "react-router";
+import { TenantRequiredPage } from "../components/tenant-required-page";
+import { TicketCreateMetadataFields } from "./ticket-create-metadata-fields";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -34,13 +42,12 @@ import {
 import { describeTicketingError, type TicketKind } from "../lib/ticketing-api";
 import { useTicketingApi } from "./ticketing-context";
 import {
-  alertSeverities,
+  type alertSeverities,
   hasAnyTicketPermission,
-  humanizeKey,
   kindLabel,
   kindLabelPlural,
   parseTagInput,
-  ticketPriorities,
+  type ticketPriorities,
 } from "./ticketing-model";
 
 interface CreateDraft {
@@ -83,13 +90,13 @@ export function CaseCreatePage(): React.JSX.Element {
   return <TicketCreatePage kind="case" />;
 }
 
-export function TicketCreatePage({
+function useTicketCreatePageState({
   customFieldApi = customFieldAdministrationApi,
   kind,
 }: {
   customFieldApi?: CustomFieldAdministrationApi;
   kind: TicketKind;
-}): React.JSX.Element {
+}) {
   const api = useTicketingApi();
   const { session } = useSession();
   const authority = useTenantAuthority();
@@ -108,9 +115,6 @@ export function TicketCreatePage({
   const [draftContext, setDraftContext] = useState(currentDraftContext);
   const idempotencyRef = useRef<IdempotencyReference["current"]>(null);
   const contextTokenRef = useRef({ key: currentDraftContext, token: {} });
-  if (contextTokenRef.current.key !== currentDraftContext) {
-    contextTokenRef.current = { key: currentDraftContext, token: {} };
-  }
   const Icon = kind === "alert" ? BellRing : BriefcaseBusiness;
   const canCreate = hasAnyTicketPermission(
     authority.hasPermission,
@@ -134,8 +138,8 @@ export function TicketCreatePage({
   const customFieldDefinitions = canReadCustomFields
     ? customFieldsQuery.data
     : undefined;
-
-  useEffect(() => {
+  useLayoutEffect(() => {
+    contextTokenRef.current = { key: currentDraftContext, token: {} };
     setDraft(initialDraft);
     setCustomFieldDrafts({});
     setCustomFieldErrors({});
@@ -143,8 +147,10 @@ export function TicketCreatePage({
     setSaving(false);
     setDraftContext(currentDraftContext);
     idempotencyRef.current = null;
+    return () => {
+      contextTokenRef.current = { key: "", token: {} };
+    };
   }, [currentDraftContext]);
-
   useEffect(() => {
     if (!customFieldDefinitions) return;
     setCustomFieldDrafts((current) =>
@@ -153,48 +159,55 @@ export function TicketCreatePage({
         : draftsFromDefaults(customFieldDefinitions, "operator"),
     );
   }, [customFieldDefinitions]);
+  return {
+    customFieldApi,
+    kind,
+    api,
+    session,
+    authority,
+    navigate,
+    draft,
+    setDraft,
+    customFieldDrafts,
+    setCustomFieldDrafts,
+    customFieldErrors,
+    setCustomFieldErrors,
+    error,
+    setError,
+    saving,
+    setSaving,
+    tenantId,
+    currentDraftContext,
+    draftContext,
+    setDraftContext,
+    idempotencyRef,
+    contextTokenRef,
+    Icon,
+    canCreate,
+    canReadCustomFields,
+    customFieldsQuery,
+    customFieldDefinitions,
+  };
+}
 
-  if (!tenantId) {
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading">
-          <div>
-            <p className="section-label">Tenant context required</p>
-            <h1>Select a tenant first.</h1>
-            <p>
-              New {kindLabelPlural(kind).toLowerCase()} require an active
-              tenant.
-            </p>
-          </div>
-        </section>
-      </div>
-    );
-  }
-  const activeTenantId = tenantId;
-
-  if (draftContext !== currentDraftContext) {
-    return (
-      <div className="content content--narrow" role="status">
-        Resetting the governed create form for the active tenant…
-      </div>
-    );
-  }
-
-  if (authority.status !== "ready" || !canCreate) {
-    return (
-      <div className="content content--narrow">
-        <FocusedError
-          title={`${kindLabel(kind)} creation unavailable`}
-          message={
-            authority.status === "loading"
-              ? "Live tenant authority is still being resolved. Creation stays closed until it is current."
-              : "The live tenant authority does not expose this creation control. The backend remains the authorization boundary for every request."
-          }
-        />
-      </div>
-    );
-  }
-
+function createTicketCreatePageActions({
+  kind,
+  api,
+  session,
+  navigate,
+  draft,
+  customFieldDrafts,
+  setCustomFieldErrors,
+  setError,
+  setSaving,
+  currentDraftContext,
+  draftContext,
+  idempotencyRef,
+  contextTokenRef,
+  canReadCustomFields,
+  customFieldDefinitions,
+  activeTenantId,
+}: ReturnType<typeof useTicketCreatePageState> & { activeTenantId: string }) {
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (draftContext !== currentDraftContext) {
@@ -324,7 +337,67 @@ export function TicketCreatePage({
       }
     }
   }
+  return { submit };
+}
 
+export function TicketCreatePage(props: {
+  customFieldApi?: CustomFieldAdministrationApi;
+  kind: TicketKind;
+}): React.JSX.Element {
+  const state = useTicketCreatePageState(props);
+  const {
+    kind,
+    authority,
+    draft,
+    setDraft,
+    customFieldDrafts,
+    setCustomFieldDrafts,
+    customFieldErrors,
+    setCustomFieldErrors,
+    error,
+    saving,
+    tenantId,
+    currentDraftContext,
+    draftContext,
+    Icon,
+    canCreate,
+    canReadCustomFields,
+    customFieldsQuery,
+    customFieldDefinitions,
+  } = state;
+  if (!tenantId) {
+    return (
+      <TenantRequiredPage>
+        New {kindLabelPlural(kind).toLowerCase()} require an active tenant.
+      </TenantRequiredPage>
+    );
+  }
+  const activeTenantId = tenantId;
+  if (draftContext !== currentDraftContext) {
+    return (
+      <div className="content content--narrow" role="status">
+        Resetting the governed create form for the active tenant…
+      </div>
+    );
+  }
+  if (authority.status !== "ready" || !canCreate) {
+    return (
+      <div className="content content--narrow">
+        <FocusedError
+          title={`${kindLabel(kind)} creation unavailable`}
+          message={
+            authority.status === "loading"
+              ? "Live tenant authority is still being resolved. Creation stays closed until it is current."
+              : "The live tenant authority does not expose this creation control. The backend remains the authorization boundary for every request."
+          }
+        />
+      </div>
+    );
+  }
+  const { submit } = createTicketCreatePageActions({
+    ...state,
+    activeTenantId,
+  });
   return (
     <div className="content ticket-create-page">
       <Link
@@ -407,108 +480,11 @@ export function TicketCreatePage({
             />
           </FormField>
 
-          <div className="ticket-create-form__grid">
-            <NativeField
-              label="Severity"
-              value={draft.severity}
-              options={alertSeverities}
-              onChange={(severity) =>
-                setDraft((current) => ({ ...current, severity }))
-              }
-            />
-            <NativeField
-              label="Priority"
-              value={draft.priority}
-              options={ticketPriorities}
-              onChange={(priority) =>
-                setDraft((current) => ({ ...current, priority }))
-              }
-            />
-            <FormField htmlFor="ticket-category" label="Category">
-              <Input
-                id="ticket-category"
-                maxLength={100}
-                value={draft.category}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    category: event.target.value,
-                  }))
-                }
-              />
-            </FormField>
-            <FormField
-              htmlFor="ticket-classification"
-              label="Classification"
-              optional
-            >
-              <Input
-                id="ticket-classification"
-                maxLength={100}
-                value={draft.classification}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    classification: event.target.value,
-                  }))
-                }
-              />
-            </FormField>
-            {kind === "alert" ? (
-              <>
-                <FormField htmlFor="ticket-source" label="Source">
-                  <Input
-                    id="ticket-source"
-                    maxLength={120}
-                    value={draft.source}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        source: event.target.value,
-                      }))
-                    }
-                  />
-                </FormField>
-                <FormField htmlFor="ticket-source-type" label="Source type">
-                  <Input
-                    id="ticket-source-type"
-                    maxLength={120}
-                    value={draft.sourceType}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        sourceType: event.target.value,
-                      }))
-                    }
-                  />
-                </FormField>
-              </>
-            ) : null}
-            <FormField htmlFor="ticket-workflow" label="Workflow ID" optional>
-              <Input
-                id="ticket-workflow"
-                value={draft.workflowId}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    workflowId: event.target.value,
-                  }))
-                }
-              />
-            </FormField>
-            <FormField htmlFor="ticket-team" label="Assigned team ID" optional>
-              <Input
-                id="ticket-team"
-                value={draft.assignedTeamId}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    assignedTeamId: event.target.value,
-                  }))
-                }
-              />
-            </FormField>
-          </div>
+          <TicketCreateMetadataFields
+            draft={draft}
+            kind={kind}
+            setDraft={setDraft}
+          />
 
           <FormField
             htmlFor="ticket-tags"
@@ -552,49 +528,16 @@ export function TicketCreatePage({
             </span>
           </label>
 
-          {canReadCustomFields && customFieldsQuery.isPending ? (
-            <p className="custom-field-empty" role="status" aria-live="polite">
-              Loading the current custom-field schema…
-            </p>
-          ) : null}
-          {canReadCustomFields && customFieldsQuery.isError ? (
-            <div>
-              <FocusedError
-                title="Custom fields unavailable"
-                message="The governed field schema could not be loaded. Ticket creation stays closed so required values are never omitted."
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void customFieldsQuery.refetch()}
-              >
-                Retry custom fields
-              </Button>
-            </div>
-          ) : null}
-          {customFieldDefinitions ? (
-            <DynamicFieldForm
-              audience="operator"
-              definitions={customFieldDefinitions}
-              disabled={saving}
-              drafts={customFieldDrafts}
-              errors={customFieldErrors}
-              phase="create"
-              onChange={(key, value) => {
-                setCustomFieldDrafts((current) => ({
-                  ...current,
-                  [key]: value,
-                }));
-                setCustomFieldErrors((current) => {
-                  if (!(key in current)) return current;
-                  return Object.fromEntries(
-                    Object.entries(current).filter(([entry]) => entry !== key),
-                  );
-                });
-              }}
-            />
-          ) : null}
-
+          <TicketCreateCustomFields
+            canReadCustomFields={canReadCustomFields}
+            customFieldDefinitions={customFieldDefinitions}
+            customFieldDrafts={customFieldDrafts}
+            customFieldErrors={customFieldErrors}
+            customFieldsQuery={customFieldsQuery}
+            saving={saving}
+            setCustomFieldDrafts={setCustomFieldDrafts}
+            setCustomFieldErrors={setCustomFieldErrors}
+          />
           <div className="form-actions">
             <Button
               type="submit"
@@ -622,35 +565,87 @@ export function TicketCreatePage({
 
 const ticketTagPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}$/u;
 
-function NativeField<T extends string>({
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  label: string;
-  onChange: (value: T) => void;
-  options: readonly T[];
-  value: T;
-}): React.JSX.Element {
+interface TicketCreateCustomFieldsProps {
+  canReadCustomFields: ReturnType<
+    typeof useTicketCreatePageState
+  >["canReadCustomFields"];
+  customFieldDefinitions: ReturnType<
+    typeof useTicketCreatePageState
+  >["customFieldDefinitions"];
+  customFieldDrafts: ReturnType<
+    typeof useTicketCreatePageState
+  >["customFieldDrafts"];
+  customFieldErrors: ReturnType<
+    typeof useTicketCreatePageState
+  >["customFieldErrors"];
+  customFieldsQuery: ReturnType<
+    typeof useTicketCreatePageState
+  >["customFieldsQuery"];
+  saving: ReturnType<typeof useTicketCreatePageState>["saving"];
+  setCustomFieldDrafts: ReturnType<
+    typeof useTicketCreatePageState
+  >["setCustomFieldDrafts"];
+  setCustomFieldErrors: ReturnType<
+    typeof useTicketCreatePageState
+  >["setCustomFieldErrors"];
+}
+
+function TicketCreateCustomFields({
+  canReadCustomFields,
+  customFieldDefinitions,
+  customFieldDrafts,
+  customFieldErrors,
+  customFieldsQuery,
+  saving,
+  setCustomFieldDrafts,
+  setCustomFieldErrors,
+}: TicketCreateCustomFieldsProps): React.JSX.Element {
   return (
-    <label className="ticket-native-field">
-      <span>{label}</span>
-      <select
-        value={value}
-        onChange={(event) => {
-          const selected = options.find(
-            (option) => option === event.target.value,
-          );
-          if (selected !== undefined) onChange(selected);
-        }}
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {humanizeKey(option)}
-          </option>
-        ))}
-      </select>
-    </label>
+    <>
+      {canReadCustomFields && customFieldsQuery.isPending ? (
+        <p className="custom-field-empty" role="status" aria-live="polite">
+          Loading the current custom-field schema…
+        </p>
+      ) : null}
+      {canReadCustomFields && customFieldsQuery.isError ? (
+        <div>
+          <FocusedError
+            title="Custom fields unavailable"
+            message="The governed field schema could not be loaded. Ticket creation stays closed so required values are never omitted."
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void customFieldsQuery.refetch()}
+          >
+            Retry custom fields
+          </Button>
+        </div>
+      ) : null}
+      {customFieldDefinitions ? (
+        <DynamicFieldForm
+          audience="operator"
+          definitions={customFieldDefinitions}
+          disabled={saving}
+          drafts={customFieldDrafts}
+          errors={customFieldErrors}
+          phase="create"
+          onChange={(key, value) => {
+            setCustomFieldDrafts((current) => ({
+              ...current,
+              [key]: value,
+            }));
+            setCustomFieldErrors((current) => {
+              if (!(key in current)) return current;
+              return Object.fromEntries(
+                Object.entries(current).filter(([entry]) => entry !== key),
+              );
+            });
+          }}
+        />
+      ) : null}
+    </>
   );
 }
+
+export type TicketCreatePageState = ReturnType<typeof useTicketCreatePageState>;

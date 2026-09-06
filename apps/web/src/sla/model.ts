@@ -1053,14 +1053,16 @@ function requireExactKeys(value: object, expected: readonly string[]): void {
   }
 }
 
+const slaInstantFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "medium",
+});
+
 export function formatSlaInstant(value: string | undefined): string {
   if (!value) return "Not reached";
   const instant = new Date(value);
   if (Number.isNaN(instant.valueOf())) return "Invalid server time";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(instant);
+  return slaInstantFormatter.format(instant);
 }
 
 export function formatSlaDuration(seconds: number): string {
@@ -1503,6 +1505,7 @@ function hasForbiddenControl(value: string): boolean {
 function normalizeTimezone(value: string): string {
   const normalized = boundedText(value, 128, "Timezone");
   try {
+    // react-doctor-disable-next-line react-doctor/js-hoist-intl -- Constructing with this user-supplied zone validates it; there is no static formatter to hoist.
     new Intl.DateTimeFormat("en", { timeZone: normalized }).format();
   } catch {
     throw new SlaInputError("Timezone must be a valid IANA name.");

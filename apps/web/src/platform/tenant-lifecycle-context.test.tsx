@@ -11,10 +11,10 @@ import {
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
 import {
-  TenantLifecycleClientError,
   TenantLifecycleProvider,
   useTenantLifecycle,
 } from "./tenant-lifecycle-context";
+import { TenantLifecycleClientError } from "./tenant-lifecycle-model";
 
 afterEach(cleanup);
 

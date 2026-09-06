@@ -31,7 +31,6 @@ import {
 import {
   memo,
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -45,6 +44,10 @@ import {
   hasGoTrimSpaceAtEdge,
   hasUnpairedSurrogate,
 } from "../lib/canonical-display-name";
+import {
+  idempotencyKeyForPayload,
+  type IdempotencyReference,
+} from "../lib/payload-idempotency";
 import { TenantInstant } from "../lib/tenant-date-time-context";
 import {
   hasBidiControlCharacters,
@@ -58,10 +61,6 @@ import {
   type TicketCommentPreview,
   type TicketKind,
 } from "../lib/ticketing-api";
-import {
-  idempotencyKeyForPayload,
-  type IdempotencyReference,
-} from "../lib/payload-idempotency";
 import { SafeMarkdown } from "./safe-markdown";
 import { useTicketingApi } from "./ticketing-context";
 import { hasAnyTicketPermission, humanizeKey } from "./ticketing-model";
@@ -104,7 +103,7 @@ function withMentionSelection(
   return { ...current, mentionedMembershipIds };
 }
 
-export function TicketCommentPanel({
+function useTicketCommentPanelState({
   kind,
   projection,
   resourceId,
@@ -114,7 +113,7 @@ export function TicketCommentPanel({
   projection: "customer" | "operator";
   resourceId: string;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const api = useTicketingApi();
   const { session } = useSession();
   const authority = useTenantAuthority();
@@ -188,7 +187,6 @@ export function TicketCommentPanel({
     canCommentPrivate,
   ]);
   const boundaryRef = useRef(boundary);
-
   useLayoutEffect(() => {
     boundaryRef.current = boundary;
     controllerRef.current?.abort();
@@ -208,14 +206,12 @@ export function TicketCommentPanel({
     setComposerMode("write");
     return () => controllerRef.current?.abort();
   }, [boundary]);
-
-  useEffect(() => {
+  {
     if (!canWritePrivate && draft.visibility === "private") {
       setDraft((current) => ({ ...current, visibility: "public" }));
       setPreview(null);
     }
-  }, [canWritePrivate, draft.visibility]);
-
+  }
   const comments = useInfiniteQuery({
     enabled: canRead,
     initialPageParam: undefined as string | undefined,
@@ -248,7 +244,94 @@ export function TicketCommentPanel({
       }),
   });
   const items = comments.data?.pages.flatMap((page) => page.items) ?? [];
+  return {
+    kind,
+    projection,
+    resourceId,
+    tenantId,
+    api,
+    session,
+    authority,
+    queryClient,
+    draft,
+    setDraft,
+    composerMode,
+    setComposerMode,
+    preview,
+    setPreview,
+    selectedComment,
+    setSelectedComment,
+    dialogMode,
+    setDialogMode,
+    editDraft,
+    setEditDraft,
+    editReason,
+    setEditReason,
+    editPreview,
+    setEditPreview,
+    pending,
+    setPending,
+    error,
+    setError,
+    editError,
+    setEditError,
+    attemptRef,
+    editAttemptRef,
+    controllerRef,
+    changeMention,
+    changeEditMention,
+    ticketReadPermission,
+    readPermission,
+    publicPermission,
+    privatePermission,
+    isOperator,
+    canRead,
+    canCommentPublic,
+    canCommentPrivate,
+    canWritePrivate,
+    currentMembershipId,
+    boundary,
+    boundaryRef,
+    comments,
+    candidates,
+    history,
+    items,
+  };
+}
 
+function createTicketCommentPanelActions({
+  kind,
+  resourceId,
+  tenantId,
+  api,
+  session,
+  queryClient,
+  draft,
+  setDraft,
+  setComposerMode,
+  setPreview,
+  selectedComment,
+  setSelectedComment,
+  setDialogMode,
+  editDraft,
+  setEditDraft,
+  editReason,
+  setEditReason,
+  setEditPreview,
+  setPending,
+  setError,
+  setEditError,
+  attemptRef,
+  editAttemptRef,
+  controllerRef,
+  canCommentPublic,
+  canCommentPrivate,
+  currentMembershipId,
+  boundary,
+  boundaryRef,
+  comments,
+  history,
+}: ReturnType<typeof useTicketCommentPanelState>) {
   function beginRequest(): {
     controller: AbortController;
     requestedBoundary: string;
@@ -258,7 +341,6 @@ export function TicketCommentPanel({
     controllerRef.current = controller;
     return { controller, requestedBoundary: boundary };
   }
-
   function requestStillCurrent(
     controller: AbortController,
     requestedBoundary: string,
@@ -267,7 +349,6 @@ export function TicketCommentPanel({
       !controller.signal.aborted && boundaryRef.current === requestedBoundary
     );
   }
-
   async function previewDraft(value: Draft, editing: boolean): Promise<void> {
     const parsed = parseDraft(value, canCommentPublic, canCommentPrivate);
     if (!parsed.ok) {
@@ -306,7 +387,6 @@ export function TicketCommentPanel({
       if (requestStillCurrent(controller, requestedBoundary)) setPending(null);
     }
   }
-
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const parsed = parseDraft(draft, canCommentPublic, canCommentPrivate);
@@ -352,7 +432,6 @@ export function TicketCommentPanel({
       if (requestStillCurrent(controller, requestedBoundary)) setPending(null);
     }
   }
-
   async function saveEdit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (
@@ -464,7 +543,6 @@ export function TicketCommentPanel({
       if (requestStillCurrent(controller, requestedBoundary)) setPending(null);
     }
   }
-
   function openComment(comment: TicketComment, mode: "edit" | "history"): void {
     if (comment.projection !== "operator") return;
     setSelectedComment(comment);
@@ -475,7 +553,56 @@ export function TicketCommentPanel({
     setEditReason("");
     setEditDraft(draftFromComment(comment));
   }
+  return {
+    beginRequest,
+    requestStillCurrent,
+    previewDraft,
+    submit,
+    saveEdit,
+    openComment,
+  };
+}
 
+export function TicketCommentPanel(props: {
+  kind: TicketKind;
+  projection: "customer" | "operator";
+  resourceId: string;
+  tenantId: string;
+}): React.JSX.Element {
+  const state = useTicketCommentPanelState(props);
+  const {
+    draft,
+    setDraft,
+    composerMode,
+    setComposerMode,
+    preview,
+    setPreview,
+    selectedComment,
+    setSelectedComment,
+    dialogMode,
+    setDialogMode,
+    editDraft,
+    setEditDraft,
+    editReason,
+    setEditReason,
+    editPreview,
+    setEditPreview,
+    pending,
+    error,
+    editError,
+    controllerRef,
+    changeMention,
+    changeEditMention,
+    canRead,
+    canCommentPublic,
+    canCommentPrivate,
+    canWritePrivate,
+    currentMembershipId,
+    comments,
+    candidates,
+    history,
+    items,
+  } = state;
   if (!canRead) {
     return (
       <div
@@ -489,7 +616,8 @@ export function TicketCommentPanel({
       </div>
     );
   }
-
+  const { previewDraft, submit, saveEdit, openComment } =
+    createTicketCommentPanelActions(state);
   return (
     <div
       id="ticket-panel-comments"
@@ -498,102 +626,21 @@ export function TicketCommentPanel({
       className="ticket-comments-panel"
     >
       {canCommentPublic ? (
-        <form
-          className="ticket-comment-composer"
-          onSubmit={(event) => void submit(event)}
-        >
-          <div className="ticket-comment-composer__heading">
-            <div>
-              <p className="section-label">Add context</p>
-              <h3>Post a Markdown comment</h3>
-            </div>
-            <span>HTML stays disabled</span>
-          </div>
-          <div role="tablist" aria-label="Comment composer mode">
-            <Button
-              type="button"
-              role="tab"
-              aria-selected={composerMode === "write"}
-              variant={composerMode === "write" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setComposerMode("write")}
-            >
-              Write
-            </Button>
-            <Button
-              type="button"
-              role="tab"
-              aria-selected={composerMode === "preview"}
-              variant={composerMode === "preview" ? "default" : "outline"}
-              size="sm"
-              disabled={pending !== null}
-              onClick={() => void previewDraft(draft, false)}
-            >
-              Preview
-            </Button>
-          </div>
-          {error ? (
-            <FocusedError message={error} title="Comment not posted" />
-          ) : null}
-          {composerMode === "write" ? (
-            <>
-              <Textarea
-                aria-label="Comment"
-                maxLength={40_000}
-                rows={5}
-                value={draft.bodyMarkdown}
-                onChange={(event) => {
-                  setDraft((current) => ({
-                    ...current,
-                    bodyMarkdown: event.target.value,
-                  }));
-                  setPreview(null);
-                }}
-                placeholder="Record what changed, why it matters, and the next verified step."
-              />
-              <CommentAttachmentInput
-                value={draft.attachmentText}
-                onChange={(attachmentText) => {
-                  setDraft((current) => ({ ...current, attachmentText }));
-                  setPreview(null);
-                }}
-              />
-              <MentionPicker
-                candidates={candidates.data ?? []}
-                selected={draft.mentionedMembershipIds}
-                onChange={changeMention}
-              />
-            </>
-          ) : preview ? (
-            <CommentPreview preview={preview} />
-          ) : (
-            <p>No accepted preview is available.</p>
-          )}
-          <div className="ticket-comment-composer__actions">
-            {canWritePrivate ? (
-              <label>
-                <Checkbox
-                  checked={draft.visibility === "private"}
-                  onCheckedChange={(checked) => {
-                    setDraft((current) => ({
-                      ...current,
-                      visibility: checked === true ? "private" : "public",
-                    }));
-                    setPreview(null);
-                  }}
-                />
-                Private operator note
-              </label>
-            ) : (
-              <span>
-                <ShieldCheck aria-hidden="true" /> Public customer-safe comment
-              </span>
-            )}
-            <Button type="submit" size="sm" disabled={pending !== null}>
-              {pending === "create" ? "Posting comment…" : "Post comment"}
-            </Button>
-          </div>
-        </form>
+        <TicketCommentComposer
+          candidates={candidates}
+          canWritePrivate={canWritePrivate}
+          changeMention={changeMention}
+          composerMode={composerMode}
+          draft={draft}
+          error={error}
+          pending={pending}
+          preview={preview}
+          previewDraft={previewDraft}
+          setComposerMode={setComposerMode}
+          setDraft={setDraft}
+          setPreview={setPreview}
+          submit={submit}
+        />
       ) : null}
       {comments.isPending ? <p aria-live="polite">Loading comments…</p> : null}
       {comments.isError ? (
@@ -637,110 +684,26 @@ export function TicketCommentPanel({
           {comments.isFetchingNextPage ? "Loading more…" : "Load more"}
         </Button>
       ) : null}
-      <Dialog
-        open={selectedComment !== null && dialogMode !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            controllerRef.current?.abort();
-            controllerRef.current = null;
-            setSelectedComment(null);
-            setDialogMode(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {dialogMode === "edit" ? "Edit your comment" : "Comment history"}
-            </DialogTitle>
-            <DialogDescription>
-              Edits append immutable revisions. Visibility cannot change and
-              there is no delete or override.
-            </DialogDescription>
-          </DialogHeader>
-          {dialogMode === "edit" && selectedComment ? (
-            <form onSubmit={(event) => void saveEdit(event)}>
-              {editError ? (
-                <FocusedError title="Comment not edited" message={editError} />
-              ) : null}
-              <Label htmlFor="ticket-comment-edit-body">Comment</Label>
-              <Textarea
-                id="ticket-comment-edit-body"
-                maxLength={40_000}
-                value={editDraft.bodyMarkdown}
-                onChange={(event) => {
-                  setEditDraft((current) => ({
-                    ...current,
-                    bodyMarkdown: event.target.value,
-                  }));
-                  setEditPreview(null);
-                }}
-              />
-              <Label htmlFor="ticket-comment-edit-reason">
-                Reason for edit
-              </Label>
-              <Input
-                id="ticket-comment-edit-reason"
-                maxLength={1_000}
-                required
-                value={editReason}
-                onChange={(event) => setEditReason(event.target.value)}
-              />
-              <CommentAttachmentInput
-                id="ticket-comment-edit-attachments"
-                value={editDraft.attachmentText}
-                onChange={(attachmentText) => {
-                  setEditDraft((current) => ({ ...current, attachmentText }));
-                  setEditPreview(null);
-                }}
-              />
-              <MentionPicker
-                candidates={candidates.data ?? []}
-                selected={editDraft.mentionedMembershipIds}
-                onChange={changeEditMention}
-              />
-              {editPreview ? <CommentPreview preview={editPreview} /> : null}
-              <div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={pending !== null}
-                  onClick={() => void previewDraft(editDraft, true)}
-                >
-                  Preview edit
-                </Button>
-                <Button type="submit" disabled={pending !== null}>
-                  {pending === "edit" ? "Saving revision…" : "Save revision"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
-          {history.isPending ? (
-            <p aria-live="polite">Loading revision history…</p>
-          ) : null}
-          {history.isError ? (
-            <FocusedError
-              title="History unavailable"
-              message={describeTicketingError(
-                history.error,
-                "Comment history could not be loaded.",
-              )}
-            />
-          ) : null}
-          <ol>
-            {history.data?.items.map((revision) => (
-              <li key={revision.revision}>
-                <strong>Revision {revision.revision}</strong>
-                <span>
-                  {revision.reason} ·{" "}
-                  <TenantInstant value={revision.editedAt} />
-                </span>
-                <SafeMarkdown markdown={revision.bodyMarkdown} />
-              </li>
-            ))}
-          </ol>
-        </DialogContent>
-      </Dialog>
+      <TicketCommentDialog
+        candidates={candidates}
+        changeEditMention={changeEditMention}
+        controllerRef={controllerRef}
+        dialogMode={dialogMode}
+        editDraft={editDraft}
+        editError={editError}
+        editPreview={editPreview}
+        editReason={editReason}
+        history={history}
+        pending={pending}
+        previewDraft={previewDraft}
+        saveEdit={saveEdit}
+        selectedComment={selectedComment}
+        setDialogMode={setDialogMode}
+        setEditDraft={setEditDraft}
+        setEditPreview={setEditPreview}
+        setEditReason={setEditReason}
+        setSelectedComment={setSelectedComment}
+      />
     </div>
   );
 }
@@ -1017,4 +980,297 @@ function draftFromComment(comment: OperatorComment): Draft {
     ),
     visibility: comment.visibility,
   };
+}
+
+interface TicketCommentDialogProps {
+  candidates: ReturnType<typeof useTicketCommentPanelState>["candidates"];
+  changeEditMention: ReturnType<
+    typeof useTicketCommentPanelState
+  >["changeEditMention"];
+  controllerRef: ReturnType<typeof useTicketCommentPanelState>["controllerRef"];
+  dialogMode: ReturnType<typeof useTicketCommentPanelState>["dialogMode"];
+  editDraft: ReturnType<typeof useTicketCommentPanelState>["editDraft"];
+  editError: ReturnType<typeof useTicketCommentPanelState>["editError"];
+  editPreview: ReturnType<typeof useTicketCommentPanelState>["editPreview"];
+  editReason: ReturnType<typeof useTicketCommentPanelState>["editReason"];
+  history: ReturnType<typeof useTicketCommentPanelState>["history"];
+  pending: ReturnType<typeof useTicketCommentPanelState>["pending"];
+  previewDraft: ReturnType<
+    typeof createTicketCommentPanelActions
+  >["previewDraft"];
+  saveEdit: ReturnType<typeof createTicketCommentPanelActions>["saveEdit"];
+  selectedComment: ReturnType<
+    typeof useTicketCommentPanelState
+  >["selectedComment"];
+  setDialogMode: ReturnType<typeof useTicketCommentPanelState>["setDialogMode"];
+  setEditDraft: ReturnType<typeof useTicketCommentPanelState>["setEditDraft"];
+  setEditPreview: ReturnType<
+    typeof useTicketCommentPanelState
+  >["setEditPreview"];
+  setEditReason: ReturnType<typeof useTicketCommentPanelState>["setEditReason"];
+  setSelectedComment: ReturnType<
+    typeof useTicketCommentPanelState
+  >["setSelectedComment"];
+}
+
+function TicketCommentDialog({
+  candidates,
+  changeEditMention,
+  controllerRef,
+  dialogMode,
+  editDraft,
+  editError,
+  editPreview,
+  editReason,
+  history,
+  pending,
+  previewDraft,
+  saveEdit,
+  selectedComment,
+  setDialogMode,
+  setEditDraft,
+  setEditPreview,
+  setEditReason,
+  setSelectedComment,
+}: TicketCommentDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open={selectedComment !== null && dialogMode !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          controllerRef.current?.abort();
+          controllerRef.current = null;
+          setSelectedComment(null);
+          setDialogMode(null);
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {dialogMode === "edit" ? "Edit your comment" : "Comment history"}
+          </DialogTitle>
+          <DialogDescription>
+            Edits append immutable revisions. Visibility cannot change and there
+            is no delete or override.
+          </DialogDescription>
+        </DialogHeader>
+        {dialogMode === "edit" && selectedComment ? (
+          <form onSubmit={(event) => void saveEdit(event)}>
+            {editError ? (
+              <FocusedError title="Comment not edited" message={editError} />
+            ) : null}
+            <Label htmlFor="ticket-comment-edit-body">Comment</Label>
+            <Textarea
+              id="ticket-comment-edit-body"
+              maxLength={40_000}
+              value={editDraft.bodyMarkdown}
+              onChange={(event) => {
+                setEditDraft((current) => ({
+                  ...current,
+                  bodyMarkdown: event.target.value,
+                }));
+                setEditPreview(null);
+              }}
+            />
+            <Label htmlFor="ticket-comment-edit-reason">Reason for edit</Label>
+            <Input
+              id="ticket-comment-edit-reason"
+              maxLength={1_000}
+              required
+              value={editReason}
+              onChange={(event) => setEditReason(event.target.value)}
+            />
+            <CommentAttachmentInput
+              id="ticket-comment-edit-attachments"
+              value={editDraft.attachmentText}
+              onChange={(attachmentText) => {
+                setEditDraft((current) => ({ ...current, attachmentText }));
+                setEditPreview(null);
+              }}
+            />
+            <MentionPicker
+              candidates={candidates.data ?? []}
+              selected={editDraft.mentionedMembershipIds}
+              onChange={changeEditMention}
+            />
+            {editPreview ? <CommentPreview preview={editPreview} /> : null}
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending !== null}
+                onClick={() => void previewDraft(editDraft, true)}
+              >
+                Preview edit
+              </Button>
+              <Button type="submit" disabled={pending !== null}>
+                {pending === "edit" ? "Saving revision…" : "Save revision"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+        {history.isPending ? (
+          <p aria-live="polite">Loading revision history…</p>
+        ) : null}
+        {history.isError ? (
+          <FocusedError
+            title="History unavailable"
+            message={describeTicketingError(
+              history.error,
+              "Comment history could not be loaded.",
+            )}
+          />
+        ) : null}
+        <ol>
+          {history.data?.items.map((revision) => (
+            <li key={revision.revision}>
+              <strong>Revision {revision.revision}</strong>
+              <span>
+                {revision.reason} · <TenantInstant value={revision.editedAt} />
+              </span>
+              <SafeMarkdown markdown={revision.bodyMarkdown} />
+            </li>
+          ))}
+        </ol>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface TicketCommentComposerProps {
+  candidates: ReturnType<typeof useTicketCommentPanelState>["candidates"];
+  canWritePrivate: ReturnType<
+    typeof useTicketCommentPanelState
+  >["canWritePrivate"];
+  changeMention: ReturnType<typeof useTicketCommentPanelState>["changeMention"];
+  composerMode: ReturnType<typeof useTicketCommentPanelState>["composerMode"];
+  draft: ReturnType<typeof useTicketCommentPanelState>["draft"];
+  error: ReturnType<typeof useTicketCommentPanelState>["error"];
+  pending: ReturnType<typeof useTicketCommentPanelState>["pending"];
+  preview: ReturnType<typeof useTicketCommentPanelState>["preview"];
+  previewDraft: ReturnType<
+    typeof createTicketCommentPanelActions
+  >["previewDraft"];
+  setComposerMode: ReturnType<
+    typeof useTicketCommentPanelState
+  >["setComposerMode"];
+  setDraft: ReturnType<typeof useTicketCommentPanelState>["setDraft"];
+  setPreview: ReturnType<typeof useTicketCommentPanelState>["setPreview"];
+  submit: ReturnType<typeof createTicketCommentPanelActions>["submit"];
+}
+
+function TicketCommentComposer({
+  candidates,
+  canWritePrivate,
+  changeMention,
+  composerMode,
+  draft,
+  error,
+  pending,
+  preview,
+  previewDraft,
+  setComposerMode,
+  setDraft,
+  setPreview,
+  submit,
+}: TicketCommentComposerProps): React.JSX.Element {
+  return (
+    <form
+      className="ticket-comment-composer"
+      onSubmit={(event) => void submit(event)}
+    >
+      <div className="ticket-comment-composer__heading">
+        <div>
+          <p className="section-label">Add context</p>
+          <h3>Post a Markdown comment</h3>
+        </div>
+        <span>HTML stays disabled</span>
+      </div>
+      <div role="tablist" aria-label="Comment composer mode">
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={composerMode === "write"}
+          variant={composerMode === "write" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setComposerMode("write")}
+        >
+          Write
+        </Button>
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={composerMode === "preview"}
+          variant={composerMode === "preview" ? "default" : "outline"}
+          size="sm"
+          disabled={pending !== null}
+          onClick={() => void previewDraft(draft, false)}
+        >
+          Preview
+        </Button>
+      </div>
+      {error ? (
+        <FocusedError message={error} title="Comment not posted" />
+      ) : null}
+      {composerMode === "write" ? (
+        <>
+          <Textarea
+            aria-label="Comment"
+            maxLength={40_000}
+            rows={5}
+            value={draft.bodyMarkdown}
+            onChange={(event) => {
+              setDraft((current) => ({
+                ...current,
+                bodyMarkdown: event.target.value,
+              }));
+              setPreview(null);
+            }}
+            placeholder="Record what changed, why it matters, and the next verified step."
+          />
+          <CommentAttachmentInput
+            value={draft.attachmentText}
+            onChange={(attachmentText) => {
+              setDraft((current) => ({ ...current, attachmentText }));
+              setPreview(null);
+            }}
+          />
+          <MentionPicker
+            candidates={candidates.data ?? []}
+            selected={draft.mentionedMembershipIds}
+            onChange={changeMention}
+          />
+        </>
+      ) : preview ? (
+        <CommentPreview preview={preview} />
+      ) : (
+        <p>No accepted preview is available.</p>
+      )}
+      <div className="ticket-comment-composer__actions">
+        {canWritePrivate ? (
+          <label>
+            <Checkbox
+              checked={draft.visibility === "private"}
+              onCheckedChange={(checked) => {
+                setDraft((current) => ({
+                  ...current,
+                  visibility: checked === true ? "private" : "public",
+                }));
+                setPreview(null);
+              }}
+            />
+            Private operator note
+          </label>
+        ) : (
+          <span>
+            <ShieldCheck aria-hidden="true" /> Public customer-safe comment
+          </span>
+        )}
+        <Button type="submit" size="sm" disabled={pending !== null}>
+          {pending === "create" ? "Posting comment…" : "Post comment"}
+        </Button>
+      </div>
+    </form>
+  );
 }

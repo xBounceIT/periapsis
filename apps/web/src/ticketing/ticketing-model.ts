@@ -7,9 +7,9 @@ import type {
   TicketSort,
 } from "@periapsis/contracts";
 
-import type { TicketKind, TicketProjection } from "../lib/ticketing-api";
 import type { TenantAuthorizationScopeView } from "../lib/phase-two-types";
-import { formatTenantInstant } from "../lib/tenant-date-time-context";
+import { formatTenantInstant } from "../lib/tenant-date-time";
+import type { TicketKind, TicketProjection } from "../lib/ticketing-api";
 
 export const alertSeverities = [
   "informational",

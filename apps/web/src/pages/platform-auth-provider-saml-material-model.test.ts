@@ -64,6 +64,26 @@ describe("platform SAML protected-material form model", () => {
   it.each([
     {
       certificates: pem("CERTIFICATE", "BQYH"),
+      key: `${pem("PRIVATE KEY", "AQIDBA==")}\n${pem("PRIVATE KEY", "BQYH")}`,
+      label: "multiple private-key blocks",
+    },
+    {
+      certificates: pem("CERTIFICATE", "BQYH"),
+      key: pem("PRIVATE KEY", "AQID BA=="),
+      label: "spaces inside a private-key body",
+    },
+    {
+      certificates: pem("CERTIFICATE", "BQYH"),
+      key: pem("PRIVATE KEY", ""),
+      label: "an empty private-key body",
+    },
+    {
+      certificates: pem("CERTIFICATE", "BQYH"),
+      key: `unframed\n${pem("PRIVATE KEY", "AQIDBA==")}`,
+      label: "text outside the private-key envelope",
+    },
+    {
+      certificates: pem("CERTIFICATE", "BQYH"),
       key: pem("RSA PRIVATE KEY", "AQIDBA=="),
       label: "an algorithm-specific private-key label",
     },

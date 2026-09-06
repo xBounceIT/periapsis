@@ -11,6 +11,30 @@ candidate state and the requirement-to-test map are in
 [`docs/release-acceptance.md`](docs/release-acceptance.md), including the completed
 final-journal database gates and the remaining release boundaries.
 
+## React Doctor remediation (2026-09-06)
+
+- [x] Address the initial 901 diagnostics across the web application and shared UI:
+      split controllers, editors and inventories; extract pure models; consolidate
+      navigation and repeated markup; retain strict validation; publish request refs
+      only after a committed render; and group related state transitions.
+- [x] Preserve tenant/session authorization, cancellation, version and idempotency
+      boundaries. Add regressions for suspended tenant renders, stale pagination and
+      metadata responses, editor row identity, table callbacks and route failures.
+      Independent comparison confirms all 36 navigation entries and their permission
+      conditions, and keeps webhook editor identities outside API payloads.
+- [x] Keep React Doctor rules enabled globally. Document only specific analyzer
+      limitations next to owned request finalizers, server snapshots and lifecycle
+      effects. Reproduction and scope:
+      [`docs/frontend-quality.md`](docs/frontend-quality.md).
+- [x] Complete a full, uncached React Doctor 0.9.13 scan of both React projects and
+      rebuilt browser artifacts: web **100/100**, UI **100/100**, zero errors,
+      zero warnings, both scans complete and no skipped checks.
+- [x] Pass root `pnpm verify`: web 2,223, DB 656, notifier 180, UI 2, operations
+      187, contract checks, generated drift, builds, Go vet and uncached Go tests.
+      Mailpit acceptance and the actual Gitleaks binary control retain their
+      conditional skips; the 11 existing OpenAPI warnings and Vite chunk-size
+      warning remain. This frontend slice does not rerun container acceptance.
+
 ## Test-suite pruning (2026-09-06)
 
 - [x] Remove 22 low-value cases: nine CSS/source presentation checks, one redundant

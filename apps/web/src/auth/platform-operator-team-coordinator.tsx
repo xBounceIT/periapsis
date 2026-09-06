@@ -1,4 +1,8 @@
 import {
+  platformOperatorTeamMutationKey,
+  platformOperatorTeamResourceKey,
+} from "./platform-operator-team-keys";
+import {
   createContext,
   type PropsWithChildren,
   useCallback,
@@ -357,16 +361,4 @@ export function usePlatformOperatorTeamCoordinator(): PlatformOperatorTeamCoordi
     );
   }
   return value;
-}
-
-export function platformOperatorTeamMutationKey(
-  request: PlatformOperatorTeamMutationRequest,
-): string {
-  return request.kind === "create"
-    ? "operator-team:create"
-    : platformOperatorTeamResourceKey(request.teamId);
-}
-
-export function platformOperatorTeamResourceKey(teamId: string): string {
-  return `operator-team:${teamId}`;
 }

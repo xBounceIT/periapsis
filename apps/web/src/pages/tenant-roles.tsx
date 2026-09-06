@@ -1,8 +1,3 @@
-import {
-  createColumnHelper,
-  tableFeatures,
-  useTable,
-} from "@tanstack/react-table";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import { Checkbox } from "@periapsis/ui/components/ui/checkbox";
@@ -25,21 +20,40 @@ import {
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
+import {
+  createColumnHelper,
+  tableFeatures,
+  useTable,
+} from "@tanstack/react-table";
 import { Archive, ArrowDown, Eye, Plus, RefreshCw, Shield } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
 import {
   Controller,
   useForm,
   type Control,
   type UseFormSetValue,
 } from "react-hook-form";
+import { TenantRequiredPage } from "../components/tenant-required-page";
 import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  mergeTenantRoles,
+  sameRoleSummaryRepresentation,
+  tryMergeTenantRoles,
+  validRoleVersion,
+} from "./tenant-roles-model";
+import {
+  reduceWorkspaceState,
+  selectPairState,
+  selectPairValue,
+} from "./workspace-state";
+
 import { z } from "zod";
 
 import { useSession } from "../auth/session-context";
@@ -48,7 +62,6 @@ import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
 import { ServerDenied } from "../components/server-denied";
 import { idempotencyKeyForPayload } from "../lib/payload-idempotency";
-import { hasControlCharacters } from "../lib/text-validation";
 import {
   describePhaseTwoError,
   PhaseTwoApiError,
@@ -62,6 +75,13 @@ import {
   type TenantRoleView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { hasControlCharacters } from "../lib/text-validation";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
 
 type RoleListState =
   | { kind: "error"; message: string }
@@ -182,75 +202,147 @@ const roleFormSchema = z
   });
 
 type RoleFormValues = z.infer<typeof roleFormSchema>;
-
-const maximumRoleVersion = 2_147_483_647;
 const roleEntityTagPattern = /^"v([1-9][0-9]*)"$/;
 
 export function TenantRolesPage(): React.JSX.Element {
+  const model = useTenantRolesPageModel();
+  if (model.kind === "content") return model.content;
+  return <TenantRolesPageView model={model.data} />;
+}
+
+function useTenantRolesPageModel() {
   const { api, clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const tenantId = session.activeTenantId;
   const requestPair = JSON.stringify([session.id, tenantId ?? null]);
   const requestPairRef = useRef(requestPair);
-  requestPairRef.current = requestPair;
+  useLayoutEffect(() => {
+    requestPairRef.current = requestPair;
+  });
   const canRead = authority.hasPermission("role.read");
   const canManage = authority.hasPermission("role.manage");
   const authorityReady =
     Boolean(tenantId) && authority.status === "ready" && canRead;
   const authorityReadyRef = useRef(authorityReady);
-  authorityReadyRef.current = authorityReady;
-  const initialListState = deriveInitialRoleListState(
-    tenantId,
-    authority.status,
-    authority.message,
-    canRead,
+  useLayoutEffect(() => {
+    authorityReadyRef.current = authorityReady;
+  });
+  const initialListState = useMemo(
+    () =>
+      deriveInitialRoleListState(
+        tenantId,
+        authority.status,
+        authority.message,
+        canRead,
+      ),
+    [tenantId, authority.status, authority.message, canRead],
   );
-  const [listSnapshot, setListSnapshot] = useState<PairSnapshot<RoleListState>>(
-    () => ({ pairKey: requestPair, state: initialListState }),
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<TenantRolesPageState>,
+    undefined,
+    (): TenantRolesPageState => ({
+      listSnapshot: (() => ({
+        pairKey: requestPair,
+        state: initialListState,
+      }))(),
+      permissionSnapshot: (() => ({
+        pairKey: requestPair,
+        state: { kind: "loading" },
+      }))(),
+      createSelection: null,
+      loadAttempt: 0,
+      paginationSnapshot: (() => ({
+        pairKey: requestPair,
+        state: { loading: false },
+      }))(),
+      roleSelection: null,
+      detailSnapshot: (() => ({
+        pairKey: requestPair,
+        roleId: "",
+        state: { kind: "loading" },
+      }))(),
+    }),
   );
-  const listState =
-    authorityReady && listSnapshot.pairKey === requestPair
-      ? listSnapshot.state
-      : initialListState;
-  const [permissionSnapshot, setPermissionSnapshot] = useState<
-    PairSnapshot<PermissionState>
-  >(() => ({ pairKey: requestPair, state: { kind: "loading" } }));
-  const permissionState =
-    authorityReady && permissionSnapshot.pairKey === requestPair
-      ? permissionSnapshot.state
-      : { kind: "loading" as const };
-  const [createSelection, setCreateSelection] =
-    useState<CreateRoleSelection | null>(null);
+  const {
+    listSnapshot,
+    permissionSnapshot,
+    createSelection,
+    loadAttempt,
+    paginationSnapshot,
+    roleSelection,
+    detailSnapshot,
+  } = workspaceState;
+  const {
+    setListSnapshot,
+    setPermissionSnapshot,
+    setCreateSelection,
+    setLoadAttempt,
+    setPaginationSnapshot,
+    setRoleSelection,
+    setDetailSnapshot,
+  } = useMemo(
+    () => ({
+      setListSnapshot: (
+        value: React.SetStateAction<TenantRolesPageState["listSnapshot"]>,
+      ) => updateWorkspaceState({ listSnapshot: value }),
+      setPermissionSnapshot: (
+        value: React.SetStateAction<TenantRolesPageState["permissionSnapshot"]>,
+      ) => updateWorkspaceState({ permissionSnapshot: value }),
+      setCreateSelection: (
+        value: React.SetStateAction<TenantRolesPageState["createSelection"]>,
+      ) => updateWorkspaceState({ createSelection: value }),
+      setLoadAttempt: (
+        value: React.SetStateAction<TenantRolesPageState["loadAttempt"]>,
+      ) => updateWorkspaceState({ loadAttempt: value }),
+      setPaginationSnapshot: (
+        value: React.SetStateAction<TenantRolesPageState["paginationSnapshot"]>,
+      ) => updateWorkspaceState({ paginationSnapshot: value }),
+      setRoleSelection: (
+        value: React.SetStateAction<TenantRolesPageState["roleSelection"]>,
+      ) => updateWorkspaceState({ roleSelection: value }),
+      setDetailSnapshot: (
+        value: React.SetStateAction<TenantRolesPageState["detailSnapshot"]>,
+      ) => updateWorkspaceState({ detailSnapshot: value }),
+    }),
+    [updateWorkspaceState],
+  );
+  const listState = selectPairState(
+    listSnapshot,
+    requestPair,
+    initialListState,
+    authorityReady,
+  );
+
+  const permissionState = selectPairState(
+    permissionSnapshot,
+    requestPair,
+    { kind: "loading" },
+    authorityReady,
+  );
+
   const createGenerationRef = useRef(0);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const [paginationSnapshot, setPaginationSnapshot] = useState<
-    PairSnapshot<PaginationState>
-  >(() => ({ pairKey: requestPair, state: { loading: false } }));
-  const paginationState =
-    paginationSnapshot.pairKey === requestPair
-      ? paginationSnapshot.state
-      : { loading: false };
+
+  const paginationState = selectPairState(paginationSnapshot, requestPair, {
+    loading: false,
+  });
   const isLoadingMore = paginationState.loading;
   const paginationError = paginationState.error ?? null;
   const paginationGenerationRef = useRef(0);
   const paginationRequestRef = useRef<PaginationRequest | null>(null);
-  const [roleSelection, setRoleSelection] = useState<RoleSelection | null>(
-    null,
-  );
-  const [detailSnapshot, setDetailSnapshot] = useState<
-    PairSnapshot<DetailState> & { roleId: string }
-  >(() => ({ pairKey: requestPair, roleId: "", state: { kind: "loading" } }));
+
   const detailGenerationRef = useRef(0);
   const detailRequestRef = useRef<RoleDetailRequest | null>(null);
-  const activeCreateSelection =
-    authorityReady && createSelection?.pairKey === requestPair
-      ? createSelection
-      : null;
+  const activeCreateSelection = selectPairValue(
+    createSelection,
+    requestPair,
+    authorityReady,
+  );
   const createOpen = activeCreateSelection !== null;
-  const selectedRole =
-    authorityReady && roleSelection?.pairKey === requestPair
-      ? roleSelection
-      : null;
+  const selectedRole = selectPairValue(
+    roleSelection,
+    requestPair,
+    authorityReady,
+  );
   const selectedRoleId = selectedRole?.roleId ?? null;
   const detailState =
     selectedRoleId &&
@@ -268,25 +360,31 @@ export function TenantRolesPage(): React.JSX.Element {
     detailGenerationRef.current += 1;
     detailRequestRef.current?.controller.abort();
     detailRequestRef.current = null;
-    setRoleSelection(null);
-    setDetailSnapshot({
-      pairKey: requestPair,
-      roleId: "",
-      state: { kind: "loading" },
+    updateWorkspaceState({
+      roleSelection: null,
+      detailSnapshot: {
+        pairKey: requestPair,
+        roleId: "",
+        state: { kind: "loading" },
+      },
     });
     paginationGenerationRef.current += 1;
     paginationRequestRef.current?.controller.abort();
     paginationRequestRef.current = null;
-    setPaginationSnapshot({
-      pairKey: requestPair,
-      state: { loading: false },
+    updateWorkspaceState({
+      paginationSnapshot: {
+        pairKey: requestPair,
+        state: { loading: false },
+      },
+      permissionSnapshot: {
+        pairKey: requestPair,
+        state: { kind: "loading" },
+      },
+      listSnapshot: { pairKey: requestPair, state: initialListState },
     });
-    setPermissionSnapshot({
-      pairKey: requestPair,
-      state: { kind: "loading" },
-    });
-    setListSnapshot({ pairKey: requestPair, state: initialListState });
   }, [
+    setCreateSelection,
+    initialListState,
     authority.message,
     authority.status,
     authorityReady,
@@ -368,6 +466,9 @@ export function TenantRolesPage(): React.JSX.Element {
 
     return () => controller.abort();
   }, [
+    setPaginationSnapshot,
+    setListSnapshot,
+    initialListState,
     api,
     authority.message,
     authority.status,
@@ -432,6 +533,7 @@ export function TenantRolesPage(): React.JSX.Element {
 
     return () => controller.abort();
   }, [
+    setPermissionSnapshot,
     api,
     authorityReady,
     canManage,
@@ -457,7 +559,7 @@ export function TenantRolesPage(): React.JSX.Element {
       paginationRequestRef.current?.controller.abort();
       paginationRequestRef.current = null;
     };
-  }, [requestPair]);
+  }, [setCreateSelection, setRoleSelection, requestPair]);
 
   async function loadMore(): Promise<void> {
     if (
@@ -601,11 +703,13 @@ export function TenantRolesPage(): React.JSX.Element {
         pairKey: expectedPair,
         roleId,
       };
-      setRoleSelection({ generation, pairKey: expectedPair, roleId });
-      setDetailSnapshot({
-        pairKey: expectedPair,
-        roleId,
-        state: { kind: "loading" },
+      updateWorkspaceState({
+        roleSelection: { generation, pairKey: expectedPair, roleId },
+        detailSnapshot: {
+          pairKey: expectedPair,
+          roleId,
+          state: { kind: "loading" },
+        },
       });
       void api
         .getTenantRole(tenantId, roleId, controller.signal)
@@ -673,7 +777,7 @@ export function TenantRolesPage(): React.JSX.Element {
           });
         });
     },
-    [api, clearSession, requestPair, session.id, tenantId],
+    [setDetailSnapshot, api, clearSession, requestPair, session.id, tenantId],
   );
 
   const closeRole = useCallback((): void => {
@@ -681,7 +785,7 @@ export function TenantRolesPage(): React.JSX.Element {
     detailRequestRef.current?.controller.abort();
     detailRequestRef.current = null;
     setRoleSelection(null);
-  }, []);
+  }, [setRoleSelection]);
 
   function openCreateRole(): void {
     if (!authorityReadyRef.current) {
@@ -792,234 +896,68 @@ export function TenantRolesPage(): React.JSX.Element {
   });
 
   if (listState.kind === "forbidden") {
-    return <ServerDenied resource="the tenant role inventory" />;
+    return {
+      kind: "content" as const,
+      content: <ServerDenied resource="the tenant role inventory" />,
+    };
   }
 
   if (listState.kind === "inactive") {
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading">
-          <div>
-            <p className="section-label">Tenant authorization</p>
-            <h1>Select a tenant to inspect roles.</h1>
-            <p>
-              Role policy always requires an explicit active tenant context.
-            </p>
-          </div>
-        </section>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <TenantRequiredPage
+          label="Tenant authorization"
+          title="Select a tenant to inspect roles."
+        >
+          Role policy always requires an explicit active tenant context.
+        </TenantRequiredPage>
+      ),
+    };
   }
 
-  return (
-    <div className="content tenant-admin-page">
-      <section className="page-heading" aria-labelledby="roles-page-title">
-        <div>
-          <p className="section-label">Authority lattice / Phase 2B</p>
-          <h1 id="roles-page-title">Tenant roles</h1>
-          <p>
-            Inspect built-in recovery roles and manage custom policy as exact
-            permission-and-scope tuples. Delegation is always narrower than the
-            permission it accompanies.
-          </p>
-        </div>
-        {canManage && permissionState.kind === "ready" ? (
-          <Button type="button" onClick={openCreateRole}>
-            <Plus aria-hidden="true" /> Create custom role
-          </Button>
-        ) : (
-          <Badge variant="outline">
-            <Shield aria-hidden="true" /> Read-only inventory
-          </Badge>
-        )}
-      </section>
+  return {
+    kind: "ready" as const,
+    data: {
+      activeCreateSelection,
+      api,
+      authority,
+      authorityReadyRef,
+      canManage,
+      closeCreateRole,
+      closeRole,
+      createGenerationRef,
+      createOpen,
+      detailGenerationRef,
+      detailState,
+      isLoadingMore,
+      listState,
+      loadMore,
+      openCreateRole,
+      paginationError,
+      permissionState,
+      replaceSummary,
+      requestPair,
+      requestPairRef,
+      selectedRole,
+      selectedRoleId,
+      session,
+      setLoadAttempt,
+      table,
+      tenantId,
+    },
+  };
+}
 
-      {permissionState.kind === "error" && canManage ? (
-        <FocusedError
-          title="Policy editor unavailable"
-          message={permissionState.message}
-        />
-      ) : null}
-      {paginationError ? (
-        <FocusedError
-          title="More roles could not be loaded"
-          message={paginationError}
-        />
-      ) : null}
-      {listState.kind === "loading" ? <RoleListSkeleton /> : null}
-      {listState.kind === "error" ? (
-        <div className="tenant-admin-error">
-          <FocusedError message={listState.message} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-          >
-            <RefreshCw aria-hidden="true" /> Retry role inventory
-          </Button>
-        </div>
-      ) : null}
-      {listState.kind === "ready" && listState.items.length === 0 ? (
-        <div className="tenant-empty">
-          <Shield aria-hidden="true" />
-          <h2>No roles returned</h2>
-          <p>The server returned no role definitions for this tenant.</p>
-        </div>
-      ) : null}
-      {listState.kind === "ready" && listState.items.length > 0 ? (
-        <section
-          className="authority-inventory"
-          aria-labelledby="role-inventory-title"
-        >
-          <div className="section-heading">
-            <div>
-              <p className="section-label">Server inventory</p>
-              <h2 id="role-inventory-title">Role definitions</h2>
-            </div>
-          </div>
-          <Table className="authority-table">
-            <TableCaption className="sr-only">
-              Tenant role definitions and lifecycle state
-            </TableCaption>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder ? null : (
-                        <table.FlexRender header={header} />
-                      )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getAllCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      <table.FlexRender cell={cell} />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {listState.nextCursor ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isLoadingMore}
-              onClick={() => void loadMore()}
-            >
-              <ArrowDown aria-hidden="true" />
-              {isLoadingMore ? "Loading roles…" : "Load more roles"}
-            </Button>
-          ) : null}
-        </section>
-      ) : null}
-
-      {tenantId && permissionState.kind === "ready" ? (
-        <CreateRoleDialog
-          api={api}
-          csrfToken={session.csrfToken}
-          delegation={authority.authority?.delegationCeiling ?? []}
-          onAuthorityChanged={() => {
-            if (
-              requestPairRef.current === requestPair &&
-              authorityReadyRef.current &&
-              activeCreateSelection !== null &&
-              createGenerationRef.current === activeCreateSelection.generation
-            ) {
-              authority.reload();
-            }
-          }}
-          onCreated={(role) => {
-            if (
-              requestPairRef.current !== requestPair ||
-              !authorityReadyRef.current ||
-              activeCreateSelection === null ||
-              createGenerationRef.current !== activeCreateSelection.generation
-            ) {
-              return;
-            }
-            replaceSummary(role);
-            if (
-              activeCreateSelection !== null &&
-              createGenerationRef.current === activeCreateSelection.generation
-            ) {
-              closeCreateRole();
-            }
-          }}
-          onOpenChange={(open) => {
-            if (open) {
-              openCreateRole();
-            } else {
-              closeCreateRole();
-            }
-          }}
-          open={createOpen}
-          permissions={permissionState.items}
-          key={activeCreateSelection?.generation ?? "closed"}
-          tenantId={tenantId}
-        />
-      ) : null}
-
-      {tenantId && selectedRoleId && selectedRole ? (
-        <RoleDetailDialog
-          api={api}
-          canManage={canManage}
-          csrfToken={session.csrfToken}
-          delegation={authority.authority?.delegationCeiling ?? []}
-          detailState={detailState}
-          onChanged={(role) => {
-            if (requestPairRef.current !== requestPair) {
-              return;
-            }
-            if (!authorityReadyRef.current) {
-              return;
-            }
-            if (detailGenerationRef.current === selectedRole.generation) {
-              replaceSummary(role);
-            } else {
-              setLoadAttempt((attempt) => attempt + 1);
-            }
-          }}
-          onArchived={() => {
-            if (
-              requestPairRef.current !== requestPair ||
-              !authorityReadyRef.current
-            ) {
-              return;
-            }
-            if (detailGenerationRef.current === selectedRole.generation) {
-              closeRole();
-            }
-            setLoadAttempt((attempt) => attempt + 1);
-          }}
-          onAuthorityChanged={() => {
-            if (
-              requestPairRef.current === requestPair &&
-              authorityReadyRef.current
-            ) {
-              authority.reload();
-            }
-          }}
-          onOpenChange={(open) => {
-            if (!open) {
-              closeRole();
-            }
-          }}
-          permissions={
-            permissionState.kind === "ready" ? permissionState.items : []
-          }
-          key={`${requestPair}:${selectedRoleId}:${selectedRole.generation}`}
-          tenantId={tenantId}
-        />
-      ) : null}
-    </div>
-  );
+function TenantRolesPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantRolesPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <RoleWorkspace model={model} />;
 }
 
 function CreateRoleDialog({
@@ -1069,7 +1007,24 @@ function CreateRoleDialog({
   );
 }
 
-function RoleDetailDialog({
+function RoleDetailDialog(props: {
+  api: PhaseTwoApi;
+  canManage: boolean;
+  csrfToken: string;
+  delegation: readonly EffectiveTenantDelegationView[];
+  detailState: DetailState;
+  onAuthorityChanged: () => void;
+  onArchived: () => void;
+  onChanged: (role: TenantRoleView) => void;
+  onOpenChange: (open: boolean) => void;
+  permissions: readonly TenantPermissionView[];
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useRoleDetailDialogModel(props);
+  return <RoleDetailDialogView model={model.data} />;
+}
+
+function useRoleDetailDialogModel({
   api,
   canManage,
   csrfToken,
@@ -1093,18 +1048,55 @@ function RoleDetailDialog({
   onOpenChange: (open: boolean) => void;
   permissions: readonly TenantPermissionView[];
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
-  const [editing, setEditing] = useState(false);
-  const [working, setWorking] = useState<VersionedView<TenantRoleView> | null>(
-    detailState.kind === "ready" ? detailState.role : null,
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<RoleDetailDialogState>,
+    undefined,
+    (): RoleDetailDialogState => ({
+      editing: false,
+      working: detailState.kind === "ready" ? detailState.role : null,
+      archiveConfirmation: false,
+      archiveError: null,
+      isArchiving: false,
+    }),
   );
-  const [archiveConfirmation, setArchiveConfirmation] = useState(false);
-  const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [isArchiving, setIsArchiving] = useState(false);
+  const { editing, working, archiveConfirmation, archiveError, isArchiving } =
+    workspaceState;
+  const {
+    setEditing,
+    setWorking,
+    setArchiveConfirmation,
+    setArchiveError,
+    setIsArchiving,
+  } = useMemo(
+    () => ({
+      setEditing: (
+        value: React.SetStateAction<RoleDetailDialogState["editing"]>,
+      ) => updateWorkspaceState({ editing: value }),
+      setWorking: (
+        value: React.SetStateAction<RoleDetailDialogState["working"]>,
+      ) => updateWorkspaceState({ working: value }),
+      setArchiveConfirmation: (
+        value: React.SetStateAction<
+          RoleDetailDialogState["archiveConfirmation"]
+        >,
+      ) => updateWorkspaceState({ archiveConfirmation: value }),
+      setArchiveError: (
+        value: React.SetStateAction<RoleDetailDialogState["archiveError"]>,
+      ) => updateWorkspaceState({ archiveError: value }),
+      setIsArchiving: (
+        value: React.SetStateAction<RoleDetailDialogState["isArchiving"]>,
+      ) => updateWorkspaceState({ isArchiving: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const mountedRef = useRef(false);
   const workingRef = useRef(working);
-  workingRef.current = working;
+  useLayoutEffect(() => {
+    workingRef.current = working;
+  });
   const archiveGenerationRef = useRef(0);
   const refreshRequestRef = useRef<AbortController | null>(null);
 
@@ -1119,10 +1111,12 @@ function RoleDetailDialog({
   }, []);
 
   useEffect(() => {
-    setWorking(detailState.kind === "ready" ? detailState.role : null);
-    setEditing(false);
-    setArchiveConfirmation(false);
-    setArchiveError(null);
+    updateWorkspaceState({
+      working: detailState.kind === "ready" ? detailState.role : null,
+      editing: false,
+      archiveConfirmation: false,
+      archiveError: null,
+    });
   }, [detailState]);
 
   async function archiveRole(): Promise<void> {
@@ -1132,8 +1126,7 @@ function RoleDetailDialog({
     const rejected = working;
     const generation = archiveGenerationRef.current + 1;
     archiveGenerationRef.current = generation;
-    setArchiveError(null);
-    setIsArchiving(true);
+    updateWorkspaceState({ archiveError: null, isArchiving: true });
     try {
       await api.archiveTenantRole(
         csrfToken,
@@ -1219,6 +1212,59 @@ function RoleDetailDialog({
   }
 
   const role = working?.value;
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      archiveConfirmation,
+      archiveError,
+      archiveRole,
+      canManage,
+      csrfToken,
+      delegation,
+      detailState,
+      editing,
+      isArchiving,
+      onAuthorityChanged,
+      onChanged,
+      onOpenChange,
+      permissions,
+      role,
+      setArchiveConfirmation,
+      setEditing,
+      setWorking,
+      tenantId,
+      updateWorkspaceState,
+      working,
+    },
+  };
+}
+
+function RoleDetailDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useRoleDetailDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    api,
+    csrfToken,
+    delegation,
+    detailState,
+    editing,
+    onAuthorityChanged,
+    onChanged,
+    onOpenChange,
+    permissions,
+    role,
+    setEditing,
+    setWorking,
+    tenantId,
+    updateWorkspaceState,
+    working,
+  } = model;
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="role-dialog">
@@ -1249,106 +1295,36 @@ function RoleDetailDialog({
               onChanged(next.value);
             }}
             onSaved={(next) => {
-              setWorking(next);
-              setEditing(false);
+              updateWorkspaceState({ working: next, editing: false });
               onChanged(next.value);
             }}
             permissions={permissions}
             tenantId={tenantId}
           />
         ) : null}
-        {role && !editing ? (
-          <>
-            {archiveError ? (
-              <FocusedError title="Archive failed" message={archiveError} />
-            ) : null}
-            <dl className="role-detail-grid">
-              <div>
-                <dt>Key</dt>
-                <dd>{role.key}</dd>
-              </div>
-              <div>
-                <dt>Origin</dt>
-                <dd>{role.system ? "Protected built-in" : "Custom"}</dd>
-              </div>
-              <div>
-                <dt>Principal</dt>
-                <dd>
-                  {role.principalKind === "service_account"
-                    ? "Service account"
-                    : "Human"}
-                </dd>
-              </div>
-              <div>
-                <dt>State</dt>
-                <dd>{role.archived ? "Archived" : "Active"}</dd>
-              </div>
-              <div>
-                <dt>Version</dt>
-                <dd>v{role.version}</dd>
-              </div>
-            </dl>
-            {role.description ? <p>{role.description}</p> : null}
-            <RolePolicySummary policy={role.policy} />
-            {archiveConfirmation ? (
-              <div className="destructive-confirmation" role="alert">
-                <p>
-                  Archive this custom role? Existing protected recovery
-                  invariants may still cause the server to reject the action.
-                </p>
-                <div>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={isArchiving}
-                    onClick={() => void archiveRole()}
-                  >
-                    <Archive aria-hidden="true" />
-                    {isArchiving ? "Archiving…" : "Confirm archive"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={isArchiving}
-                    onClick={() => setArchiveConfirmation(false)}
-                  >
-                    Keep role
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            <DialogFooter>
-              {canManage &&
-              !role.system &&
-              role.principalKind === "human" &&
-              !role.archived &&
-              permissions.length > 0 ? (
-                <Button type="button" onClick={() => setEditing(true)}>
-                  Edit role
-                </Button>
-              ) : null}
-              {canManage &&
-              !role.system &&
-              role.principalKind === "human" &&
-              !role.archived &&
-              !archiveConfirmation ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setArchiveConfirmation(true)}
-                >
-                  <Archive aria-hidden="true" /> Archive
-                </Button>
-              ) : null}
-            </DialogFooter>
-          </>
-        ) : null}
+        <RoleReadonlyDetails model={model} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function RoleEditorForm({
+function RoleEditorForm(props: {
+  api: PhaseTwoApi;
+  csrfToken: string;
+  delegation: readonly EffectiveTenantDelegationView[];
+  initial?: VersionedView<TenantRoleView> | null;
+  onAuthorityChanged: () => void;
+  onCancel?: () => void;
+  onProgress?: (role: VersionedView<TenantRoleView>) => void;
+  onSaved: (role: VersionedView<TenantRoleView>) => void;
+  permissions: readonly TenantPermissionView[];
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useRoleEditorFormModel(props);
+  return <RoleEditorFormView model={model.data} />;
+}
+
+function useRoleEditorFormModel({
   api,
   csrfToken,
   delegation,
@@ -1370,15 +1346,41 @@ function RoleEditorForm({
   onSaved: (role: VersionedView<TenantRoleView>) => void;
   permissions: readonly TenantPermissionView[];
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const formId = useId();
-  const [base, setBase] = useState(initial ?? null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [partiallySaved, setPartiallySaved] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<RoleEditorFormState>,
+    undefined,
+    (): RoleEditorFormState => ({
+      base: initial ?? null,
+      formError: null,
+      partiallySaved: false,
+      isSaving: false,
+    }),
+  );
+  const { base, formError, partiallySaved, isSaving } = workspaceState;
+  const { setBase, setFormError, setPartiallySaved, setIsSaving } = useMemo(
+    () => ({
+      setBase: (value: React.SetStateAction<RoleEditorFormState["base"]>) =>
+        updateWorkspaceState({ base: value }),
+      setFormError: (
+        value: React.SetStateAction<RoleEditorFormState["formError"]>,
+      ) => updateWorkspaceState({ formError: value }),
+      setPartiallySaved: (
+        value: React.SetStateAction<RoleEditorFormState["partiallySaved"]>,
+      ) => updateWorkspaceState({ partiallySaved: value }),
+      setIsSaving: (
+        value: React.SetStateAction<RoleEditorFormState["isSaving"]>,
+      ) => updateWorkspaceState({ isSaving: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const baseRef = useRef(base);
-  baseRef.current = base;
+  useLayoutEffect(() => {
+    baseRef.current = base;
+  });
   const mountedRef = useRef(false);
   const operationGenerationRef = useRef(0);
   const refreshRequestRef = useRef<AbortController | null>(null);
@@ -1498,9 +1500,11 @@ function RoleEditorForm({
         return;
       }
     }
-    setFormError(null);
-    setPartiallySaved(false);
-    setIsSaving(true);
+    updateWorkspaceState({
+      formError: null,
+      partiallySaved: false,
+      isSaving: true,
+    });
     const generation = operationGenerationRef.current + 1;
     operationGenerationRef.current = generation;
     let metadataSaved = false;
@@ -1595,10 +1599,10 @@ function RoleEditorForm({
             return;
           }
           if (metadataSaved && policyChanged) {
-            setPartiallySaved(true);
-            setFormError(
-              `Role metadata was saved, but the policy met a newer server version. We reloaded role and policy version ${refreshed.value.version} in place; your edits are preserved for review and retry.`,
-            );
+            updateWorkspaceState({
+              partiallySaved: true,
+              formError: `Role metadata was saved, but the policy met a newer server version. We reloaded role and policy version ${refreshed.value.version} in place; your edits are preserved for review and retry.`,
+            });
           } else {
             setFormError(
               `This role changed on the server. We reloaded role and policy version ${refreshed.value.version} in place; your edits are preserved for review and retry.`,
@@ -1628,13 +1632,13 @@ function RoleEditorForm({
         return;
       }
       if (metadataSaved && policyChanged && current) {
-        setPartiallySaved(true);
-        setFormError(
-          `Role metadata was saved as version ${current.value.version}, but the policy was not updated. ${describePhaseTwoError(
+        updateWorkspaceState({
+          partiallySaved: true,
+          formError: `Role metadata was saved as version ${current.value.version}, but the policy was not updated. ${describePhaseTwoError(
             caught,
             "The policy request failed.",
           )} Your policy input is preserved and a retry will use the saved metadata version.`,
-        );
+        });
       } else {
         setFormError(
           describePhaseTwoError(
@@ -1645,109 +1649,42 @@ function RoleEditorForm({
       }
     } finally {
       if (operationIsCurrent(generation)) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setIsSaving(false);
       }
     }
   });
 
-  return (
-    <form className="role-editor" onSubmit={submit} noValidate>
-      {formError ? (
-        <FocusedError
-          title={partiallySaved ? "Role partially saved" : "Role not saved"}
-          message={formError}
-        />
-      ) : null}
-      <div className="role-editor__metadata">
-        <FormField
-          htmlFor={`${formId}-role-key`}
-          label="Role key"
-          hint={
-            base
-              ? "The stable role key cannot be changed."
-              : "Use lowercase letters, numbers, and underscores."
-          }
-        >
-          <Input
-            id={`${formId}-role-key`}
-            autoCapitalize="none"
-            autoCorrect="off"
-            disabled={isSaving}
-            readOnly={Boolean(base)}
-            aria-describedby={`${formId}-role-key-hint`}
-            {...register("key")}
-          />
-        </FormField>
-        <FormField htmlFor={`${formId}-role-name`} label="Role name">
-          <Input
-            id={`${formId}-role-name`}
-            maxLength={120}
-            disabled={isSaving}
-            {...register("name")}
-          />
-        </FormField>
-      </div>
-      <FormField
-        htmlFor={`${formId}-role-description`}
-        label="Description"
-        optional
-      >
-        <Textarea
-          id={`${formId}-role-description`}
-          maxLength={500}
-          disabled={isSaving}
-          {...register("description")}
-        />
-      </FormField>
+  return {
+    kind: "ready" as const,
+    data: {
+      base,
+      control,
+      delegation,
+      formError,
+      formId,
+      getValues,
+      isSaving,
+      matrix,
+      onCancel,
+      partiallySaved,
+      permissions,
+      register,
+      setValue,
+      submit,
+    },
+  };
+}
 
-      <fieldset className="authority-matrix" disabled={isSaving}>
-        <legend>Exact permission and scope policy</legend>
-        <p>
-          Grant is authority held by the role. Delegate may only be selected
-          beneath the same granted tuple and within your live ceiling.
-        </p>
-        <div className="authority-matrix__header" aria-hidden="true">
-          <span>Permission / scope</span>
-          <span>Grant</span>
-          <span>Delegate</span>
-        </div>
-        {matrix.map((tuple, index) => (
-          <PolicyTupleRow
-            control={control}
-            delegation={delegation}
-            description={
-              permissions.find(
-                (permission) => permission.key === tuple.permissionKey,
-              )?.description ?? ""
-            }
-            formId={formId}
-            index={index}
-            key={tupleKey(tuple.permissionKey, tuple.scope)}
-            setValue={setValue}
-            tuple={tuple}
-          />
-        ))}
-      </fieldset>
-      <DialogFooter>
-        {onCancel ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={isSaving}
-            onClick={onCancel}
-          >
-            Cancel
-          </Button>
-        ) : null}
-        <Button
-          type="submit"
-          disabled={isSaving || getValues("tuples").length === 0}
-        >
-          {isSaving ? "Saving role…" : base ? "Save role" : "Create role"}
-        </Button>
-      </DialogFooter>
-    </form>
-  );
+function RoleEditorFormView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useRoleEditorFormModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <RolePolicyEditor model={model} />;
 }
 
 function PolicyTupleRow({
@@ -1963,14 +1900,16 @@ function buildRoleMatrix(
 function policyFromMatrix(
   tuples: RoleFormValues["tuples"],
 ): TenantRolePolicyView {
-  return {
-    delegationCeiling: tuples
-      .filter((tuple) => tuple.granted && tuple.delegable)
-      .map(({ permissionKey, scope }) => ({ permissionKey, scope })),
-    permissions: tuples
-      .filter((tuple) => tuple.granted)
-      .map(({ permissionKey, scope }) => ({ permissionKey, scope })),
-  };
+  const permissions: TenantRolePolicyView["permissions"][number][] = [];
+  const delegationCeiling: TenantRolePolicyView["delegationCeiling"][number][] =
+    [];
+  for (const tuple of tuples) {
+    if (!tuple.granted) continue;
+    const value = { permissionKey: tuple.permissionKey, scope: tuple.scope };
+    permissions.push(value);
+    if (tuple.delegable) delegationCeiling.push(value);
+  }
+  return { delegationCeiling, permissions };
 }
 
 function samePolicy(
@@ -2021,71 +1960,6 @@ function tupleKey(permissionKey: string, scope: string): string {
 function toRoleSummary(role: TenantRoleView): TenantRoleSummaryView {
   const { policy: _policy, ...summary } = role;
   return summary;
-}
-
-export function mergeTenantRoles(
-  current: readonly TenantRoleSummaryView[],
-  incoming: readonly TenantRoleSummaryView[],
-): readonly TenantRoleSummaryView[] {
-  const merged = tryMergeTenantRoles(current, incoming);
-  if (!merged.ok) {
-    throw new Error(
-      "The role inventory returned conflicting representations at the same version.",
-    );
-  }
-  return merged.items;
-}
-
-function tryMergeTenantRoles(
-  current: readonly TenantRoleSummaryView[],
-  incoming: readonly TenantRoleSummaryView[],
-): { items: readonly TenantRoleSummaryView[]; ok: true } | { ok: false } {
-  const roles = new Map<string, TenantRoleSummaryView>();
-  for (const role of [...current, ...incoming]) {
-    if (!validRoleVersion(role.version)) {
-      return { ok: false };
-    }
-    const accepted = roles.get(role.id);
-    if (!accepted || role.version > accepted.version) {
-      roles.set(role.id, role);
-      continue;
-    }
-    if (role.version < accepted.version) {
-      continue;
-    }
-    if (!sameRoleSummaryRepresentation(accepted, role)) {
-      return { ok: false };
-    }
-  }
-  return { items: [...roles.values()], ok: true };
-}
-
-function sameRoleSummaryRepresentation(
-  left: TenantRoleSummaryView,
-  right: TenantRoleSummaryView,
-): boolean {
-  return (
-    left.id === right.id &&
-    left.tenantId === right.tenantId &&
-    left.key === right.key &&
-    left.name === right.name &&
-    left.description === right.description &&
-    left.system === right.system &&
-    left.principalKind === right.principalKind &&
-    left.archived === right.archived &&
-    left.archivedAt === right.archivedAt &&
-    left.version === right.version &&
-    left.createdAt === right.createdAt &&
-    left.updatedAt === right.updatedAt
-  );
-}
-
-function validRoleVersion(version: number): boolean {
-  return (
-    Number.isSafeInteger(version) &&
-    version > 0 &&
-    version <= maximumRoleVersion
-  );
 }
 
 function deriveInitialRoleListState(
@@ -2205,11 +2079,7 @@ function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
     ? "Unavailable"
-    : new Intl.DateTimeFormat(undefined, {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(date);
+    : dateTimeFormatter.format(date);
 }
 
 function formatPermissionKey(value: string): string {
@@ -2245,5 +2115,564 @@ function isCurrentPaginationRequest(
     request.cursor === cursor &&
     request.generation === generation &&
     !request.controller.signal.aborted
+  );
+}
+
+function RoleWorkspace({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantRolesPageView>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    isLoadingMore,
+    listState,
+    loadMore,
+    openCreateRole,
+    paginationError,
+    permissionState,
+    setLoadAttempt,
+    table,
+  } = model;
+  return (
+    <div className="content tenant-admin-page">
+      <section className="page-heading" aria-labelledby="roles-page-title">
+        <div>
+          <p className="section-label">Authority lattice / Phase 2B</p>
+          <h1 id="roles-page-title">Tenant roles</h1>
+          <p>
+            Inspect built-in recovery roles and manage custom policy as exact
+            permission-and-scope tuples. Delegation is always narrower than the
+            permission it accompanies.
+          </p>
+        </div>
+        {canManage && permissionState.kind === "ready" ? (
+          <Button type="button" onClick={openCreateRole}>
+            <Plus aria-hidden="true" /> Create custom role
+          </Button>
+        ) : (
+          <Badge variant="outline">
+            <Shield aria-hidden="true" /> Read-only inventory
+          </Badge>
+        )}
+      </section>
+
+      {permissionState.kind === "error" && canManage ? (
+        <FocusedError
+          title="Policy editor unavailable"
+          message={permissionState.message}
+        />
+      ) : null}
+      {paginationError ? (
+        <FocusedError
+          title="More roles could not be loaded"
+          message={paginationError}
+        />
+      ) : null}
+      {listState.kind === "loading" ? <RoleListSkeleton /> : null}
+      {listState.kind === "error" ? (
+        <div className="tenant-admin-error">
+          <FocusedError message={listState.message} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            <RefreshCw aria-hidden="true" /> Retry role inventory
+          </Button>
+        </div>
+      ) : null}
+      {listState.kind === "ready" && listState.items.length === 0 ? (
+        <div className="tenant-empty">
+          <Shield aria-hidden="true" />
+          <h2>No roles returned</h2>
+          <p>The server returned no role definitions for this tenant.</p>
+        </div>
+      ) : null}
+      {listState.kind === "ready" && listState.items.length > 0 ? (
+        <RoleInventory
+          isLoadingMore={isLoadingMore}
+          listState={listState}
+          loadMore={loadMore}
+          table={table}
+        />
+      ) : null}
+
+      <RoleCreateAction model={model} />
+
+      <RoleDetailAction model={model} />
+    </div>
+  );
+}
+
+function RolePolicyEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleEditorFormView>["model"];
+}): React.ReactNode {
+  const {
+    base,
+    control,
+    delegation,
+    formError,
+    formId,
+    getValues,
+    isSaving,
+    matrix,
+    onCancel,
+    partiallySaved,
+    permissions,
+    register,
+    setValue,
+    submit,
+  } = model;
+  return (
+    <form className="role-editor" onSubmit={submit} noValidate>
+      {formError ? (
+        <FocusedError
+          title={partiallySaved ? "Role partially saved" : "Role not saved"}
+          message={formError}
+        />
+      ) : null}
+      <div className="role-editor__metadata">
+        <FormField
+          htmlFor={`${formId}-role-key`}
+          label="Role key"
+          hint={
+            base
+              ? "The stable role key cannot be changed."
+              : "Use lowercase letters, numbers, and underscores."
+          }
+        >
+          <Input
+            id={`${formId}-role-key`}
+            autoCapitalize="none"
+            autoCorrect="off"
+            disabled={isSaving}
+            readOnly={Boolean(base)}
+            aria-describedby={`${formId}-role-key-hint`}
+            {...register("key")}
+          />
+        </FormField>
+        <FormField htmlFor={`${formId}-role-name`} label="Role name">
+          <Input
+            id={`${formId}-role-name`}
+            maxLength={120}
+            disabled={isSaving}
+            {...register("name")}
+          />
+        </FormField>
+      </div>
+      <FormField
+        htmlFor={`${formId}-role-description`}
+        label="Description"
+        optional
+      >
+        <Textarea
+          id={`${formId}-role-description`}
+          maxLength={500}
+          disabled={isSaving}
+          {...register("description")}
+        />
+      </FormField>
+
+      <fieldset className="authority-matrix" disabled={isSaving}>
+        <legend>Exact permission and scope policy</legend>
+        <p>
+          Grant is authority held by the role. Delegate may only be selected
+          beneath the same granted tuple and within your live ceiling.
+        </p>
+        <div className="authority-matrix__header" aria-hidden="true">
+          <span>Permission / scope</span>
+          <span>Grant</span>
+          <span>Delegate</span>
+        </div>
+        {matrix.map((tuple, index) => (
+          <PolicyTupleRow
+            control={control}
+            delegation={delegation}
+            description={
+              permissions.find(
+                (permission) => permission.key === tuple.permissionKey,
+              )?.description ?? ""
+            }
+            formId={formId}
+            index={index}
+            key={tupleKey(tuple.permissionKey, tuple.scope)}
+            setValue={setValue}
+            tuple={tuple}
+          />
+        ))}
+      </fieldset>
+      <DialogFooter>
+        {onCancel ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isSaving}
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+        ) : null}
+        <Button
+          type="submit"
+          disabled={isSaving || getValues("tuples").length === 0}
+        >
+          {isSaving ? "Saving role…" : base ? "Save role" : "Create role"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+interface TenantRolesPageState {
+  listSnapshot: PairSnapshot<RoleListState>;
+  permissionSnapshot: PairSnapshot<PermissionState>;
+  createSelection: CreateRoleSelection | null;
+  loadAttempt: number;
+  paginationSnapshot: PairSnapshot<PaginationState>;
+  roleSelection: RoleSelection | null;
+  detailSnapshot: PairSnapshot<DetailState> & { roleId: string };
+}
+
+interface RoleEditorFormState {
+  base: VersionedView<TenantRoleView> | null;
+  formError: string | null;
+  partiallySaved: boolean;
+  isSaving: boolean;
+}
+
+interface RoleDetailDialogState {
+  editing: boolean;
+  working: VersionedView<TenantRoleView> | null;
+  archiveConfirmation: boolean;
+  archiveError: string | null;
+  isArchiving: boolean;
+}
+
+interface RoleInventoryProps {
+  isLoadingMore: boolean;
+  listState: Extract<RoleListState, { kind: "ready" }>;
+  loadMore: () => Promise<void>;
+  table: React.ComponentProps<typeof TenantRolesPageView>["model"]["table"];
+}
+
+function RoleInventory({
+  isLoadingMore,
+  listState,
+  loadMore,
+  table,
+}: RoleInventoryProps): React.JSX.Element {
+  return (
+    <section
+      className="authority-inventory"
+      aria-labelledby="role-inventory-title"
+    >
+      <div className="section-heading">
+        <div>
+          <p className="section-label">Server inventory</p>
+          <h2 id="role-inventory-title">Role definitions</h2>
+        </div>
+      </div>
+      <Table className="authority-table">
+        <TableCaption className="sr-only">
+          Tenant role definitions and lifecycle state
+        </TableCaption>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id}>
+                  {header.isPlaceholder ? null : (
+                    <table.FlexRender header={header} />
+                  )}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getAllCells().map((cell) => (
+                <TableCell key={cell.id}>
+                  <table.FlexRender cell={cell} />
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {listState.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isLoadingMore}
+          onClick={() => void loadMore()}
+        >
+          <ArrowDown aria-hidden="true" />
+          {isLoadingMore ? "Loading roles…" : "Load more roles"}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+function RoleReadonlyDetails({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    archiveConfirmation,
+    archiveError,
+    archiveRole,
+    canManage,
+    editing,
+    isArchiving,
+    permissions,
+    role,
+    setArchiveConfirmation,
+    setEditing,
+  } = model;
+  if (!role || editing) return null;
+  const canChangeRole =
+    canManage &&
+    !role.system &&
+    role.principalKind === "human" &&
+    !role.archived;
+  return (
+    <>
+      {archiveError ? (
+        <FocusedError title="Archive failed" message={archiveError} />
+      ) : null}
+      <RoleMetadata role={role} />
+      {role.description ? <p>{role.description}</p> : null}
+      <RolePolicySummary policy={role.policy} />
+      {archiveConfirmation ? (
+        <div className="destructive-confirmation" role="alert">
+          <p>
+            Archive this custom role? Existing protected recovery invariants may
+            still cause the server to reject the action.
+          </p>
+          <div>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isArchiving}
+              onClick={() => void archiveRole()}
+            >
+              <Archive aria-hidden="true" />
+              {isArchiving ? "Archiving…" : "Confirm archive"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isArchiving}
+              onClick={() => setArchiveConfirmation(false)}
+            >
+              Keep role
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <DialogFooter>
+        {canChangeRole && permissions.length > 0 ? (
+          <Button type="button" onClick={() => setEditing(true)}>
+            Edit role
+          </Button>
+        ) : null}
+        {canChangeRole && !archiveConfirmation ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setArchiveConfirmation(true)}
+          >
+            <Archive aria-hidden="true" /> Archive
+          </Button>
+        ) : null}
+      </DialogFooter>
+    </>
+  );
+}
+
+function RoleCreateAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    activeCreateSelection,
+    api,
+    authority,
+    authorityReadyRef,
+    closeCreateRole,
+    createGenerationRef,
+    createOpen,
+    openCreateRole,
+    permissionState,
+    replaceSummary,
+    requestPair,
+    requestPairRef,
+    session,
+    tenantId,
+  } = model;
+  return tenantId && permissionState.kind === "ready" ? (
+    <CreateRoleDialog
+      api={api}
+      csrfToken={session.csrfToken}
+      delegation={authority.authority?.delegationCeiling ?? []}
+      onAuthorityChanged={() => {
+        if (
+          requestPairRef.current === requestPair &&
+          authorityReadyRef.current &&
+          activeCreateSelection !== null &&
+          createGenerationRef.current === activeCreateSelection.generation
+        ) {
+          authority.reload();
+        }
+      }}
+      onCreated={(role) => {
+        if (
+          requestPairRef.current !== requestPair ||
+          !authorityReadyRef.current ||
+          activeCreateSelection === null ||
+          createGenerationRef.current !== activeCreateSelection.generation
+        ) {
+          return;
+        }
+        replaceSummary(role);
+        if (
+          activeCreateSelection !== null &&
+          createGenerationRef.current === activeCreateSelection.generation
+        ) {
+          closeCreateRole();
+        }
+      }}
+      onOpenChange={(open) => {
+        if (open) {
+          openCreateRole();
+        } else {
+          closeCreateRole();
+        }
+      }}
+      open={createOpen}
+      permissions={permissionState.items}
+      key={activeCreateSelection?.generation ?? "closed"}
+      tenantId={tenantId}
+    />
+  ) : null;
+}
+
+function RoleDetailAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    authority,
+    authorityReadyRef,
+    canManage,
+    closeRole,
+    detailGenerationRef,
+    detailState,
+    permissionState,
+    replaceSummary,
+    requestPair,
+    requestPairRef,
+    selectedRole,
+    selectedRoleId,
+    session,
+    setLoadAttempt,
+    tenantId,
+  } = model;
+  return tenantId && selectedRoleId && selectedRole ? (
+    <RoleDetailDialog
+      api={api}
+      canManage={canManage}
+      csrfToken={session.csrfToken}
+      delegation={authority.authority?.delegationCeiling ?? []}
+      detailState={detailState}
+      onChanged={(role) => {
+        if (requestPairRef.current !== requestPair) {
+          return;
+        }
+        if (!authorityReadyRef.current) {
+          return;
+        }
+        if (detailGenerationRef.current === selectedRole.generation) {
+          replaceSummary(role);
+        } else {
+          setLoadAttempt((attempt) => attempt + 1);
+        }
+      }}
+      onArchived={() => {
+        if (
+          requestPairRef.current !== requestPair ||
+          !authorityReadyRef.current
+        ) {
+          return;
+        }
+        if (detailGenerationRef.current === selectedRole.generation) {
+          closeRole();
+        }
+        setLoadAttempt((attempt) => attempt + 1);
+      }}
+      onAuthorityChanged={() => {
+        if (
+          requestPairRef.current === requestPair &&
+          authorityReadyRef.current
+        ) {
+          authority.reload();
+        }
+      }}
+      onOpenChange={(open) => {
+        if (!open) {
+          closeRole();
+        }
+      }}
+      permissions={
+        permissionState.kind === "ready" ? permissionState.items : []
+      }
+      key={`${requestPair}:${selectedRoleId}:${selectedRole.generation}`}
+      tenantId={tenantId}
+    />
+  ) : null;
+}
+
+interface RoleMetadataProps {
+  role: TenantRoleView;
+}
+
+function RoleMetadata({ role }: RoleMetadataProps): React.JSX.Element {
+  return (
+    <dl className="role-detail-grid">
+      <div>
+        <dt>Key</dt>
+        <dd>{role.key}</dd>
+      </div>
+      <div>
+        <dt>Origin</dt>
+        <dd>{role.system ? "Protected built-in" : "Custom"}</dd>
+      </div>
+      <div>
+        <dt>Principal</dt>
+        <dd>
+          {role.principalKind === "service_account"
+            ? "Service account"
+            : "Human"}
+        </dd>
+      </div>
+      <div>
+        <dt>State</dt>
+        <dd>{role.archived ? "Archived" : "Active"}</dd>
+      </div>
+      <div>
+        <dt>Version</dt>
+        <dd>v{role.version}</dd>
+      </div>
+    </dl>
   );
 }

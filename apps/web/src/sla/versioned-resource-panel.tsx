@@ -6,8 +6,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Archive, PencilLine, Plus } from "lucide-react";
@@ -18,6 +16,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
 
 import { FormField } from "../components/form-field";
 import {
@@ -102,6 +101,14 @@ interface VersionedResourcePanelProps<
 export function VersionedResourcePanel<
   Resource extends SlaCatalogResource,
   Draft,
+>(props: VersionedResourcePanelProps<Resource, Draft>): React.JSX.Element {
+  const model = useVersionedResourcePanelModel<Resource, Draft>(props);
+  return <VersionedResourcePanelView<Resource, Draft> model={model.data} />;
+}
+
+function useVersionedResourcePanelModel<
+  Resource extends SlaCatalogResource,
+  Draft,
 >({
   archive,
   canManage,
@@ -118,7 +125,7 @@ export function VersionedResourcePanel<
   renderSummary,
   tenantId,
   version,
-}: VersionedResourcePanelProps<Resource, Draft>): React.JSX.Element {
+}: VersionedResourcePanelProps<Resource, Draft>) {
   const load = useCallback(
     async (after: string | undefined, signal: AbortSignal) => {
       const page = await list({
@@ -283,221 +290,53 @@ export function VersionedResourcePanel<
   }
 
   const existing = editing !== null && editing !== "new" ? editing : null;
+  return {
+    kind: "ready" as const,
+    data: {
+      draft,
+      setDraft,
+      archiveAcknowledged,
+      archiveCurrent,
+      archiveReason,
+      beginCreate,
+      beginEdit,
+      busy,
+      canManage,
+      editing,
+      editor,
+      emptyDetail,
+      error,
+      existing,
+      eyebrow,
+      inventory,
+      kindLabel,
+      notice,
+      renderSummary,
+      save,
+      setArchiveAcknowledged,
+      setArchiveReason,
+    },
+  };
+}
+
+type ResourcePanelModel<Resource extends SlaCatalogResource, Draft> = Extract<
+  ReturnType<typeof useVersionedResourcePanelModel<Resource, Draft>>,
+  { kind: "ready" }
+>["data"];
+
+function VersionedResourcePanelView<
+  Resource extends SlaCatalogResource,
+  Draft,
+>({
+  model,
+}: {
+  model: ResourcePanelModel<Resource, Draft>;
+}): React.JSX.Element {
   return (
     <div className="sla-panel-grid">
-      <section
-        className="sla-inventory"
-        aria-busy={inventory.kind === "loading"}
-      >
-        <SlaInventoryHeading
-          busy={inventory.kind === "loading"}
-          count={inventory.items.length}
-          eyebrow={eyebrow}
-          label={`${titleCase(kindLabel)} catalog`}
-          onRefresh={inventory.refresh}
-        />
-        {error && !editing ? (
-          <SlaError
-            error={error}
-            fallback={`The ${kindLabel} operation could not be completed.`}
-          />
-        ) : null}
-        {inventory.kind === "loading" ? (
-          <SlaLoading label={`Loading ${kindLabel} catalog`} />
-        ) : null}
-        {inventory.error ? (
-          <SlaError
-            error={inventory.error}
-            fallback={`${titleCase(kindLabel)} catalog could not be loaded.`}
-          />
-        ) : null}
-        {inventory.kind === "ready" && inventory.items.length === 0 ? (
-          <SlaEmpty
-            title={`No ${kindLabel} versions`}
-            detail={emptyDetail}
-            action={
-              canManage ? (
-                <Button type="button" onClick={beginCreate}>
-                  <Plus aria-hidden="true" /> Create {kindLabel}
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : null}
-        {inventory.items.length > 0 ? (
-          <div className="sla-table-wrap">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Definition</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inventory.items.map((resource) => (
-                  <TableRow key={resource.id}>
-                    <TableCell>
-                      <strong>{catalogName(resource)}</strong>
-                      <code>{resource.key}</code>
-                      {renderSummary(resource)}
-                    </TableCell>
-                    <TableCell>
-                      <strong>v{resource.version}</strong>
-                      <small>revision {resource.resourceVersion}</small>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={resource.archivedAt ? "outline" : "secondary"}
-                      >
-                        {resource.archivedAt ? "Archived" : "Published"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => void beginEdit(resource.id)}
-                      >
-                        <PencilLine aria-hidden="true" /> Open
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : null}
-        {inventory.nextCursor ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={inventory.loadingMore}
-            onClick={() => void inventory.loadMore()}
-          >
-            Load more
-          </Button>
-        ) : null}
-        {canManage && inventory.items.length > 0 ? (
-          <Button type="button" variant="outline" onClick={beginCreate}>
-            <Plus aria-hidden="true" /> New {kindLabel}
-          </Button>
-        ) : null}
-      </section>
+      <VersionedCatalogInventory model={model} />
 
-      <aside
-        className="sla-editor"
-        aria-label={`${titleCase(kindLabel)} version editor`}
-      >
-        {!editing ? (
-          <SlaEmpty
-            title={`Select a ${kindLabel}`}
-            detail="Open a published definition to append an immutable version, or create a new lineage."
-          />
-        ) : (
-          <form onSubmit={(event) => void save(event)}>
-            <header>
-              <div>
-                <p className="section-label">
-                  {editing === "new"
-                    ? "New lineage"
-                    : `Pinned version ${editing.value.version}`}
-                </p>
-                <h2>
-                  {editing === "new"
-                    ? `Create ${kindLabel}`
-                    : `Version ${catalogName(editing.value)}`}
-                </h2>
-              </div>
-              {existing ? (
-                <Badge variant="outline">ETag {existing.etag}</Badge>
-              ) : null}
-            </header>
-            {error ? (
-              <SlaError
-                error={error}
-                fallback={`The ${kindLabel} operation could not be completed.`}
-              />
-            ) : null}
-            {notice ? (
-              <p className="sla-notice" role="status">
-                {notice}
-              </p>
-            ) : null}
-            {editor({
-              draft,
-              disabled:
-                busy || !canManage || Boolean(existing?.value.archivedAt),
-              setDraft,
-            })}
-            {canManage && !existing?.value.archivedAt ? (
-              <div className="sla-editor__actions">
-                <Button type="submit" disabled={busy}>
-                  {editing === "new"
-                    ? `Create ${kindLabel}`
-                    : "Publish new version"}
-                </Button>
-              </div>
-            ) : null}
-            {existing && !existing.value.archivedAt && canManage ? (
-              <section
-                className="sla-archive-zone"
-                aria-label={`Archive ${kindLabel}`}
-              >
-                <div>
-                  <Archive aria-hidden="true" />
-                  <strong>Archive lineage</strong>
-                </div>
-                <p>
-                  Archived definitions cannot match new objects. Existing
-                  instances remain pinned.
-                </p>
-                <FormField
-                  htmlFor={`sla-${kindLabel}-archive-reason`}
-                  label="Audited reason"
-                >
-                  <Input
-                    id={`sla-${kindLabel}-archive-reason`}
-                    minLength={8}
-                    maxLength={1000}
-                    value={archiveReason}
-                    onChange={(event) => setArchiveReason(event.target.value)}
-                  />
-                </FormField>
-                <label className="sla-archive-zone__acknowledgement">
-                  <Checkbox
-                    checked={archiveAcknowledged}
-                    onCheckedChange={(checked) =>
-                      setArchiveAcknowledged(checked === true)
-                    }
-                  />
-                  <span>
-                    I understand this removes the definition from future
-                    matching.
-                  </span>
-                </label>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={
-                    busy ||
-                    !archiveAcknowledged ||
-                    archiveReason.trim().length < 8
-                  }
-                  onClick={() => void archiveCurrent()}
-                >
-                  Archive {kindLabel}
-                </Button>
-              </section>
-            ) : null}
-          </form>
-        )}
-      </aside>
+      <VersionedCatalogEditor model={model} />
     </div>
   );
 }
@@ -628,4 +467,275 @@ function validateStrongEtag(value: string): void {
   ) {
     throw new TypeError("The SLA catalog returned a malformed strong ETag.");
   }
+}
+
+function VersionedCatalogInventory<Resource extends SlaCatalogResource, Draft>({
+  model,
+}: {
+  model: ResourcePanelModel<Resource, Draft>;
+}): React.JSX.Element {
+  const {
+    inventory,
+    eyebrow,
+    kindLabel,
+    error,
+    editing,
+    emptyDetail,
+    canManage,
+    beginCreate,
+    renderSummary,
+    busy,
+    beginEdit,
+  } = model;
+  return (
+    <section className="sla-inventory" aria-busy={inventory.kind === "loading"}>
+      <SlaInventoryHeading
+        busy={inventory.kind === "loading"}
+        count={inventory.items.length}
+        eyebrow={eyebrow}
+        label={`${titleCase(kindLabel)} catalog`}
+        onRefresh={inventory.refresh}
+      />
+      {error && !editing ? (
+        <SlaError
+          error={error}
+          fallback={`The ${kindLabel} operation could not be completed.`}
+        />
+      ) : null}
+      {inventory.kind === "loading" ? (
+        <SlaLoading label={`Loading ${kindLabel} catalog`} />
+      ) : null}
+      {inventory.error ? (
+        <SlaError
+          error={inventory.error}
+          fallback={`${titleCase(kindLabel)} catalog could not be loaded.`}
+        />
+      ) : null}
+      {inventory.kind === "ready" && inventory.items.length === 0 ? (
+        <SlaEmpty
+          title={`No ${kindLabel} versions`}
+          detail={emptyDetail}
+          action={
+            canManage ? (
+              <Button type="button" onClick={beginCreate}>
+                <Plus aria-hidden="true" /> Create {kindLabel}
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : null}
+      {inventory.items.length > 0 ? (
+        <div className="sla-table-wrap">
+          <Table>
+            <TableColumnHeaders
+              columns={["Definition", "Version", "State"]}
+              actionLabel="Actions"
+            />
+            <TableBody>
+              {inventory.items.map((resource) => (
+                <TableRow key={resource.id}>
+                  <TableCell>
+                    <strong>{catalogName(resource)}</strong>
+                    <code>{resource.key}</code>
+                    {renderSummary(resource)}
+                  </TableCell>
+                  <TableCell>
+                    <strong>v{resource.version}</strong>
+                    <small>revision {resource.resourceVersion}</small>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={resource.archivedAt ? "outline" : "secondary"}
+                    >
+                      {resource.archivedAt ? "Archived" : "Published"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => void beginEdit(resource.id)}
+                    >
+                      <PencilLine aria-hidden="true" /> Open
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+      {inventory.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={inventory.loadingMore}
+          onClick={() => void inventory.loadMore()}
+        >
+          Load more
+        </Button>
+      ) : null}
+      {canManage && inventory.items.length > 0 ? (
+        <Button type="button" variant="outline" onClick={beginCreate}>
+          <Plus aria-hidden="true" /> New {kindLabel}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+function VersionedCatalogEditor<Resource extends SlaCatalogResource, Draft>({
+  model,
+}: {
+  model: ResourcePanelModel<Resource, Draft>;
+}): React.JSX.Element {
+  const {
+    kindLabel,
+    editing,
+    save,
+    existing,
+    error,
+    notice,
+    editor,
+    draft,
+    busy,
+    canManage,
+    setDraft,
+  } = model;
+  return (
+    <aside
+      className="sla-editor"
+      aria-label={`${titleCase(kindLabel)} version editor`}
+    >
+      {!editing ? (
+        <SlaEmpty
+          title={`Select a ${kindLabel}`}
+          detail="Open a published definition to append an immutable version, or create a new lineage."
+        />
+      ) : (
+        <form onSubmit={(event) => void save(event)}>
+          <VersionedEditorHeading kindLabel={kindLabel} editing={editing} />
+          {error ? (
+            <SlaError
+              error={error}
+              fallback={`The ${kindLabel} operation could not be completed.`}
+            />
+          ) : null}
+          {notice ? (
+            <p className="sla-notice" role="status">
+              {notice}
+            </p>
+          ) : null}
+          {editor({
+            draft,
+            disabled: busy || !canManage || Boolean(existing?.value.archivedAt),
+            setDraft,
+          })}
+          {canManage && !existing?.value.archivedAt ? (
+            <div className="sla-editor__actions">
+              <Button type="submit" disabled={busy}>
+                {editing === "new"
+                  ? `Create ${kindLabel}`
+                  : "Publish new version"}
+              </Button>
+            </div>
+          ) : null}
+          {existing && !existing.value.archivedAt && canManage ? (
+            <VersionedCatalogArchive model={model} />
+          ) : null}
+        </form>
+      )}
+    </aside>
+  );
+}
+
+function VersionedCatalogArchive<Resource extends SlaCatalogResource, Draft>({
+  model,
+}: {
+  model: ResourcePanelModel<Resource, Draft>;
+}): React.JSX.Element {
+  const {
+    kindLabel,
+    archiveReason,
+    setArchiveReason,
+    archiveAcknowledged,
+    setArchiveAcknowledged,
+    busy,
+    archiveCurrent,
+  } = model;
+  return (
+    <section className="sla-archive-zone" aria-label={`Archive ${kindLabel}`}>
+      <div>
+        <Archive aria-hidden="true" />
+        <strong>Archive lineage</strong>
+      </div>
+      <p>
+        Archived definitions cannot match new objects. Existing instances remain
+        pinned.
+      </p>
+      <FormField
+        htmlFor={`sla-${kindLabel}-archive-reason`}
+        label="Audited reason"
+      >
+        <Input
+          id={`sla-${kindLabel}-archive-reason`}
+          minLength={8}
+          maxLength={1000}
+          value={archiveReason}
+          onChange={(event) => setArchiveReason(event.target.value)}
+        />
+      </FormField>
+      <label className="sla-archive-zone__acknowledgement">
+        <Checkbox
+          checked={archiveAcknowledged}
+          onCheckedChange={(checked) =>
+            setArchiveAcknowledged(checked === true)
+          }
+        />
+        <span>
+          I understand this removes the definition from future matching.
+        </span>
+      </label>
+      <Button
+        type="button"
+        variant="destructive"
+        disabled={
+          busy || !archiveAcknowledged || archiveReason.trim().length < 8
+        }
+        onClick={() => void archiveCurrent()}
+      >
+        Archive {kindLabel}
+      </Button>
+    </section>
+  );
+}
+
+function VersionedEditorHeading({
+  kindLabel,
+  editing,
+}: {
+  kindLabel: string;
+  editing: VersionedSlaResource<SlaCatalogResource> | "new";
+}): React.JSX.Element {
+  return (
+    <header>
+      <div>
+        <p className="section-label">
+          {editing === "new"
+            ? "New lineage"
+            : `Pinned version ${editing.value.version}`}
+        </p>
+        <h2>
+          {editing === "new"
+            ? `Create ${kindLabel}`
+            : `Version ${catalogName(editing.value)}`}
+        </h2>
+      </div>
+      {editing !== "new" ? (
+        <Badge variant="outline">ETag {editing.etag}</Badge>
+      ) : null}
+    </header>
+  );
 }

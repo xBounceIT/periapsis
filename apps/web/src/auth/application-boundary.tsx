@@ -7,7 +7,14 @@ import {
   CardTitle,
 } from "@periapsis/ui/components/ui/card";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { AccessLayout } from "../components/access-layout";
@@ -244,29 +251,55 @@ export function ApplicationBoundary({
   }
 
   return (
-    <SessionContext.Provider
-      value={{
-        api,
-        clearSession: (expectedSessionId) =>
-          setState((current) =>
-            current.kind === "authenticated" &&
-            current.session.id === expectedSessionId
-              ? { kind: "login" }
-              : current,
-          ),
-        membershipRevision,
-        refreshMemberships: () =>
-          setMembershipRevision((revision) => revision + 1),
-        session: state.session,
-        updateSession: (expectedSessionId, session) =>
-          setState((current) =>
-            current.kind === "authenticated" &&
-            current.session.id === expectedSessionId
-              ? { kind: "authenticated", session }
-              : current,
-          ),
-      }}
-    >
+    <AuthenticatedSessionOutlet
+      api={api}
+      session={state.session}
+      membershipRevision={membershipRevision}
+      setState={setState}
+      setMembershipRevision={setMembershipRevision}
+    />
+  );
+}
+
+function AuthenticatedSessionOutlet({
+  api,
+  session,
+  membershipRevision,
+  setState,
+  setMembershipRevision,
+}: {
+  api: PhaseTwoApi;
+  session: SessionView;
+  membershipRevision: number;
+  setState: Dispatch<SetStateAction<BoundaryState>>;
+  setMembershipRevision: Dispatch<SetStateAction<number>>;
+}): React.JSX.Element {
+  const value = useMemo<React.ContextType<typeof SessionContext>>(
+    () => ({
+      api,
+      clearSession: (expectedSessionId) =>
+        setState((current) =>
+          current.kind === "authenticated" &&
+          current.session.id === expectedSessionId
+            ? { kind: "login" }
+            : current,
+        ),
+      membershipRevision,
+      refreshMemberships: () =>
+        setMembershipRevision((revision) => revision + 1),
+      session,
+      updateSession: (expectedSessionId, updatedSession) =>
+        setState((current) =>
+          current.kind === "authenticated" &&
+          current.session.id === expectedSessionId
+            ? { kind: "authenticated", session: updatedSession }
+            : current,
+        ),
+    }),
+    [api, session, membershipRevision, setState, setMembershipRevision],
+  );
+  return (
+    <SessionContext.Provider value={value}>
       <Outlet />
     </SessionContext.Provider>
   );

@@ -42,6 +42,7 @@ import { tenantSettingsRouteDescriptor } from "./settings/model";
 import { ticketNumberingRouteDescriptor } from "./settings/numbering/model";
 import { workflowAdministrationRouteDescriptor } from "./workflows/model";
 import { reportingRouteDescriptor } from "./ticketing/reporting-model";
+import { RouteErrorBoundary } from "./route-error-boundary";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,6 +56,7 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <ApplicationBoundary api={phaseTwoApi} />,
+    ErrorBoundary: RouteErrorBoundary,
     children: [
       {
         Component: AppShell,

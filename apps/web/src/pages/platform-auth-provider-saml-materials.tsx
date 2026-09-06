@@ -16,7 +16,16 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
+import { FormValidationAlert } from "./form-validation-alert";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
@@ -55,7 +64,14 @@ interface PlatformAuthProviderSamlMaterialsProps {
   sessionId: string;
 }
 
-export function PlatformAuthProviderSamlMaterials({
+export function PlatformAuthProviderSamlMaterials(
+  props: PlatformAuthProviderSamlMaterialsProps,
+): React.JSX.Element {
+  const model = usePlatformAuthProviderSamlMaterialsModel(props);
+  return <PlatformAuthProviderSamlMaterialsView model={model.data} />;
+}
+
+function usePlatformAuthProviderSamlMaterialsModel({
   api,
   canManage,
   csrfToken,
@@ -68,27 +84,137 @@ export function PlatformAuthProviderSamlMaterials({
   onUnauthenticated,
   providerMutationBusy,
   sessionId,
-}: PlatformAuthProviderSamlMaterialsProps): React.JSX.Element {
+}: PlatformAuthProviderSamlMaterialsProps) {
   const headingId = useId();
-  const [mode, setMode] = useState<PlatformSamlMaterialMode>(null);
-  const [metadataSource, setMetadataSource] =
-    useState<PlatformSamlMetadataSource>("url");
-  const [metadataUrl, setMetadataUrl] = useState("");
-  const [metadataXml, setMetadataXml] = useState("");
-  const [approveTrustReset, setApproveTrustReset] = useState(false);
-  const [trustApprovalRequired, setTrustApprovalRequired] = useState(false);
-  const [metadataReason, setMetadataReason] = useState("");
-  const [privateKeyPem, setPrivateKeyPem] = useState("");
-  const [certificateBundlePem, setCertificateBundlePem] = useState("");
-  const [spKeyReason, setSpKeyReason] = useState("");
-  const [clearReason, setClearReason] = useState("");
-  const [clearConfirmation, setClearConfirmation] = useState("");
-  const [validationErrors, setValidationErrors] = useState<readonly string[]>(
-    [],
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<PlatformAuthProviderSamlMaterialsState>,
+    undefined,
+    (): PlatformAuthProviderSamlMaterialsState => ({
+      mode: null,
+      metadataSource: "url",
+      metadataUrl: "",
+      metadataXml: "",
+      approveTrustReset: false,
+      trustApprovalRequired: false,
+      metadataReason: "",
+      privateKeyPem: "",
+      certificateBundlePem: "",
+      spKeyReason: "",
+      clearReason: "",
+      clearConfirmation: "",
+      validationErrors: [],
+      mutationError: null,
+      submitting: null,
+    }),
   );
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [submitting, setSubmitting] =
-    useState<PlatformSamlMaterialMutation | null>(null);
+  const {
+    mode,
+    metadataSource,
+    metadataUrl,
+    metadataXml,
+    approveTrustReset,
+    trustApprovalRequired,
+    metadataReason,
+    privateKeyPem,
+    certificateBundlePem,
+    spKeyReason,
+    clearReason,
+    clearConfirmation,
+    validationErrors,
+    mutationError,
+    submitting,
+  } = workspaceState;
+  const {
+    setMode,
+    setMetadataSource,
+    setMetadataUrl,
+    setMetadataXml,
+    setApproveTrustReset,
+    setMetadataReason,
+    setPrivateKeyPem,
+    setCertificateBundlePem,
+    setSpKeyReason,
+    setClearReason,
+    setClearConfirmation,
+    setValidationErrors,
+    setMutationError,
+    setSubmitting,
+  } = useMemo(
+    () => ({
+      setMode: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["mode"]
+        >,
+      ) => updateWorkspaceState({ mode: value }),
+      setMetadataSource: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["metadataSource"]
+        >,
+      ) => updateWorkspaceState({ metadataSource: value }),
+      setMetadataUrl: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["metadataUrl"]
+        >,
+      ) => updateWorkspaceState({ metadataUrl: value }),
+      setMetadataXml: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["metadataXml"]
+        >,
+      ) => updateWorkspaceState({ metadataXml: value }),
+      setApproveTrustReset: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["approveTrustReset"]
+        >,
+      ) => updateWorkspaceState({ approveTrustReset: value }),
+      setMetadataReason: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["metadataReason"]
+        >,
+      ) => updateWorkspaceState({ metadataReason: value }),
+      setPrivateKeyPem: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["privateKeyPem"]
+        >,
+      ) => updateWorkspaceState({ privateKeyPem: value }),
+      setCertificateBundlePem: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["certificateBundlePem"]
+        >,
+      ) => updateWorkspaceState({ certificateBundlePem: value }),
+      setSpKeyReason: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["spKeyReason"]
+        >,
+      ) => updateWorkspaceState({ spKeyReason: value }),
+      setClearReason: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["clearReason"]
+        >,
+      ) => updateWorkspaceState({ clearReason: value }),
+      setClearConfirmation: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["clearConfirmation"]
+        >,
+      ) => updateWorkspaceState({ clearConfirmation: value }),
+      setValidationErrors: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["validationErrors"]
+        >,
+      ) => updateWorkspaceState({ validationErrors: value }),
+      setMutationError: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["mutationError"]
+        >,
+      ) => updateWorkspaceState({ mutationError: value }),
+      setSubmitting: (
+        value: React.SetStateAction<
+          PlatformAuthProviderSamlMaterialsState["submitting"]
+        >,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const mountedRef = useRef(false);
   const mutationTokenRef = useRef<symbol | null>(null);
   const contextRef = useRef({
@@ -98,22 +224,24 @@ export function PlatformAuthProviderSamlMaterials({
     providerVersion: current.value.version,
     sessionId,
   });
-  const previousContext = contextRef.current;
-  if (
-    previousContext.canManage !== canManage ||
-    previousContext.providerId !== current.value.id ||
-    previousContext.providerVersion !== current.value.version ||
-    previousContext.sessionId !== sessionId
-  ) {
-    contextRef.current = {
-      canManage,
-      epoch: previousContext.epoch + 1,
-      providerId: current.value.id,
-      providerVersion: current.value.version,
-      sessionId,
-    };
-    mutationTokenRef.current = null;
-  }
+  useLayoutEffect(() => {
+    const previousContext = contextRef.current;
+    if (
+      previousContext.canManage !== canManage ||
+      previousContext.providerId !== current.value.id ||
+      previousContext.providerVersion !== current.value.version ||
+      previousContext.sessionId !== sessionId
+    ) {
+      contextRef.current = {
+        canManage,
+        epoch: previousContext.epoch + 1,
+        providerId: current.value.id,
+        providerVersion: current.value.version,
+        sessionId,
+      };
+      mutationTokenRef.current = null;
+    }
+  }, [canManage, current, sessionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -130,6 +258,7 @@ export function PlatformAuthProviderSamlMaterials({
     mutationTokenRef.current = null;
     onMutationBusyChange(false);
   }, [
+    setSubmitting,
     canManage,
     current.value.id,
     current.value.version,
@@ -142,24 +271,28 @@ export function PlatformAuthProviderSamlMaterials({
     providerMutationBusy || submitting !== null || provider.archivedAt !== null;
 
   function clearWriteOnlyInputs(): void {
-    setMetadataUrl("");
-    setMetadataXml("");
-    setPrivateKeyPem("");
-    setCertificateBundlePem("");
+    updateWorkspaceState({
+      metadataUrl: "",
+      metadataXml: "",
+      privateKeyPem: "",
+      certificateBundlePem: "",
+    });
   }
 
   function clearEditorState(): void {
     clearWriteOnlyInputs();
-    setMode(null);
-    setMetadataSource("url");
-    setApproveTrustReset(false);
-    setTrustApprovalRequired(false);
-    setMetadataReason("");
-    setSpKeyReason("");
-    setClearReason("");
-    setClearConfirmation("");
-    setValidationErrors([]);
-    setMutationError(null);
+    updateWorkspaceState({
+      mode: null,
+      metadataSource: "url",
+      approveTrustReset: false,
+      trustApprovalRequired: false,
+      metadataReason: "",
+      spKeyReason: "",
+      clearReason: "",
+      clearConfirmation: "",
+      validationErrors: [],
+      mutationError: null,
+    });
   }
 
   function openEditor(nextMode: Exclude<PlatformSamlMaterialMode, null>): void {
@@ -224,10 +357,11 @@ export function PlatformAuthProviderSamlMaterials({
       caught instanceof PhaseTwoApiError &&
       caught.code === "saml_trust_approval_required"
     ) {
-      setTrustApprovalRequired(true);
-      setMutationError(
-        "The replacement changes IdP trust without certificate continuity. Verify the new trust out of band, select explicit approval, and re-enter the metadata before retrying.",
-      );
+      updateWorkspaceState({
+        trustApprovalRequired: true,
+        mutationError:
+          "The replacement changes IdP trust without certificate continuity. Verify the new trust out of band, select explicit approval, and re-enter the metadata before retrying.",
+      });
       return;
     }
     if (
@@ -254,8 +388,7 @@ export function PlatformAuthProviderSamlMaterials({
         "Confirm explicit trust-reset approval only after completing the out-of-band review.",
       );
     }
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0) return;
     const request = beginMutation("metadata");
     if (!request) return;
@@ -316,8 +449,7 @@ export function PlatformAuthProviderSamlMaterials({
       ...parsed.errors,
       validatePlatformAuthProviderAuditReason(spKeyReason),
     ].filter((error): error is string => error !== null);
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0 || parsed.material === null) return;
     const request = beginMutation("sp-key");
     if (!request) return;
@@ -366,8 +498,7 @@ export function PlatformAuthProviderSamlMaterials({
     if (clearConfirmation !== provider.key) {
       errors.push(`Type ${provider.key} to confirm clearing the SP key.`);
     }
-    setValidationErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ validationErrors: errors, mutationError: null });
     if (errors.length > 0 || !provider.configuration.spKeyPresent) return;
     const request = beginMutation("clear");
     if (!request) return;
@@ -400,6 +531,60 @@ export function PlatformAuthProviderSamlMaterials({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      approveTrustReset,
+      blocked,
+      canManage,
+      certificateBundlePem,
+      clearConfirmation,
+      clearEditorState,
+      clearReason,
+      clearSpKey,
+      current,
+      headingId,
+      metadataReason,
+      metadataSource,
+      metadataUrl,
+      metadataXml,
+      mode,
+      mutationError,
+      openEditor,
+      privateKeyPem,
+      provider,
+      replaceMetadata,
+      replaceSpKey,
+      setApproveTrustReset,
+      setCertificateBundlePem,
+      setClearConfirmation,
+      setClearReason,
+      setMetadataReason,
+      setMetadataSource,
+      setMetadataUrl,
+      setMetadataXml,
+      setMutationError,
+      setPrivateKeyPem,
+      setSpKeyReason,
+      setValidationErrors,
+      spKeyReason,
+      submitting,
+      trustApprovalRequired,
+      validationErrors,
+    },
+  };
+}
+
+function PlatformAuthProviderSamlMaterialsView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformAuthProviderSamlMaterialsModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { blocked, canManage, current, headingId, mode, openEditor, provider } =
+    model;
   return (
     <section
       className="platform-idp-saml-materials"
@@ -489,280 +674,11 @@ export function PlatformAuthProviderSamlMaterials({
             ) : null}
           </div>
 
-          {mode === "metadata" ? (
-            <form
-              className="platform-idp-action-form platform-idp-secret-form"
-              id="platform-saml-metadata-form"
-              aria-label="Replace SAML IdP metadata"
-              aria-busy={submitting === "metadata"}
-              onSubmit={(event) => void replaceMetadata(event)}
-            >
-              <div>
-                <h4>Replace write-only IdP trust metadata</h4>
-                <p>
-                  Fetch a deployment-approved HTTPS URL or submit one bounded
-                  XML document. Neither source is retained in this form after an
-                  attempt, and no raw trust material is read back.
-                </p>
-              </div>
-              <FormField
-                htmlFor="platform-saml-metadata-source"
-                label="Metadata source"
-              >
-                <select
-                  className="platform-idp-select"
-                  disabled={blocked}
-                  id="platform-saml-metadata-source"
-                  value={metadataSource}
-                  onChange={(event) => {
-                    const nextSource = event.target.value;
-                    if (nextSource !== "url" && nextSource !== "xml") return;
-                    setMetadataSource(nextSource);
-                    setMetadataUrl("");
-                    setMetadataXml("");
-                    setValidationErrors([]);
-                    setMutationError(null);
-                  }}
-                >
-                  <option value="url">HTTPS metadata URL</option>
-                  <option value="xml">Upload metadata XML</option>
-                </select>
-              </FormField>
-              {metadataSource === "url" ? (
-                <FormField
-                  htmlFor="platform-saml-metadata-url"
-                  label="IdP metadata URL"
-                  hint="HTTPS only. Retrieval uses the deployment-owned SSRF-resistant client."
-                >
-                  <Input
-                    aria-describedby="platform-saml-metadata-url-hint"
-                    autoCapitalize="none"
-                    autoComplete="off"
-                    disabled={blocked}
-                    id="platform-saml-metadata-url"
-                    spellCheck={false}
-                    type="url"
-                    value={metadataUrl}
-                    onChange={(event) => setMetadataUrl(event.target.value)}
-                  />
-                </FormField>
-              ) : (
-                <FormField
-                  htmlFor="platform-saml-metadata-xml"
-                  label="IdP metadata XML"
-                  hint="Write-only UTF-8 XML, limited to 512 KiB. It is cleared after every attempt."
-                >
-                  <Textarea
-                    aria-describedby="platform-saml-metadata-xml-hint"
-                    autoCapitalize="none"
-                    autoComplete="off"
-                    disabled={blocked}
-                    id="platform-saml-metadata-xml"
-                    rows={8}
-                    spellCheck={false}
-                    value={metadataXml}
-                    onChange={(event) => setMetadataXml(event.target.value)}
-                  />
-                </FormField>
-              )}
-              <div className="platform-idp-boolean-field">
-                <Checkbox
-                  aria-describedby="platform-saml-approve-trust-reset-hint"
-                  checked={approveTrustReset}
-                  disabled={blocked}
-                  id="platform-saml-approve-trust-reset"
-                  onCheckedChange={(checked) =>
-                    setApproveTrustReset(checked === true)
-                  }
-                />
-                <div>
-                  <Label htmlFor="platform-saml-approve-trust-reset">
-                    Approve trust reset after out-of-band review
-                  </Label>
-                  <p id="platform-saml-approve-trust-reset-hint">
-                    Leave off for normal certificate continuity. Select only
-                    after independently verifying a deliberate trust rollover.
-                  </p>
-                </div>
-              </div>
-              {trustApprovalRequired ? (
-                <Alert variant="destructive">
-                  <ShieldAlert aria-hidden="true" />
-                  <AlertTitle>Explicit trust approval required</AlertTitle>
-                  <AlertDescription>
-                    The server detected no trusted certificate continuity. The
-                    prior XML or URL was cleared; verify the replacement out of
-                    band, approve above, and re-enter it for a new attempt.
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-              <AuditReasonField
-                disabled={blocked}
-                id="platform-saml-metadata-reason"
-                value={metadataReason}
-                onChange={setMetadataReason}
-              />
-              <FormFeedback
-                errors={validationErrors}
-                requestError={mutationError}
-              />
-              <div className="platform-idp-form-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={blocked}
-                  onClick={clearEditorState}
-                >
-                  Cancel metadata replacement
-                </Button>
-                <Button type="submit" disabled={blocked}>
-                  <RefreshCw aria-hidden="true" />
-                  {submitting === "metadata"
-                    ? "Submitting…"
-                    : "Replace write-only metadata"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+          {<SamlTrustMetadataForm model={model} />}
 
-          {mode === "sp-key" ? (
-            <form
-              className="platform-idp-action-form platform-idp-secret-form"
-              id="platform-saml-sp-key-form"
-              aria-label="Replace SAML SP signing key"
-              aria-busy={submitting === "sp-key"}
-              onSubmit={(event) => void replaceSpKey(event)}
-            >
-              <div>
-                <h4>Set write-only SP signing material</h4>
-                <p>
-                  Submit one unencrypted PKCS#8 private key and its ordered
-                  X.509 certificate chain. PEM is converted to canonical DER
-                  base64 in memory and cleared from the form after every
-                  attempt.
-                </p>
-              </div>
-              <FormField
-                htmlFor="platform-saml-private-key"
-                label="PKCS#8 private key PEM"
-                hint="The block must use BEGIN PRIVATE KEY, not an encrypted, RSA, or EC-specific label."
-              >
-                <Textarea
-                  aria-describedby="platform-saml-private-key-hint"
-                  autoCapitalize="none"
-                  autoComplete="new-password"
-                  disabled={blocked}
-                  id="platform-saml-private-key"
-                  rows={7}
-                  spellCheck={false}
-                  value={privateKeyPem}
-                  onChange={(event) => setPrivateKeyPem(event.target.value)}
-                />
-              </FormField>
-              <FormField
-                htmlFor="platform-saml-certificates"
-                label="X.509 certificate chain PEM"
-                hint="Enter one to eight distinct CERTIFICATE blocks, signer first."
-              >
-                <Textarea
-                  aria-describedby="platform-saml-certificates-hint"
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  disabled={blocked}
-                  id="platform-saml-certificates"
-                  rows={8}
-                  spellCheck={false}
-                  value={certificateBundlePem}
-                  onChange={(event) =>
-                    setCertificateBundlePem(event.target.value)
-                  }
-                />
-              </FormField>
-              <AuditReasonField
-                disabled={blocked}
-                id="platform-saml-sp-key-reason"
-                value={spKeyReason}
-                onChange={setSpKeyReason}
-              />
-              <FormFeedback
-                errors={validationErrors}
-                requestError={mutationError}
-              />
-              <div className="platform-idp-form-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={blocked}
-                  onClick={clearEditorState}
-                >
-                  Cancel SP key replacement
-                </Button>
-                <Button type="submit" disabled={blocked}>
-                  <KeyRound aria-hidden="true" />
-                  {submitting === "sp-key"
-                    ? "Submitting…"
-                    : "Store write-only SP key"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+          {<SamlSigningMaterialForm model={model} />}
 
-          {mode === "clear" && provider.configuration.spKeyPresent ? (
-            <form
-              className="platform-idp-action-form platform-idp-archive-form"
-              id="platform-saml-clear-key-form"
-              aria-label="Clear SAML SP signing key"
-              aria-busy={submitting === "clear"}
-              onSubmit={(event) => void clearSpKey(event)}
-            >
-              <div>
-                <h4>Clear SP signing material</h4>
-                <p>
-                  This removes the current encrypted private key and certificate
-                  chain. The key revision still advances so pinned work fails
-                  closed. Type the provider key to confirm.
-                </p>
-              </div>
-              <AuditReasonField
-                disabled={blocked}
-                id="platform-saml-clear-key-reason"
-                value={clearReason}
-                onChange={setClearReason}
-              />
-              <FormField
-                htmlFor="platform-saml-clear-key-confirmation"
-                label={`Type ${provider.key} to confirm`}
-              >
-                <Input
-                  autoComplete="off"
-                  disabled={blocked}
-                  id="platform-saml-clear-key-confirmation"
-                  value={clearConfirmation}
-                  onChange={(event) => setClearConfirmation(event.target.value)}
-                />
-              </FormField>
-              <FormFeedback
-                errors={validationErrors}
-                requestError={mutationError}
-              />
-              <div className="platform-idp-form-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={blocked}
-                  onClick={clearEditorState}
-                >
-                  Cancel key clearing
-                </Button>
-                <Button type="submit" variant="destructive" disabled={blocked}>
-                  <Trash2 aria-hidden="true" />
-                  {submitting === "clear"
-                    ? "Clearing…"
-                    : "Clear SP signing key"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+          {<SamlSigningMaterialClearForm model={model} />}
         </>
       )}
     </section>
@@ -807,18 +723,361 @@ function FormFeedback({
 }): React.JSX.Element | null {
   if (errors.length > 0) {
     return (
-      <Alert variant="destructive">
-        <ShieldAlert aria-hidden="true" />
-        <AlertTitle>Review the protected-material command</AlertTitle>
-        <AlertDescription>
-          <ul>
-            {errors.map((error) => (
-              <li key={error}>{error}</li>
-            ))}
-          </ul>
-        </AlertDescription>
-      </Alert>
+      <FormValidationAlert
+        errors={errors}
+        title="Review the protected-material command"
+      />
     );
   }
   return requestError ? <FocusedError message={requestError} /> : null;
+}
+
+function SamlTrustMetadataForm({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderSamlMaterialsView
+  >["model"];
+}): React.ReactNode {
+  const {
+    approveTrustReset,
+    blocked,
+    clearEditorState,
+    metadataReason,
+    metadataSource,
+    metadataUrl,
+    metadataXml,
+    mode,
+    mutationError,
+    replaceMetadata,
+    setApproveTrustReset,
+    setMetadataReason,
+    setMetadataSource,
+    setMetadataUrl,
+    setMetadataXml,
+    setMutationError,
+    setValidationErrors,
+    submitting,
+    trustApprovalRequired,
+    validationErrors,
+  } = model;
+  return mode === "metadata" ? (
+    <form
+      className="platform-idp-action-form platform-idp-secret-form"
+      id="platform-saml-metadata-form"
+      aria-label="Replace SAML IdP metadata"
+      aria-busy={submitting === "metadata"}
+      onSubmit={(event) => void replaceMetadata(event)}
+    >
+      <div>
+        <h4>Replace write-only IdP trust metadata</h4>
+        <p>
+          Fetch a deployment-approved HTTPS URL or submit one bounded XML
+          document. Neither source is retained in this form after an attempt,
+          and no raw trust material is read back.
+        </p>
+      </div>
+      <FormField
+        htmlFor="platform-saml-metadata-source"
+        label="Metadata source"
+      >
+        <select
+          className="platform-idp-select"
+          disabled={blocked}
+          id="platform-saml-metadata-source"
+          value={metadataSource}
+          onChange={(event) => {
+            const nextSource = event.target.value;
+            if (nextSource !== "url" && nextSource !== "xml") return;
+            setMetadataSource(nextSource);
+            setMetadataUrl("");
+            setMetadataXml("");
+            setValidationErrors([]);
+            setMutationError(null);
+          }}
+        >
+          <option value="url">HTTPS metadata URL</option>
+          <option value="xml">Upload metadata XML</option>
+        </select>
+      </FormField>
+      {metadataSource === "url" ? (
+        <FormField
+          htmlFor="platform-saml-metadata-url"
+          label="IdP metadata URL"
+          hint="HTTPS only. Retrieval uses the deployment-owned SSRF-resistant client."
+        >
+          <Input
+            aria-describedby="platform-saml-metadata-url-hint"
+            autoCapitalize="none"
+            autoComplete="off"
+            disabled={blocked}
+            id="platform-saml-metadata-url"
+            spellCheck={false}
+            type="url"
+            value={metadataUrl}
+            onChange={(event) => setMetadataUrl(event.target.value)}
+          />
+        </FormField>
+      ) : (
+        <FormField
+          htmlFor="platform-saml-metadata-xml"
+          label="IdP metadata XML"
+          hint="Write-only UTF-8 XML, limited to 512 KiB. It is cleared after every attempt."
+        >
+          <Textarea
+            aria-describedby="platform-saml-metadata-xml-hint"
+            autoCapitalize="none"
+            autoComplete="off"
+            disabled={blocked}
+            id="platform-saml-metadata-xml"
+            rows={8}
+            spellCheck={false}
+            value={metadataXml}
+            onChange={(event) => setMetadataXml(event.target.value)}
+          />
+        </FormField>
+      )}
+      <div className="platform-idp-boolean-field">
+        <Checkbox
+          aria-describedby="platform-saml-approve-trust-reset-hint"
+          checked={approveTrustReset}
+          disabled={blocked}
+          id="platform-saml-approve-trust-reset"
+          onCheckedChange={(checked) => setApproveTrustReset(checked === true)}
+        />
+        <div>
+          <Label htmlFor="platform-saml-approve-trust-reset">
+            Approve trust reset after out-of-band review
+          </Label>
+          <p id="platform-saml-approve-trust-reset-hint">
+            Leave off for normal certificate continuity. Select only after
+            independently verifying a deliberate trust rollover.
+          </p>
+        </div>
+      </div>
+      {trustApprovalRequired ? (
+        <Alert variant="destructive">
+          <ShieldAlert aria-hidden="true" />
+          <AlertTitle>Explicit trust approval required</AlertTitle>
+          <AlertDescription>
+            The server detected no trusted certificate continuity. The prior XML
+            or URL was cleared; verify the replacement out of band, approve
+            above, and re-enter it for a new attempt.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <AuditReasonField
+        disabled={blocked}
+        id="platform-saml-metadata-reason"
+        value={metadataReason}
+        onChange={setMetadataReason}
+      />
+      <FormFeedback errors={validationErrors} requestError={mutationError} />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={blocked}
+          onClick={clearEditorState}
+        >
+          Cancel metadata replacement
+        </Button>
+        <Button type="submit" disabled={blocked}>
+          <RefreshCw aria-hidden="true" />
+          {submitting === "metadata"
+            ? "Submitting…"
+            : "Replace write-only metadata"}
+        </Button>
+      </div>
+    </form>
+  ) : null;
+}
+
+function SamlSigningMaterialForm({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderSamlMaterialsView
+  >["model"];
+}): React.ReactNode {
+  const {
+    blocked,
+    certificateBundlePem,
+    clearEditorState,
+    mode,
+    mutationError,
+    privateKeyPem,
+    replaceSpKey,
+    setCertificateBundlePem,
+    setPrivateKeyPem,
+    setSpKeyReason,
+    spKeyReason,
+    submitting,
+    validationErrors,
+  } = model;
+  return mode === "sp-key" ? (
+    <form
+      className="platform-idp-action-form platform-idp-secret-form"
+      id="platform-saml-sp-key-form"
+      aria-label="Replace SAML SP signing key"
+      aria-busy={submitting === "sp-key"}
+      onSubmit={(event) => void replaceSpKey(event)}
+    >
+      <div>
+        <h4>Set write-only SP signing material</h4>
+        <p>
+          Submit one unencrypted PKCS#8 private key and its ordered X.509
+          certificate chain. PEM is converted to canonical DER base64 in memory
+          and cleared from the form after every attempt.
+        </p>
+      </div>
+      <FormField
+        htmlFor="platform-saml-private-key"
+        label="PKCS#8 private key PEM"
+        hint="The block must use BEGIN PRIVATE KEY, not an encrypted, RSA, or EC-specific label."
+      >
+        <Textarea
+          aria-describedby="platform-saml-private-key-hint"
+          autoCapitalize="none"
+          autoComplete="new-password"
+          disabled={blocked}
+          id="platform-saml-private-key"
+          rows={7}
+          spellCheck={false}
+          value={privateKeyPem}
+          onChange={(event) => setPrivateKeyPem(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor="platform-saml-certificates"
+        label="X.509 certificate chain PEM"
+        hint="Enter one to eight distinct CERTIFICATE blocks, signer first."
+      >
+        <Textarea
+          aria-describedby="platform-saml-certificates-hint"
+          autoCapitalize="none"
+          autoComplete="off"
+          disabled={blocked}
+          id="platform-saml-certificates"
+          rows={8}
+          spellCheck={false}
+          value={certificateBundlePem}
+          onChange={(event) => setCertificateBundlePem(event.target.value)}
+        />
+      </FormField>
+      <AuditReasonField
+        disabled={blocked}
+        id="platform-saml-sp-key-reason"
+        value={spKeyReason}
+        onChange={setSpKeyReason}
+      />
+      <FormFeedback errors={validationErrors} requestError={mutationError} />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={blocked}
+          onClick={clearEditorState}
+        >
+          Cancel SP key replacement
+        </Button>
+        <Button type="submit" disabled={blocked}>
+          <KeyRound aria-hidden="true" />
+          {submitting === "sp-key" ? "Submitting…" : "Store write-only SP key"}
+        </Button>
+      </div>
+    </form>
+  ) : null;
+}
+
+function SamlSigningMaterialClearForm({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformAuthProviderSamlMaterialsView
+  >["model"];
+}): React.ReactNode {
+  const {
+    blocked,
+    clearConfirmation,
+    clearEditorState,
+    clearReason,
+    clearSpKey,
+    mode,
+    mutationError,
+    provider,
+    setClearConfirmation,
+    setClearReason,
+    submitting,
+    validationErrors,
+  } = model;
+  return mode === "clear" && provider.configuration.spKeyPresent ? (
+    <form
+      className="platform-idp-action-form platform-idp-archive-form"
+      id="platform-saml-clear-key-form"
+      aria-label="Clear SAML SP signing key"
+      aria-busy={submitting === "clear"}
+      onSubmit={(event) => void clearSpKey(event)}
+    >
+      <div>
+        <h4>Clear SP signing material</h4>
+        <p>
+          This removes the current encrypted private key and certificate chain.
+          The key revision still advances so pinned work fails closed. Type the
+          provider key to confirm.
+        </p>
+      </div>
+      <AuditReasonField
+        disabled={blocked}
+        id="platform-saml-clear-key-reason"
+        value={clearReason}
+        onChange={setClearReason}
+      />
+      <FormField
+        htmlFor="platform-saml-clear-key-confirmation"
+        label={`Type ${provider.key} to confirm`}
+      >
+        <Input
+          autoComplete="off"
+          disabled={blocked}
+          id="platform-saml-clear-key-confirmation"
+          value={clearConfirmation}
+          onChange={(event) => setClearConfirmation(event.target.value)}
+        />
+      </FormField>
+      <FormFeedback errors={validationErrors} requestError={mutationError} />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={blocked}
+          onClick={clearEditorState}
+        >
+          Cancel key clearing
+        </Button>
+        <Button type="submit" variant="destructive" disabled={blocked}>
+          <Trash2 aria-hidden="true" />
+          {submitting === "clear" ? "Clearing…" : "Clear SP signing key"}
+        </Button>
+      </div>
+    </form>
+  ) : null;
+}
+
+interface PlatformAuthProviderSamlMaterialsState {
+  mode: PlatformSamlMaterialMode;
+  metadataSource: PlatformSamlMetadataSource;
+  metadataUrl: string;
+  metadataXml: string;
+  approveTrustReset: boolean;
+  trustApprovalRequired: boolean;
+  metadataReason: string;
+  privateKeyPem: string;
+  certificateBundlePem: string;
+  spKeyReason: string;
+  clearReason: string;
+  clearConfirmation: string;
+  validationErrors: readonly string[];
+  mutationError: string | null;
+  submitting: PlatformSamlMaterialMutation | null;
 }

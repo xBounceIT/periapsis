@@ -1,3 +1,4 @@
+import { TableColumnHeaders } from "../components/table-column-headers";
 import {
   Alert,
   AlertDescription,
@@ -18,8 +19,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
@@ -34,7 +33,7 @@ import {
   TriangleAlert,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { FormField } from "../components/form-field";
 import {
@@ -78,13 +77,13 @@ export interface PlatformOperationsWorkspaceProps {
 
 const idle = { kind: "idle" } as const;
 
-export function PlatformOperationsWorkspace({
+function usePlatformOperationsWorkspace({
   api,
   authority,
   csrfToken,
   describeError = defaultDescribeError,
   sessionKey,
-}: PlatformOperationsWorkspaceProps): React.JSX.Element {
+}: PlatformOperationsWorkspaceProps) {
   const availableTabs = useMemo(() => tabsForAuthority(authority), [authority]);
   const [activeTab, setActiveTab] = useState<PlatformOperationsTab>(
     availableTabs[0]?.key ?? "overview",
@@ -103,13 +102,24 @@ export function PlatformOperationsWorkspace({
     null,
   );
   const [loadRevision, setLoadRevision] = useState(0);
-  const [loadingMoreUsers, setLoadingMoreUsers] = useState(false);
-  const [loadingMoreFailed, setLoadingMoreFailed] = useState(false);
+  const [usersPageScope, setUsersPageScope] = useState<object | null>(null);
+  const [failedPageScope, setFailedPageScope] = useState<object | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [reason, setReason] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [mutating, setMutating] = useState(false);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+
+  const queryScope = useMemo(
+    () => ({}),
+    [api, authority, describeError, loadRevision, sessionKey],
+  );
+  const currentQueryScope = useRef(queryScope);
+  useLayoutEffect(() => {
+    currentQueryScope.current = queryScope;
+  }, [queryScope]);
+  const loadingMoreUsers = usersPageScope === queryScope;
+  const loadingMoreFailed = failedPageScope === queryScope;
 
   useEffect(() => {
     if (!availableTabs.some((tab) => tab.key === activeTab)) {
@@ -124,7 +134,9 @@ export function PlatformOperationsWorkspace({
       setQueues({ kind: "loading" });
       void api
         .getHealth({ signal: controller.signal })
-        .then((value) => setHealth({ kind: "ready", value }))
+        .then((value) => {
+          if (!controller.signal.aborted) setHealth({ kind: "ready", value });
+        })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) {
             setHealth({
@@ -138,7 +150,9 @@ export function PlatformOperationsWorkspace({
         });
       void api
         .listQueues({ signal: controller.signal })
-        .then((value) => setQueues({ kind: "ready", value }))
+        .then((value) => {
+          if (!controller.signal.aborted) setQueues({ kind: "ready", value });
+        })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) {
             setQueues({
@@ -158,7 +172,9 @@ export function PlatformOperationsWorkspace({
       setUsers({ kind: "loading" });
       void api
         .listUsers({ signal: controller.signal })
-        .then((value) => setUsers({ kind: "ready", value }))
+        .then((value) => {
+          if (!controller.signal.aborted) setUsers({ kind: "ready", value });
+        })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) {
             setUsers({
@@ -178,6 +194,7 @@ export function PlatformOperationsWorkspace({
       void api
         .getSettings({ signal: controller.signal })
         .then((value) => {
+          if (controller.signal.aborted) return;
           setSettings({ kind: "ready", value });
           setSettingsDraft(toSettingsDraft(value));
         })
@@ -200,7 +217,9 @@ export function PlatformOperationsWorkspace({
       setFlags({ kind: "loading" });
       void api
         .listFeatureFlags({ signal: controller.signal })
-        .then((value) => setFlags({ kind: "ready", value }))
+        .then((value) => {
+          if (!controller.signal.aborted) setFlags({ kind: "ready", value });
+        })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) {
             setFlags({
@@ -232,7 +251,9 @@ export function PlatformOperationsWorkspace({
     setFailed({ kind: "loading" });
     void api
       .listFailedNotifications({ signal: controller.signal })
-      .then((value) => setFailed({ kind: "ready", value }))
+      .then((value) => {
+        if (!controller.signal.aborted) setFailed({ kind: "ready", value });
+      })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
           setFailed({
@@ -259,14 +280,18 @@ export function PlatformOperationsWorkspace({
       return;
     }
     const cursor = users.value.nextCursor;
-    setLoadingMoreUsers(true);
+    const requestedScope = queryScope;
+    setUsersPageScope(queryScope);
     try {
       const page = await api.listUsers({ after: cursor });
+      if (currentQueryScope.current !== requestedScope) return;
       if (page.nextCursor === cursor) {
         throw new Error("The platform user cursor did not advance.");
       }
       setUsers((current) =>
-        current.kind === "ready" && current.value.nextCursor === cursor
+        currentQueryScope.current === requestedScope &&
+        current.kind === "ready" &&
+        current.value.nextCursor === cursor
           ? {
               kind: "ready",
               value: {
@@ -277,6 +302,7 @@ export function PlatformOperationsWorkspace({
           : current,
       );
     } catch (error) {
+      if (currentQueryScope.current !== requestedScope) return;
       setUsers({
         kind: "error",
         message: describeError(
@@ -285,7 +311,9 @@ export function PlatformOperationsWorkspace({
         ),
       });
     } finally {
-      setLoadingMoreUsers(false);
+      setUsersPageScope((current) =>
+        current === requestedScope ? null : current,
+      );
     }
   }
 
@@ -298,14 +326,18 @@ export function PlatformOperationsWorkspace({
       return;
     }
     const cursor = failed.value.nextCursor;
-    setLoadingMoreFailed(true);
+    const requestedScope = queryScope;
+    setFailedPageScope(queryScope);
     try {
       const page = await api.listFailedNotifications({ after: cursor });
+      if (currentQueryScope.current !== requestedScope) return;
       if (page.nextCursor === cursor) {
         throw new Error("The failed notification cursor did not advance.");
       }
       setFailed((current) =>
-        current.kind === "ready" && current.value.nextCursor === cursor
+        currentQueryScope.current === requestedScope &&
+        current.kind === "ready" &&
+        current.value.nextCursor === cursor
           ? {
               kind: "ready",
               value: {
@@ -319,6 +351,7 @@ export function PlatformOperationsWorkspace({
           : current,
       );
     } catch (error) {
+      if (currentQueryScope.current !== requestedScope) return;
       setFailed({
         kind: "error",
         message: describeError(
@@ -327,7 +360,9 @@ export function PlatformOperationsWorkspace({
         ),
       });
     } finally {
-      setLoadingMoreFailed(false);
+      setFailedPageScope((current) =>
+        current === requestedScope ? null : current,
+      );
     }
   }
 
@@ -403,6 +438,68 @@ export function PlatformOperationsWorkspace({
     }
   }
 
+  return {
+    availableTabs,
+    activeTab,
+    setActiveTab,
+    health,
+    queues,
+    users,
+    settings,
+    flags,
+    failed,
+    settingsDraft,
+    setSettingsDraft,
+    setLoadRevision,
+    loadingMoreUsers,
+    loadingMoreFailed,
+    confirmation,
+    reason,
+    setReason,
+    mutationError,
+    mutating,
+    reasonRef,
+    failedNotificationsEnabled,
+    loadMoreUsers,
+    loadMoreFailedNotifications,
+    openConfirmation,
+    dismissConfirmation,
+    confirmMutation,
+  };
+}
+
+export function PlatformOperationsWorkspace(
+  props: PlatformOperationsWorkspaceProps,
+): React.JSX.Element {
+  const { authority } = props;
+  const {
+    availableTabs,
+    activeTab,
+    setActiveTab,
+    health,
+    queues,
+    users,
+    settings,
+    flags,
+    failed,
+    settingsDraft,
+    setSettingsDraft,
+    setLoadRevision,
+    loadingMoreUsers,
+    loadingMoreFailed,
+    confirmation,
+    reason,
+    setReason,
+    mutationError,
+    mutating,
+    reasonRef,
+    failedNotificationsEnabled,
+    loadMoreUsers,
+    loadMoreFailedNotifications,
+    openConfirmation,
+    dismissConfirmation,
+    confirmMutation,
+  } = usePlatformOperationsWorkspace(props);
   if (availableTabs.length === 0) {
     return (
       <Alert>
@@ -657,15 +754,15 @@ function QueueTable({
         <span>{formatInstant(value.checkedAt)}</span>
       </div>
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Source</TableHead>
-            <TableHead>Pending</TableHead>
-            <TableHead>In flight</TableHead>
-            <TableHead>Failed</TableHead>
-            <TableHead>Oldest eligible</TableHead>
-          </TableRow>
-        </TableHeader>
+        <TableColumnHeaders
+          columns={[
+            "Source",
+            "Pending",
+            "In flight",
+            "Failed",
+            "Oldest eligible",
+          ]}
+        />
         <TableBody>
           {value.sources.map((source) => (
             <TableRow key={source.key}>
@@ -707,16 +804,16 @@ function FailedNotifications({
         <span>No recipients, bodies, or provider receipts</span>
       </div>
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Delivery</TableHead>
-            <TableHead>Tenant</TableHead>
-            <TableHead>Channel</TableHead>
-            <TableHead>Failure</TableHead>
-            <TableHead>Attempts</TableHead>
-            <TableHead>Failed</TableHead>
-          </TableRow>
-        </TableHeader>
+        <TableColumnHeaders
+          columns={[
+            "Delivery",
+            "Tenant",
+            "Channel",
+            "Failure",
+            "Attempts",
+            "Failed",
+          ]}
+        />
         <TableBody>
           {state.value.items.map((item) => (
             <TableRow key={item.id}>
@@ -779,15 +876,15 @@ function UsersPanel({
         <span>{state.value.items.length} loaded</span>
       </div>
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>User</TableHead>
-            <TableHead>State</TableHead>
-            <TableHead>Platform roles</TableHead>
-            <TableHead>Tenant memberships</TableHead>
-            <TableHead>Live sessions</TableHead>
-          </TableRow>
-        </TableHeader>
+        <TableColumnHeaders
+          columns={[
+            "User",
+            "State",
+            "Platform roles",
+            "Tenant memberships",
+            "Live sessions",
+          ]}
+        />
         <TableBody>
           {state.value.items.map((user) => (
             <TableRow key={user.id}>

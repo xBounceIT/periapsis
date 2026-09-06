@@ -1,4 +1,3 @@
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AlertRelation,
   AlertRelationMutationReceipt,
@@ -17,6 +16,7 @@ import {
 import { Input } from "@periapsis/ui/components/ui/input";
 import { Label } from "@periapsis/ui/components/ui/label";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   GitCompareArrows,
@@ -26,13 +26,14 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import {
-  useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
 } from "react";
 import { Link } from "react-router";
+import { flattenAlertRelationPages } from "./alert-relation-panel-model";
 
 import { FocusedError } from "../components/focused-error";
 import {
@@ -63,7 +64,7 @@ export interface ReloadedAlertBoundary {
   version: number;
 }
 
-export function AlertRelationPanel({
+function useAlertRelationPanelState({
   alertEtag,
   alertId,
   alertVersion,
@@ -87,7 +88,7 @@ export function AlertRelationPanel({
   sessionId: string;
   tenantId: string;
   ticketApi?: TicketingApi;
-}): React.JSX.Element | null {
+}) {
   const contextTicketApi = useTicketingApi();
   const tickets = ticketApi ?? contextTicketApi;
   const queryClient = useQueryClient();
@@ -99,12 +100,11 @@ export function AlertRelationPanel({
     sessionId,
     tenantId,
   ]);
-  const queryKey = [
-    "alert-relations",
-    authorizationBoundary,
-    tenantId,
-    alertId,
-  ] as const;
+  const queryKey = useMemo(
+    () =>
+      ["alert-relations", authorizationBoundary, tenantId, alertId] as const,
+    [authorizationBoundary, tenantId, alertId],
+  );
   const query = useInfiniteQuery({
     enabled: canManage,
     initialPageParam: undefined as string | undefined,
@@ -145,11 +145,9 @@ export function AlertRelationPanel({
   const reloadLatest = useRef(onReloadLatest);
   const snapshotBoundary = `${alertEtag}:${alertVersion}`;
   const alertBoundaryIsCanonical = alertEtag === `"v${alertVersion}"`;
-
   useLayoutEffect(() => {
     reloadLatest.current = onReloadLatest;
   }, [onReloadLatest]);
-
   useLayoutEffect(() => {
     authorizationToken.current = {};
     mutationRequest.current?.abort();
@@ -172,15 +170,13 @@ export function AlertRelationPanel({
       void queryClient.cancelQueries({ exact: true, queryKey });
       queryClient.removeQueries({ exact: true, queryKey });
     };
-  }, [authorizationBoundary, queryClient]);
-
+  }, [authorizationBoundary, queryClient, queryKey]);
   useLayoutEffect(() => {
     mutationRequest.current?.abort();
     mutationRequest.current = null;
     setBusy(null);
   }, [snapshotBoundary]);
-
-  useEffect(() => {
+  {
     if (
       minimumAlertVersion !== null &&
       alertBoundaryIsCanonical &&
@@ -189,371 +185,128 @@ export function AlertRelationPanel({
       setMinimumAlertVersion(null);
       setReloadRequired(false);
     }
-  }, [alertBoundaryIsCanonical, alertVersion, minimumAlertVersion]);
+  }
+  return {
+    alertEtag,
+    alertId,
+    alertVersion,
+    api,
+    authorityEpoch,
+    canManage,
+    csrfToken,
+    onReloadLatest,
+    sessionId,
+    tenantId,
+    ticketApi,
+    contextTicketApi,
+    tickets,
+    queryClient,
+    authorizationBoundary,
+    queryKey,
+    query,
+    projection,
+    createOpen,
+    setCreateOpen,
+    relationType,
+    setRelationType,
+    targetAlertId,
+    setTargetAlertId,
+    createReason,
+    setCreateReason,
+    retracting,
+    setRetracting,
+    retractionReason,
+    setRetractionReason,
+    busy,
+    setBusy,
+    problem,
+    setProblem,
+    notice,
+    setNotice,
+    reloadRequired,
+    setReloadRequired,
+    minimumAlertVersion,
+    setMinimumAlertVersion,
+    mutationRequest,
+    authorizationToken,
+    attempt,
+    reloadLatest,
+    snapshotBoundary,
+    alertBoundaryIsCanonical,
+  };
+}
 
+export function AlertRelationPanel(props: {
+  alertEtag: string;
+  alertId: string;
+  alertVersion: number;
+  api?: AlertRelationApi;
+  authorityEpoch: string;
+  canManage: boolean;
+  csrfToken: string;
+  onReloadLatest: () => Promise<ReloadedAlertBoundary | null>;
+  sessionId: string;
+  tenantId: string;
+  ticketApi?: TicketingApi;
+}): React.JSX.Element | null {
+  const state = useAlertRelationPanelState(props);
+  const {
+    canManage,
+    query,
+    projection,
+    createOpen,
+    relationType,
+    setRelationType,
+    targetAlertId,
+    setTargetAlertId,
+    createReason,
+    setCreateReason,
+    retracting,
+    setRetracting,
+    retractionReason,
+    setRetractionReason,
+    busy,
+    problem,
+    setProblem,
+    notice,
+    setNotice,
+    reloadRequired,
+    attempt,
+  } = state;
   if (!canManage) return null;
-
-  const canMutate =
-    alertBoundaryIsCanonical &&
-    alertVersion < 2_147_483_647 &&
-    projection.canonical &&
-    !reloadRequired &&
-    busy === null &&
-    !query.isPending &&
-    !query.isError;
-  const createDraftIsValid =
-    alertRelationUuidV7Pattern.test(targetAlertId) &&
-    targetAlertId !== alertId &&
-    isCanonicalAlertRelationReason(createReason);
-  const retractionDraftIsValid =
-    isCanonicalAlertRelationReason(retractionReason);
-
-  const changeCreateOpen = (next: boolean): void => {
-    if (!next) mutationRequest.current?.abort();
-    setCreateOpen(next);
-    setProblem(null);
-    setNotice(null);
-    if (!next) {
-      setTargetAlertId("");
-      setRelationType("correlation");
-      setCreateReason("");
-      setBusy(null);
-      attempt.current.current = null;
-    }
-  };
-
-  const closeRetraction = (): void => {
-    mutationRequest.current?.abort();
-    mutationRequest.current = null;
-    attempt.current.current = null;
-    setRetracting(null);
-    setRetractionReason("");
-    setBusy(null);
-    setProblem(null);
-  };
-
-  const submitCreate = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    if (!canMutate || !createDraftIsValid) return;
-    void mutate({
-      kind: "create",
-      reason: createReason,
-      relationType,
-      targetAlertId,
-    });
-  };
-
-  const submitRetraction = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    if (!canMutate || !retracting || !retractionDraftIsValid) return;
-    void mutate({
-      kind: "retract",
-      reason: retractionReason,
-      relation: retracting,
-    });
-  };
-
-  const ownsMutation = (token: object, controller: AbortController): boolean =>
-    authorizationToken.current === token &&
-    mutationRequest.current === controller &&
-    !controller.signal.aborted;
-
-  const mutate = async (
-    command:
-      | {
-          kind: "create";
-          reason: string;
-          relationType: AlertRelationType;
-          targetAlertId: string;
-        }
-      | { kind: "retract"; reason: string; relation: AlertRelation },
-  ): Promise<void> => {
-    if (!canMutate) return;
-    const relatedAlertId =
-      command.kind === "create"
-        ? command.targetAlertId
-        : command.relation.relatedAlert.id;
-    const token = authorizationToken.current;
-    const controller = new AbortController();
-    mutationRequest.current?.abort();
-    mutationRequest.current = controller;
-    setBusy(command.kind);
-    setProblem(null);
-    setNotice(null);
-    try {
-      const related = await tickets.getTicket(
-        "alert",
-        tenantId,
-        relatedAlertId,
-        controller.signal,
-      );
-      if (
-        !ownsMutation(token, controller) ||
-        related.value.projection !== "operator" ||
-        related.value.tenantId !== tenantId ||
-        related.value.id !== relatedAlertId ||
-        related.etag !== `"v${related.value.version}"` ||
-        related.value.version >= 2_147_483_647
-      ) {
-        throw new Error("Current operator snapshots are required.");
-      }
-      const payload = {
-        alertId,
-        alertVersion,
-        command:
-          command.kind === "create"
-            ? {
-                kind: command.kind,
-                reason: command.reason,
-                relationType: command.relationType,
-                targetAlertId: command.targetAlertId,
-              }
-            : {
-                kind: command.kind,
-                reason: command.reason,
-                relatedAlertId,
-                relationId: command.relation.id,
-              },
-        operation: "mutate-alert-relation",
-        relatedAlertVersion: related.value.version,
-        sessionId,
-        tenantId,
-      };
-      const idempotencyKey = idempotencyKeyForPayload(attempt.current, payload);
-      const common = {
-        alertEtag,
-        alertId,
-        csrfToken,
-        expectedAlertVersion: alertVersion,
-        idempotencyKey,
-        reason: command.reason,
-        signal: controller.signal,
-        tenantId,
-      };
-      const receipt =
-        command.kind === "create"
-          ? await api.create({
-              ...common,
-              expectedTargetVersion: related.value.version,
-              relationType: command.relationType,
-              targetAlertId: command.targetAlertId,
-            })
-          : await api.retract({
-              ...common,
-              expectedRelatedAlertVersion: related.value.version,
-              relation: command.relation,
-            });
-      if (!ownsMutation(token, controller)) return;
-      attempt.current.current = null;
-      if (command.kind === "create") {
-        setCreateOpen(false);
-        setTargetAlertId("");
-        setCreateReason("");
-        setRelationType("correlation");
-      } else {
-        setRetracting(null);
-        setRetractionReason("");
-      }
-      setNotice(
-        receipt.replayed
-          ? "The original relationship result was replayed safely."
-          : command.kind === "create"
-            ? "Alert relationship recorded without merging either Alert."
-            : "Retraction appended; the original relationship remains immutable.",
-      );
-      setMinimumAlertVersion(receipt.alertVersion);
-      await refreshAfterMutation(receipt, relatedAlertId, token, controller);
-    } catch (error) {
-      if (!ownsMutation(token, controller) || isAbortError(error)) return;
-      setProblem(alertRelationProblem(error));
-      if (
-        error instanceof AlertRelationApiError &&
-        (error.status === 412 || error.status === 428)
-      ) {
-        setReloadRequired(true);
-        const latest = await reloadLatest.current();
-        if (
-          ownsMutation(token, controller) &&
-          isReloadedAlertBoundary(latest)
-        ) {
-          if (latest.version > alertVersion) {
-            setMinimumAlertVersion(latest.version);
-          } else if (latest.version === alertVersion) {
-            setReloadRequired(false);
-          }
-        }
-      }
-    } finally {
-      if (ownsMutation(token, controller)) {
-        mutationRequest.current = null;
-        setBusy(null);
-      }
-    }
-  };
-
-  const refreshAfterMutation = async (
-    receipt: AlertRelationMutationReceipt,
-    relatedAlertId: string,
-    token: object,
-    controller: AbortController,
-  ): Promise<void> => {
-    setReloadRequired(true);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey }),
-      queryClient.invalidateQueries({
-        queryKey: ["ticket", "alert", tenantId, relatedAlertId],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["ticket-activity", "alert", tenantId, alertId],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["ticket-activity", "alert", tenantId, relatedAlertId],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["tickets", "alert", tenantId],
-      }),
-    ]);
-    const latest = await reloadLatest.current();
-    if (!ownsMutation(token, controller)) return;
-    if (
-      !isReloadedAlertBoundary(latest) ||
-      latest.version < receipt.alertVersion
-    ) {
-      setProblem(
-        "The relationship was saved, but the latest Alert snapshot could not be loaded. Reload before changing relationships again.",
-      );
-      return;
-    }
-    if (alertBoundaryIsCanonical && alertVersion >= receipt.alertVersion) {
-      setReloadRequired(false);
-    }
-  };
-
-  const reloadWorkspace = async (): Promise<void> => {
-    setProblem(null);
-    const [latest] = await Promise.all([
-      reloadLatest.current(),
-      query.refetch(),
-    ]);
-    const minimumVersion = minimumAlertVersion ?? alertVersion;
-    if (!isReloadedAlertBoundary(latest) || latest.version < minimumVersion) {
-      setReloadRequired(true);
-      return;
-    }
-    if (latest.version > alertVersion) {
-      setMinimumAlertVersion(latest.version);
-      setReloadRequired(true);
-      return;
-    }
-    setReloadRequired(false);
-  };
+  const {
+    canMutate,
+    createDraftIsValid,
+    retractionDraftIsValid,
+    changeCreateOpen,
+    closeRetraction,
+    submitCreate,
+    submitRetraction,
+    reloadWorkspace,
+  } = createAlertRelationPanelActions(state);
 
   return (
     <section
       className="alert-relation-panel"
       aria-labelledby="alert-relation-title"
     >
-      <header className="alert-relation-panel__header">
-        <div>
-          <p className="section-label">Explicit evidence</p>
-          <h2 id="alert-relation-title">Related Alerts</h2>
-          <p>
-            Classify duplicates and correlations without merging state,
-            evidence, or ownership.
-          </p>
-        </div>
-        <Dialog open={createOpen} onOpenChange={changeCreateOpen}>
-          <DialogTrigger asChild>
-            <Button disabled={!canMutate}>
-              <Link2 aria-hidden="true" /> Add relationship
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Relate another Alert</DialogTitle>
-              <DialogDescription>
-                Both current Alert versions are pinned. This creates immutable
-                evidence and does not close, copy, or merge either Alert.
-              </DialogDescription>
-            </DialogHeader>
-            <form className="alert-relation-form" onSubmit={submitCreate}>
-              <div>
-                <Label htmlFor="alert-relation-target">Target Alert ID</Label>
-                <Input
-                  autoComplete="off"
-                  autoFocus
-                  disabled={busy !== null}
-                  id="alert-relation-target"
-                  maxLength={36}
-                  onChange={(event) => {
-                    setTargetAlertId(event.currentTarget.value);
-                    setProblem(null);
-                    attempt.current.current = null;
-                  }}
-                  pattern={alertRelationUuidV7Pattern.source}
-                  placeholder="019… UUIDv7"
-                  required
-                  spellCheck={false}
-                  value={targetAlertId}
-                />
-              </div>
-              <div>
-                <Label htmlFor="alert-relation-type">Relationship</Label>
-                <select
-                  disabled={busy !== null}
-                  id="alert-relation-type"
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    if (value === "correlation" || value === "duplicate_of") {
-                      setRelationType(value);
-                      setProblem(null);
-                      attempt.current.current = null;
-                    }
-                  }}
-                  value={relationType}
-                >
-                  <option value="correlation">Correlated with</option>
-                  <option value="duplicate_of">Duplicate of</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="alert-relation-reason">Reason</Label>
-                <Textarea
-                  disabled={busy !== null}
-                  id="alert-relation-reason"
-                  maxLength={2000}
-                  onChange={(event) => {
-                    setCreateReason(event.currentTarget.value);
-                    setProblem(null);
-                    attempt.current.current = null;
-                  }}
-                  placeholder="State the concrete evidence connecting these Alerts"
-                  required
-                  value={createReason}
-                />
-                <small>Plain text, up to 2,000 UTF-8 bytes.</small>
-              </div>
-              {problem ? <p role="alert">{problem}</p> : null}
-              <div className="alert-relation-form__actions">
-                <Button
-                  disabled={busy !== null}
-                  onClick={() => changeCreateOpen(false)}
-                  type="button"
-                  variant="ghost"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  disabled={!canMutate || !createDraftIsValid}
-                  type="submit"
-                >
-                  {busy === "create" ? "Recording…" : "Record relationship"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </header>
+      <AlertRelationHeader
+        attempt={attempt}
+        busy={busy}
+        canMutate={canMutate}
+        changeCreateOpen={changeCreateOpen}
+        createDraftIsValid={createDraftIsValid}
+        createOpen={createOpen}
+        createReason={createReason}
+        problem={problem}
+        relationType={relationType}
+        setCreateReason={setCreateReason}
+        setProblem={setProblem}
+        setRelationType={setRelationType}
+        setTargetAlertId={setTargetAlertId}
+        submitCreate={submitCreate}
+        targetAlertId={targetAlertId}
+      />
 
       {notice ? <p className="alert-relation-panel__notice">{notice}</p> : null}
       {reloadRequired ? (
@@ -572,46 +325,7 @@ export function AlertRelationPanel({
         </div>
       ) : null}
 
-      {query.isPending ? (
-        <div
-          aria-label="Loading related Alerts"
-          className="alert-relation-skeleton"
-        >
-          <span />
-          <span />
-        </div>
-      ) : null}
-      {query.isError || !projection.canonical ? (
-        <div className="alert-relation-panel__error">
-          <FocusedError
-            message={
-              projection.canonical
-                ? alertRelationProblem(query.error)
-                : "The related Alert pages were not safe to combine."
-            }
-            title="Related Alerts unavailable"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void query.refetch()}
-          >
-            <RefreshCw aria-hidden="true" /> Retry relationships
-          </Button>
-        </div>
-      ) : null}
-      {!query.isPending &&
-      !query.isError &&
-      projection.canonical &&
-      projection.items.length === 0 ? (
-        <div className="alert-relation-panel__empty">
-          <GitCompareArrows aria-hidden="true" />
-          <h3>No Alert relationships recorded</h3>
-          <p>
-            Add evidence only when the duplicate or correlation is explicit.
-          </p>
-        </div>
-      ) : null}
+      <AlertRelationInventoryStatus projection={projection} query={query} />
       {projection.canonical && projection.items.length > 0 ? (
         <ol className="alert-relation-list">
           {projection.items.map((relation) => (
@@ -793,35 +507,6 @@ function AlertRelationCard({
   );
 }
 
-export function flattenAlertRelationPages(
-  pages: readonly AlertRelationPage[] | undefined,
-): { canonical: boolean; items: readonly AlertRelation[] } {
-  if (!pages) return { canonical: true, items: [] };
-  const items: AlertRelation[] = [];
-  const ids = new Set<string>();
-  const pairs = new Set<string>();
-  let previousId: string | undefined;
-  for (const page of pages) {
-    for (const item of page.items) {
-      const pair = [item.sourceAlertId, item.targetAlertId]
-        .toSorted()
-        .join(":");
-      if (
-        ids.has(item.id) ||
-        pairs.has(pair) ||
-        (previousId !== undefined && previousId <= item.id)
-      ) {
-        return { canonical: false, items: [] };
-      }
-      ids.add(item.id);
-      pairs.add(pair);
-      previousId = item.id;
-      items.push(item);
-    }
-  }
-  return { canonical: true, items };
-}
-
 function safeNextCursor(
   page: AlertRelationPage,
   pages: readonly AlertRelationPage[],
@@ -854,5 +539,508 @@ function alertRelationProblem(error: unknown): string {
   return describeTicketingError(
     error,
     "The Alert relationship could not be updated from the current governed snapshots.",
+  );
+}
+
+interface AlertRelationHeaderProps {
+  attempt: ReturnType<typeof useAlertRelationPanelState>["attempt"];
+  busy: ReturnType<typeof useAlertRelationPanelState>["busy"];
+  canMutate: boolean;
+  changeCreateOpen: (next: boolean) => void;
+  createDraftIsValid: boolean;
+  createOpen: ReturnType<typeof useAlertRelationPanelState>["createOpen"];
+  createReason: ReturnType<typeof useAlertRelationPanelState>["createReason"];
+  problem: ReturnType<typeof useAlertRelationPanelState>["problem"];
+  relationType: ReturnType<typeof useAlertRelationPanelState>["relationType"];
+  setCreateReason: ReturnType<
+    typeof useAlertRelationPanelState
+  >["setCreateReason"];
+  setProblem: ReturnType<typeof useAlertRelationPanelState>["setProblem"];
+  setRelationType: ReturnType<
+    typeof useAlertRelationPanelState
+  >["setRelationType"];
+  setTargetAlertId: ReturnType<
+    typeof useAlertRelationPanelState
+  >["setTargetAlertId"];
+  submitCreate: (event: FormEvent<HTMLFormElement>) => void;
+  targetAlertId: ReturnType<typeof useAlertRelationPanelState>["targetAlertId"];
+}
+
+function AlertRelationHeader({
+  attempt,
+  busy,
+  canMutate,
+  changeCreateOpen,
+  createDraftIsValid,
+  createOpen,
+  createReason,
+  problem,
+  relationType,
+  setCreateReason,
+  setProblem,
+  setRelationType,
+  setTargetAlertId,
+  submitCreate,
+  targetAlertId,
+}: AlertRelationHeaderProps): React.JSX.Element {
+  return (
+    <header className="alert-relation-panel__header">
+      <div>
+        <p className="section-label">Explicit evidence</p>
+        <h2 id="alert-relation-title">Related Alerts</h2>
+        <p>
+          Classify duplicates and correlations without merging state, evidence,
+          or ownership.
+        </p>
+      </div>
+      <Dialog open={createOpen} onOpenChange={changeCreateOpen}>
+        <DialogTrigger asChild>
+          <Button disabled={!canMutate}>
+            <Link2 aria-hidden="true" /> Add relationship
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Relate another Alert</DialogTitle>
+            <DialogDescription>
+              Both current Alert versions are pinned. This creates immutable
+              evidence and does not close, copy, or merge either Alert.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="alert-relation-form" onSubmit={submitCreate}>
+            <div>
+              <Label htmlFor="alert-relation-target">Target Alert ID</Label>
+              <Input
+                autoComplete="off"
+                autoFocus
+                disabled={busy !== null}
+                id="alert-relation-target"
+                maxLength={36}
+                onChange={(event) => {
+                  setTargetAlertId(event.currentTarget.value);
+                  setProblem(null);
+                  attempt.current.current = null;
+                }}
+                pattern={alertRelationUuidV7Pattern.source}
+                placeholder="019… UUIDv7"
+                required
+                spellCheck={false}
+                value={targetAlertId}
+              />
+            </div>
+            <div>
+              <Label htmlFor="alert-relation-type">Relationship</Label>
+              <select
+                disabled={busy !== null}
+                id="alert-relation-type"
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (value === "correlation" || value === "duplicate_of") {
+                    setRelationType(value);
+                    setProblem(null);
+                    attempt.current.current = null;
+                  }
+                }}
+                value={relationType}
+              >
+                <option value="correlation">Correlated with</option>
+                <option value="duplicate_of">Duplicate of</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="alert-relation-reason">Reason</Label>
+              <Textarea
+                disabled={busy !== null}
+                id="alert-relation-reason"
+                maxLength={2000}
+                onChange={(event) => {
+                  setCreateReason(event.currentTarget.value);
+                  setProblem(null);
+                  attempt.current.current = null;
+                }}
+                placeholder="State the concrete evidence connecting these Alerts"
+                required
+                value={createReason}
+              />
+              <small>Plain text, up to 2,000 UTF-8 bytes.</small>
+            </div>
+            {problem ? <p role="alert">{problem}</p> : null}
+            <div className="alert-relation-form__actions">
+              <Button
+                disabled={busy !== null}
+                onClick={() => changeCreateOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={!canMutate || !createDraftIsValid}
+                type="submit"
+              >
+                {busy === "create" ? "Recording…" : "Record relationship"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </header>
+  );
+}
+
+function createAlertRelationPanelActions(
+  state: ReturnType<typeof useAlertRelationPanelState>,
+) {
+  const {
+    alertEtag,
+    alertId,
+    alertVersion,
+    api,
+    csrfToken,
+    sessionId,
+    tenantId,
+    tickets,
+    queryClient,
+    queryKey,
+    query,
+    projection,
+    setCreateOpen,
+    relationType,
+    setRelationType,
+    targetAlertId,
+    setTargetAlertId,
+    createReason,
+    setCreateReason,
+    retracting,
+    setRetracting,
+    retractionReason,
+    setRetractionReason,
+    busy,
+    setBusy,
+    setProblem,
+    setNotice,
+    reloadRequired,
+    setReloadRequired,
+    minimumAlertVersion,
+    setMinimumAlertVersion,
+    mutationRequest,
+    authorizationToken,
+    attempt,
+    reloadLatest,
+    alertBoundaryIsCanonical,
+  } = state;
+  const canMutate =
+    alertBoundaryIsCanonical &&
+    alertVersion < 2_147_483_647 &&
+    projection.canonical &&
+    !reloadRequired &&
+    busy === null &&
+    !query.isPending &&
+    !query.isError;
+  const createDraftIsValid =
+    alertRelationUuidV7Pattern.test(targetAlertId) &&
+    targetAlertId !== alertId &&
+    isCanonicalAlertRelationReason(createReason);
+  const retractionDraftIsValid =
+    isCanonicalAlertRelationReason(retractionReason);
+  const changeCreateOpen = (next: boolean): void => {
+    if (!next) mutationRequest.current?.abort();
+    setCreateOpen(next);
+    setProblem(null);
+    setNotice(null);
+    if (!next) {
+      setTargetAlertId("");
+      setRelationType("correlation");
+      setCreateReason("");
+      setBusy(null);
+      attempt.current.current = null;
+    }
+  };
+  const closeRetraction = (): void => {
+    mutationRequest.current?.abort();
+    mutationRequest.current = null;
+    attempt.current.current = null;
+    setRetracting(null);
+    setRetractionReason("");
+    setBusy(null);
+    setProblem(null);
+  };
+  const submitCreate = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (!canMutate || !createDraftIsValid) return;
+    void mutate({
+      kind: "create",
+      reason: createReason,
+      relationType,
+      targetAlertId,
+    });
+  };
+  const submitRetraction = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (!canMutate || !retracting || !retractionDraftIsValid) return;
+    void mutate({
+      kind: "retract",
+      reason: retractionReason,
+      relation: retracting,
+    });
+  };
+  const ownsMutation = (token: object, controller: AbortController): boolean =>
+    authorizationToken.current === token &&
+    mutationRequest.current === controller &&
+    !controller.signal.aborted;
+  const mutate = async (
+    command:
+      | {
+          kind: "create";
+          reason: string;
+          relationType: AlertRelationType;
+          targetAlertId: string;
+        }
+      | { kind: "retract"; reason: string; relation: AlertRelation },
+  ): Promise<void> => {
+    if (!canMutate) return;
+    const relatedAlertId =
+      command.kind === "create"
+        ? command.targetAlertId
+        : command.relation.relatedAlert.id;
+    const token = authorizationToken.current;
+    const controller = new AbortController();
+    mutationRequest.current?.abort();
+    mutationRequest.current = controller;
+    setBusy(command.kind);
+    setProblem(null);
+    setNotice(null);
+    try {
+      const related = await tickets.getTicket(
+        "alert",
+        tenantId,
+        relatedAlertId,
+        controller.signal,
+      );
+      if (
+        !ownsMutation(token, controller) ||
+        related.value.projection !== "operator" ||
+        related.value.tenantId !== tenantId ||
+        related.value.id !== relatedAlertId ||
+        related.etag !== `"v${related.value.version}"` ||
+        related.value.version >= 2_147_483_647
+      ) {
+        throw new Error("Current operator snapshots are required.");
+      }
+      const payload = {
+        alertId,
+        alertVersion,
+        command:
+          command.kind === "create"
+            ? {
+                kind: command.kind,
+                reason: command.reason,
+                relationType: command.relationType,
+                targetAlertId: command.targetAlertId,
+              }
+            : {
+                kind: command.kind,
+                reason: command.reason,
+                relatedAlertId,
+                relationId: command.relation.id,
+              },
+        operation: "mutate-alert-relation",
+        relatedAlertVersion: related.value.version,
+        sessionId,
+        tenantId,
+      };
+      const idempotencyKey = idempotencyKeyForPayload(attempt.current, payload);
+      const common = {
+        alertEtag,
+        alertId,
+        csrfToken,
+        expectedAlertVersion: alertVersion,
+        idempotencyKey,
+        reason: command.reason,
+        signal: controller.signal,
+        tenantId,
+      };
+      const receipt =
+        command.kind === "create"
+          ? await api.create({
+              ...common,
+              expectedTargetVersion: related.value.version,
+              relationType: command.relationType,
+              targetAlertId: command.targetAlertId,
+            })
+          : await api.retract({
+              ...common,
+              expectedRelatedAlertVersion: related.value.version,
+              relation: command.relation,
+            });
+      if (!ownsMutation(token, controller)) return;
+      attempt.current.current = null;
+      if (command.kind === "create") {
+        setCreateOpen(false);
+        setTargetAlertId("");
+        setCreateReason("");
+        setRelationType("correlation");
+      } else {
+        setRetracting(null);
+        setRetractionReason("");
+      }
+      setNotice(
+        receipt.replayed
+          ? "The original relationship result was replayed safely."
+          : command.kind === "create"
+            ? "Alert relationship recorded without merging either Alert."
+            : "Retraction appended; the original relationship remains immutable.",
+      );
+      setMinimumAlertVersion(receipt.alertVersion);
+      await refreshAfterMutation(receipt, relatedAlertId, token, controller);
+    } catch (error) {
+      if (!ownsMutation(token, controller) || isAbortError(error)) return;
+      setProblem(alertRelationProblem(error));
+      if (
+        error instanceof AlertRelationApiError &&
+        (error.status === 412 || error.status === 428)
+      ) {
+        setReloadRequired(true);
+        const latest = await reloadLatest.current();
+        if (
+          ownsMutation(token, controller) &&
+          isReloadedAlertBoundary(latest)
+        ) {
+          if (latest.version > alertVersion) {
+            setMinimumAlertVersion(latest.version);
+          } else if (latest.version === alertVersion) {
+            setReloadRequired(false);
+          }
+        }
+      }
+    } finally {
+      if (ownsMutation(token, controller)) {
+        mutationRequest.current = null;
+        setBusy(null);
+      }
+    }
+  };
+  const refreshAfterMutation = async (
+    receipt: AlertRelationMutationReceipt,
+    relatedAlertId: string,
+    token: object,
+    controller: AbortController,
+  ): Promise<void> => {
+    setReloadRequired(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey }),
+      queryClient.invalidateQueries({
+        queryKey: ["ticket", "alert", tenantId, relatedAlertId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["ticket-activity", "alert", tenantId, alertId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["ticket-activity", "alert", tenantId, relatedAlertId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["tickets", "alert", tenantId],
+      }),
+    ]);
+    const latest = await reloadLatest.current();
+    if (!ownsMutation(token, controller)) return;
+    if (
+      !isReloadedAlertBoundary(latest) ||
+      latest.version < receipt.alertVersion
+    ) {
+      setProblem(
+        "The relationship was saved, but the latest Alert snapshot could not be loaded. Reload before changing relationships again.",
+      );
+      return;
+    }
+    if (alertBoundaryIsCanonical && alertVersion >= receipt.alertVersion) {
+      setReloadRequired(false);
+    }
+  };
+  const reloadWorkspace = async (): Promise<void> => {
+    setProblem(null);
+    const [latest] = await Promise.all([
+      reloadLatest.current(),
+      query.refetch(),
+    ]);
+    const minimumVersion = minimumAlertVersion ?? alertVersion;
+    if (!isReloadedAlertBoundary(latest) || latest.version < minimumVersion) {
+      setReloadRequired(true);
+      return;
+    }
+    if (latest.version > alertVersion) {
+      setMinimumAlertVersion(latest.version);
+      setReloadRequired(true);
+      return;
+    }
+    setReloadRequired(false);
+  };
+  return {
+    canMutate,
+    createDraftIsValid,
+    retractionDraftIsValid,
+    changeCreateOpen,
+    closeRetraction,
+    submitCreate,
+    submitRetraction,
+    ownsMutation,
+    mutate,
+    refreshAfterMutation,
+    reloadWorkspace,
+  };
+}
+
+interface AlertRelationInventoryStatusProps {
+  projection: ReturnType<typeof useAlertRelationPanelState>["projection"];
+  query: ReturnType<typeof useAlertRelationPanelState>["query"];
+}
+
+function AlertRelationInventoryStatus({
+  projection,
+  query,
+}: AlertRelationInventoryStatusProps): React.JSX.Element {
+  return (
+    <>
+      {query.isPending ? (
+        <div
+          aria-label="Loading related Alerts"
+          className="alert-relation-skeleton"
+        >
+          <span />
+          <span />
+        </div>
+      ) : null}
+      {query.isError || !projection.canonical ? (
+        <div className="alert-relation-panel__error">
+          <FocusedError
+            message={
+              projection.canonical
+                ? alertRelationProblem(query.error)
+                : "The related Alert pages were not safe to combine."
+            }
+            title="Related Alerts unavailable"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void query.refetch()}
+          >
+            <RefreshCw aria-hidden="true" /> Retry relationships
+          </Button>
+        </div>
+      ) : null}
+      {!query.isPending &&
+      !query.isError &&
+      projection.canonical &&
+      projection.items.length === 0 ? (
+        <div className="alert-relation-panel__empty">
+          <GitCompareArrows aria-hidden="true" />
+          <h3>No Alert relationships recorded</h3>
+          <p>
+            Add evidence only when the duplicate or correlation is explicit.
+          </p>
+        </div>
+      ) : null}
+    </>
   );
 }

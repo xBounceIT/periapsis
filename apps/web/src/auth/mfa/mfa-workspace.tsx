@@ -1,3 +1,8 @@
+const deviceDateFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
 // oxlint-disable-next-line import/no-unassigned-import -- Component-scoped security workspace styles.
 import "./mfa-workspace.css";
 
@@ -30,7 +35,14 @@ import {
   Smartphone,
   Trash2,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate } from "react-router";
 
 import { useSession } from "../session-context";
@@ -58,10 +70,10 @@ interface MfaSecurityWorkspaceProps {
 
 const deviceManagementAction = "mfa.device.manage";
 
-export function MfaSecurityWorkspace({
+function useMfaSecurityWorkspace({
   api = defaultApi,
   credentials,
-}: MfaSecurityWorkspaceProps): React.JSX.Element {
+}: MfaSecurityWorkspaceProps) {
   const {
     api: sessionApi,
     clearSession,
@@ -103,6 +115,18 @@ export function MfaSecurityWorkspace({
     [devices],
   );
 
+  const handleAuthenticationError = useCallback(
+    (caught: unknown): boolean => {
+      if (caught instanceof MfaApiError && caught.status === 401) {
+        void navigate("/");
+        clearSession(session.id);
+        return true;
+      }
+      return false;
+    },
+    [clearSession, navigate, session.id],
+  );
+
   useEffect(() => {
     if (!session.activeTenantId) return undefined;
     const controller = new AbortController();
@@ -124,16 +148,13 @@ export function MfaSecurityWorkspace({
         });
       });
     return () => controller.abort();
-  }, [api, includeRevoked, inventoryQueryKey, session.activeTenantId]);
-
-  function handleAuthenticationError(caught: unknown): boolean {
-    if (caught instanceof MfaApiError && caught.status === 401) {
-      void navigate("/");
-      clearSession(session.id);
-      return true;
-    }
-    return false;
-  }
+  }, [
+    api,
+    handleAuthenticationError,
+    includeRevoked,
+    inventoryQueryKey,
+    session.activeTenantId,
+  ]);
 
   async function refreshRotatedSession(): Promise<void> {
     const expected = session.id;
@@ -380,6 +401,50 @@ export function MfaSecurityWorkspace({
     }
   }
 
+  return {
+    session,
+    id,
+    devices,
+    includeRevoked,
+    setIncludeRevoked,
+    setLoadAttempt,
+    isLoadingMore,
+    busyAction,
+    error,
+    notice,
+    enrollment,
+    setEnrollment,
+    recoveryCodes,
+    setRecoveryCodes,
+    stepUp,
+    setStepUp,
+    stepUpMethod,
+    setStepUpMethod,
+    renamingId,
+    setRenamingId,
+    confirmingId,
+    setConfirmingId,
+    copyState,
+    activeTotp,
+    loadMore,
+    startTotp,
+    finishTotp,
+    registerPasskey,
+    startLocalVerification,
+    finishLocalVerification,
+    verifyWithPasskey,
+    regenerateCodes,
+    renamePasskey,
+    revokeDevice,
+    copyRecoveryCodes,
+  };
+}
+
+export function MfaSecurityWorkspace(
+  props: MfaSecurityWorkspaceProps,
+): React.JSX.Element {
+  const controller = useMfaSecurityWorkspace(props);
+  const { session, error, notice } = controller;
   if (!session.activeTenantId) {
     return (
       <div className="content mfa-security">
@@ -427,353 +492,13 @@ export function MfaSecurityWorkspace({
         className="mfa-security__grid"
         aria-label="MFA enrollment and verification"
       >
-        <Card className="mfa-security__card mfa-security__card--assurance">
-          <CardHeader>
-            <span className="mfa-security__icon" aria-hidden="true">
-              <ShieldCheck />
-            </span>
-            <div>
-              <CardTitle>Fresh verification</CardTitle>
-              <CardDescription>
-                Required by recovery-code and device lifecycle mutations.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {stepUp ? (
-              <form
-                className="mfa-security__form"
-                onSubmit={finishLocalVerification}
-              >
-                {stepUp.methods.length > 1 ? (
-                  <fieldset className="mfa-security__method-picker">
-                    <legend>Verification method</legend>
-                    {stepUp.methods.map((method) => (
-                      <Button
-                        key={method}
-                        type="button"
-                        size="sm"
-                        variant={
-                          stepUpMethod === method ? "secondary" : "outline"
-                        }
-                        aria-pressed={stepUpMethod === method}
-                        onClick={() => setStepUpMethod(method)}
-                      >
-                        {method === "totp" ? "Authenticator" : "Recovery code"}
-                      </Button>
-                    ))}
-                  </fieldset>
-                ) : null}
-                <FormField
-                  htmlFor={`${id}-step-up-code`}
-                  label={
-                    stepUpMethod === "totp"
-                      ? "Authenticator code"
-                      : "Recovery code"
-                  }
-                >
-                  <Input
-                    id={`${id}-step-up-code`}
-                    name="code"
-                    autoComplete="one-time-code"
-                    inputMode={stepUpMethod === "totp" ? "numeric" : "text"}
-                    minLength={stepUpMethod === "totp" ? 6 : 16}
-                    maxLength={stepUpMethod === "totp" ? 6 : 128}
-                    pattern={stepUpMethod === "totp" ? "[0-9]{6}" : undefined}
-                    required
-                    disabled={busyAction !== null}
-                  />
-                </FormField>
-                <div className="mfa-security__actions">
-                  <Button type="submit" disabled={busyAction !== null}>
-                    Verify locally
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setStepUp(null)}
-                    disabled={busyAction !== null}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <div className="mfa-security__actions">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void startLocalVerification()}
-                  disabled={
-                    busyAction !== null ||
-                    (!activeTotp && devices.kind === "ready")
-                  }
-                >
-                  <Smartphone aria-hidden="true" /> Verify code
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void verifyWithPasskey()}
-                  disabled={busyAction !== null}
-                >
-                  <Fingerprint aria-hidden="true" /> Use passkey
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="mfa-security__card">
-          <CardHeader>
-            <span className="mfa-security__icon" aria-hidden="true">
-              <Smartphone />
-            </span>
-            <div>
-              <CardTitle>Authenticator app</CardTitle>
-              <CardDescription>
-                Add one time-based code generator.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {enrollment ? (
-              <form className="mfa-security__form" onSubmit={finishTotp}>
-                <Alert className="mfa-security__one-time">
-                  <ShieldAlert aria-hidden="true" />
-                  <AlertTitle>One-time enrollment secret</AlertTitle>
-                  <AlertDescription>
-                    Save this before continuing. It will not be shown again.
-                  </AlertDescription>
-                </Alert>
-                <code className="mfa-security__secret">
-                  {enrollment.secret}
-                </code>
-                <FormField
-                  htmlFor={`${id}-enrollment-code`}
-                  label="Current six-digit code"
-                >
-                  <Input
-                    id={`${id}-enrollment-code`}
-                    name="code"
-                    autoComplete="one-time-code"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    minLength={6}
-                    maxLength={6}
-                    required
-                    disabled={busyAction !== null}
-                  />
-                </FormField>
-                <div className="mfa-security__actions">
-                  <Button type="submit" disabled={busyAction !== null}>
-                    Confirm authenticator
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setEnrollment(null)}
-                    disabled={busyAction !== null}
-                  >
-                    Discard secret
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <Button
-                type="button"
-                onClick={() => void startTotp()}
-                disabled={busyAction !== null}
-              >
-                <KeyRound aria-hidden="true" /> Add authenticator
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="mfa-security__card">
-          <CardHeader>
-            <span className="mfa-security__icon" aria-hidden="true">
-              <Fingerprint />
-            </span>
-            <div>
-              <CardTitle>Passkey</CardTitle>
-              <CardDescription>
-                Register a platform or roaming authenticator.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form className="mfa-security__form" onSubmit={registerPasskey}>
-              <FormField htmlFor={`${id}-passkey-name`} label="Passkey name">
-                <Input
-                  id={`${id}-passkey-name`}
-                  name="displayName"
-                  placeholder="Work laptop"
-                  minLength={1}
-                  maxLength={120}
-                  required
-                  disabled={busyAction !== null}
-                />
-              </FormField>
-              <Button type="submit" disabled={busyAction !== null}>
-                <Fingerprint aria-hidden="true" /> Register passkey
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card className="mfa-security__card">
-          <CardHeader>
-            <span className="mfa-security__icon" aria-hidden="true">
-              <KeyRound />
-            </span>
-            <div>
-              <CardTitle>Recovery codes</CardTitle>
-              <CardDescription>
-                Replacing codes permanently retires the previous set.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recoveryCodes.length > 0 ? (
-              <div className="mfa-security__form">
-                <Alert className="mfa-security__one-time">
-                  <ShieldAlert aria-hidden="true" />
-                  <AlertTitle>Save this replacement set now</AlertTitle>
-                  <AlertDescription>
-                    Leaving this page permanently hides these one-use values.
-                  </AlertDescription>
-                </Alert>
-                <ol
-                  className="mfa-security__codes"
-                  aria-label="Replacement recovery codes"
-                >
-                  {recoveryCodes.map((code) => (
-                    <li key={code}>
-                      <code>{code}</code>
-                    </li>
-                  ))}
-                </ol>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void copyRecoveryCodes()}
-                >
-                  {copyState === "copied" ? (
-                    <Check aria-hidden="true" />
-                  ) : (
-                    <Copy aria-hidden="true" />
-                  )}
-                  {copyState === "copied" ? "Copied" : "Copy codes"}
-                </Button>
-                <p aria-live="polite">
-                  {copyState === "failed"
-                    ? "Clipboard access failed. Copy each code manually."
-                    : ""}
-                </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setRecoveryCodes([])}
-                >
-                  I saved the codes
-                </Button>
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void regenerateCodes()}
-                disabled={busyAction !== null}
-              >
-                <RefreshCw aria-hidden="true" /> Replace recovery codes
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+        <FreshVerificationCard controller={controller} />
+        <TotpEnrollmentCard controller={controller} />
+        <PasskeyEnrollmentCard controller={controller} />
+        <RecoveryCodeCard controller={controller} />
       </section>
 
-      <section
-        className="mfa-security__inventory"
-        aria-labelledby="mfa-device-title"
-      >
-        <div className="mfa-security__section-heading">
-          <div>
-            <p className="section-label">Tenant-bound inventory</p>
-            <h2 id="mfa-device-title">MFA devices</h2>
-          </div>
-          <label className="mfa-security__toggle">
-            <input
-              type="checkbox"
-              checked={includeRevoked}
-              onChange={(event) =>
-                setIncludeRevoked(event.currentTarget.checked)
-              }
-            />
-            <span>Show revoked</span>
-          </label>
-        </div>
-
-        {devices.kind === "loading" ? <DeviceSkeleton /> : null}
-        {devices.kind === "error" ? (
-          <div className="mfa-security__empty">
-            <FocusedError message={devices.message} />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setLoadAttempt((value) => value + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Retry inventory
-            </Button>
-          </div>
-        ) : null}
-        {devices.kind === "ready" && devices.items.length === 0 ? (
-          <div className="mfa-security__empty">
-            <KeyRound aria-hidden="true" />
-            <h3>No MFA devices returned</h3>
-            <p>
-              Enroll an authenticator or passkey to establish local assurance.
-            </p>
-          </div>
-        ) : null}
-        {devices.kind === "ready" && devices.items.length > 0 ? (
-          <div className="mfa-security__devices">
-            {devices.items.map((device) => (
-              <DeviceCard
-                key={`${device.kind}:${device.id}`}
-                device={device}
-                busy={busyAction !== null}
-                confirming={confirmingId === device.id}
-                renaming={renamingId === device.id}
-                nameId={`${id}-${device.id}-name`}
-                onBeginRename={() => {
-                  setConfirmingId(null);
-                  setRenamingId(device.id);
-                }}
-                onCancelRename={() => setRenamingId(null)}
-                onRename={(event) => void renamePasskey(event, device)}
-                onBeginRevoke={() => {
-                  setRenamingId(null);
-                  setConfirmingId(device.id);
-                }}
-                onCancelRevoke={() => setConfirmingId(null)}
-                onRevoke={() => void revokeDevice(device)}
-              />
-            ))}
-            {devices.nextCursor ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isLoadingMore}
-                onClick={() => void loadMore()}
-              >
-                {isLoadingMore ? "Loading more devices…" : "Load more devices"}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
+      <DeviceInventory controller={controller} />
 
       <Card className="mfa-security__sessions">
         <CardHeader>
@@ -861,82 +586,7 @@ function DeviceCard(props: DeviceCardProps): React.JSX.Element {
             </div>
           ) : null}
         </dl>
-        {props.renaming ? (
-          <form className="mfa-security__form" onSubmit={props.onRename}>
-            <FormField htmlFor={props.nameId} label="New passkey name">
-              <Input
-                id={props.nameId}
-                name="displayName"
-                defaultValue={device.displayName}
-                minLength={1}
-                maxLength={120}
-                required
-                disabled={props.busy}
-              />
-            </FormField>
-            <div className="mfa-security__actions">
-              <Button type="submit" size="sm" disabled={props.busy}>
-                Save name
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={props.onCancelRename}
-                disabled={props.busy}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        ) : props.confirming ? (
-          <div className="mfa-security__confirmation" role="alert">
-            <p>
-              Revoke this device and every session family that depends on it?
-            </p>
-            <div className="mfa-security__actions">
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={props.onRevoke}
-                disabled={props.busy}
-              >
-                <Trash2 aria-hidden="true" /> Confirm revoke
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={props.onCancelRevoke}
-                disabled={props.busy}
-              >
-                Keep device
-              </Button>
-            </div>
-          </div>
-        ) : inactive ? null : (
-          <div className="mfa-security__actions">
-            {device.kind === "passkey" ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={props.onBeginRename}
-              >
-                <Pencil aria-hidden="true" /> Rename
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={props.onBeginRevoke}
-            >
-              <Trash2 aria-hidden="true" /> Revoke
-            </Button>
-          </div>
-        )}
+        <DeviceActions {...props} />
       </CardContent>
     </Card>
   );
@@ -983,11 +633,504 @@ function formatDeviceStatus(status: MfaDeviceView["status"]): string {
 function formatTimestamp(value: string): string {
   const instant = new Date(value);
   if (Number.isNaN(instant.valueOf())) return "Unavailable";
-  return new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(instant);
+  return deviceDateFormatter.format(instant);
 }
 
-export { appendUniqueDevices };
+function FreshVerificationCard({
+  controller,
+}: {
+  controller: ReturnType<typeof useMfaSecurityWorkspace>;
+}): React.JSX.Element {
+  const {
+    stepUp,
+    stepUpMethod,
+    setStepUpMethod,
+    id,
+    busyAction,
+    finishLocalVerification,
+    setStepUp,
+    startLocalVerification,
+    activeTotp,
+    devices,
+    verifyWithPasskey,
+  } = controller;
+  return (
+    <Card className="mfa-security__card mfa-security__card--assurance">
+      <CardHeader>
+        <span className="mfa-security__icon" aria-hidden="true">
+          <ShieldCheck />
+        </span>
+        <div>
+          <CardTitle>Fresh verification</CardTitle>
+          <CardDescription>
+            Required by recovery-code and device lifecycle mutations.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {stepUp ? (
+          <form
+            className="mfa-security__form"
+            onSubmit={finishLocalVerification}
+          >
+            {stepUp.methods.length > 1 ? (
+              <fieldset className="mfa-security__method-picker">
+                <legend>Verification method</legend>
+                {stepUp.methods.map((method) => (
+                  <Button
+                    key={method}
+                    type="button"
+                    size="sm"
+                    variant={stepUpMethod === method ? "secondary" : "outline"}
+                    aria-pressed={stepUpMethod === method}
+                    onClick={() => setStepUpMethod(method)}
+                  >
+                    {method === "totp" ? "Authenticator" : "Recovery code"}
+                  </Button>
+                ))}
+              </fieldset>
+            ) : null}
+            <FormField
+              htmlFor={`${id}-step-up-code`}
+              label={
+                stepUpMethod === "totp" ? "Authenticator code" : "Recovery code"
+              }
+            >
+              <Input
+                id={`${id}-step-up-code`}
+                name="code"
+                autoComplete="one-time-code"
+                inputMode={stepUpMethod === "totp" ? "numeric" : "text"}
+                minLength={stepUpMethod === "totp" ? 6 : 16}
+                maxLength={stepUpMethod === "totp" ? 6 : 128}
+                pattern={stepUpMethod === "totp" ? "[0-9]{6}" : undefined}
+                required
+                disabled={busyAction !== null}
+              />
+            </FormField>
+            <div className="mfa-security__actions">
+              <Button type="submit" disabled={busyAction !== null}>
+                Verify locally
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setStepUp(null)}
+                disabled={busyAction !== null}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="mfa-security__actions">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void startLocalVerification()}
+              disabled={
+                busyAction !== null || (!activeTotp && devices.kind === "ready")
+              }
+            >
+              <Smartphone aria-hidden="true" /> Verify code
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void verifyWithPasskey()}
+              disabled={busyAction !== null}
+            >
+              <Fingerprint aria-hidden="true" /> Use passkey
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TotpEnrollmentCard({
+  controller,
+}: {
+  controller: ReturnType<typeof useMfaSecurityWorkspace>;
+}): React.JSX.Element {
+  const { enrollment, finishTotp, id, busyAction, setEnrollment, startTotp } =
+    controller;
+  return (
+    <Card className="mfa-security__card">
+      <CardHeader>
+        <span className="mfa-security__icon" aria-hidden="true">
+          <Smartphone />
+        </span>
+        <div>
+          <CardTitle>Authenticator app</CardTitle>
+          <CardDescription>Add one time-based code generator.</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {enrollment ? (
+          <form className="mfa-security__form" onSubmit={finishTotp}>
+            <Alert className="mfa-security__one-time">
+              <ShieldAlert aria-hidden="true" />
+              <AlertTitle>One-time enrollment secret</AlertTitle>
+              <AlertDescription>
+                Save this before continuing. It will not be shown again.
+              </AlertDescription>
+            </Alert>
+            <code className="mfa-security__secret">{enrollment.secret}</code>
+            <FormField
+              htmlFor={`${id}-enrollment-code`}
+              label="Current six-digit code"
+            >
+              <Input
+                id={`${id}-enrollment-code`}
+                name="code"
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                minLength={6}
+                maxLength={6}
+                required
+                disabled={busyAction !== null}
+              />
+            </FormField>
+            <div className="mfa-security__actions">
+              <Button type="submit" disabled={busyAction !== null}>
+                Confirm authenticator
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setEnrollment(null)}
+                disabled={busyAction !== null}
+              >
+                Discard secret
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => void startTotp()}
+            disabled={busyAction !== null}
+          >
+            <KeyRound aria-hidden="true" /> Add authenticator
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PasskeyEnrollmentCard({
+  controller,
+}: {
+  controller: ReturnType<typeof useMfaSecurityWorkspace>;
+}): React.JSX.Element {
+  const { registerPasskey, id, busyAction } = controller;
+  return (
+    <Card className="mfa-security__card">
+      <CardHeader>
+        <span className="mfa-security__icon" aria-hidden="true">
+          <Fingerprint />
+        </span>
+        <div>
+          <CardTitle>Passkey</CardTitle>
+          <CardDescription>
+            Register a platform or roaming authenticator.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <form className="mfa-security__form" onSubmit={registerPasskey}>
+          <FormField htmlFor={`${id}-passkey-name`} label="Passkey name">
+            <Input
+              id={`${id}-passkey-name`}
+              name="displayName"
+              placeholder="Work laptop"
+              minLength={1}
+              maxLength={120}
+              required
+              disabled={busyAction !== null}
+            />
+          </FormField>
+          <Button type="submit" disabled={busyAction !== null}>
+            <Fingerprint aria-hidden="true" /> Register passkey
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecoveryCodeCard({
+  controller,
+}: {
+  controller: ReturnType<typeof useMfaSecurityWorkspace>;
+}): React.JSX.Element {
+  const {
+    recoveryCodes,
+    copyRecoveryCodes,
+    copyState,
+    setRecoveryCodes,
+    regenerateCodes,
+    busyAction,
+  } = controller;
+  return (
+    <Card className="mfa-security__card">
+      <CardHeader>
+        <span className="mfa-security__icon" aria-hidden="true">
+          <KeyRound />
+        </span>
+        <div>
+          <CardTitle>Recovery codes</CardTitle>
+          <CardDescription>
+            Replacing codes permanently retires the previous set.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {recoveryCodes.length > 0 ? (
+          <div className="mfa-security__form">
+            <Alert className="mfa-security__one-time">
+              <ShieldAlert aria-hidden="true" />
+              <AlertTitle>Save this replacement set now</AlertTitle>
+              <AlertDescription>
+                Leaving this page permanently hides these one-use values.
+              </AlertDescription>
+            </Alert>
+            <ol
+              className="mfa-security__codes"
+              aria-label="Replacement recovery codes"
+            >
+              {recoveryCodes.map((code) => (
+                <li key={code}>
+                  <code>{code}</code>
+                </li>
+              ))}
+            </ol>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void copyRecoveryCodes()}
+            >
+              {copyState === "copied" ? (
+                <Check aria-hidden="true" />
+              ) : (
+                <Copy aria-hidden="true" />
+              )}
+              {copyState === "copied" ? "Copied" : "Copy codes"}
+            </Button>
+            <p aria-live="polite">
+              {copyState === "failed"
+                ? "Clipboard access failed. Copy each code manually."
+                : ""}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setRecoveryCodes([])}
+            >
+              I saved the codes
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void regenerateCodes()}
+            disabled={busyAction !== null}
+          >
+            <RefreshCw aria-hidden="true" /> Replace recovery codes
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeviceInventory({
+  controller,
+}: {
+  controller: ReturnType<typeof useMfaSecurityWorkspace>;
+}): React.JSX.Element {
+  const {
+    includeRevoked,
+    setIncludeRevoked,
+    devices,
+    setLoadAttempt,
+    busyAction,
+    confirmingId,
+    renamingId,
+    id,
+    setConfirmingId,
+    setRenamingId,
+    renamePasskey,
+    revokeDevice,
+    isLoadingMore,
+    loadMore,
+  } = controller;
+  return (
+    <section
+      className="mfa-security__inventory"
+      aria-labelledby="mfa-device-title"
+    >
+      <div className="mfa-security__section-heading">
+        <div>
+          <p className="section-label">Tenant-bound inventory</p>
+          <h2 id="mfa-device-title">MFA devices</h2>
+        </div>
+        <label className="mfa-security__toggle">
+          <input
+            type="checkbox"
+            checked={includeRevoked}
+            onChange={(event) => setIncludeRevoked(event.currentTarget.checked)}
+          />
+          <span>Show revoked</span>
+        </label>
+      </div>
+
+      {devices.kind === "loading" ? <DeviceSkeleton /> : null}
+      {devices.kind === "error" ? (
+        <div className="mfa-security__empty">
+          <FocusedError message={devices.message} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setLoadAttempt((value) => value + 1)}
+          >
+            <RefreshCw aria-hidden="true" /> Retry inventory
+          </Button>
+        </div>
+      ) : null}
+      {devices.kind === "ready" && devices.items.length === 0 ? (
+        <div className="mfa-security__empty">
+          <KeyRound aria-hidden="true" />
+          <h3>No MFA devices returned</h3>
+          <p>
+            Enroll an authenticator or passkey to establish local assurance.
+          </p>
+        </div>
+      ) : null}
+      {devices.kind === "ready" && devices.items.length > 0 ? (
+        <div className="mfa-security__devices">
+          {devices.items.map((device) => (
+            <DeviceCard
+              key={`${device.kind}:${device.id}`}
+              device={device}
+              busy={busyAction !== null}
+              confirming={confirmingId === device.id}
+              renaming={renamingId === device.id}
+              nameId={`${id}-${device.id}-name`}
+              onBeginRename={() => {
+                setConfirmingId(null);
+                setRenamingId(device.id);
+              }}
+              onCancelRename={() => setRenamingId(null)}
+              onRename={(event) => void renamePasskey(event, device)}
+              onBeginRevoke={() => {
+                setRenamingId(null);
+                setConfirmingId(device.id);
+              }}
+              onCancelRevoke={() => setConfirmingId(null)}
+              onRevoke={() => void revokeDevice(device)}
+            />
+          ))}
+          {devices.nextCursor ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isLoadingMore}
+              onClick={() => void loadMore()}
+            >
+              {isLoadingMore ? "Loading more devices…" : "Load more devices"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DeviceActions(props: DeviceCardProps): React.JSX.Element {
+  const { device } = props;
+  const inactive = device.status !== "active";
+  return (
+    <>
+      {props.renaming ? (
+        <form className="mfa-security__form" onSubmit={props.onRename}>
+          <FormField htmlFor={props.nameId} label="New passkey name">
+            <Input
+              id={props.nameId}
+              name="displayName"
+              defaultValue={device.displayName}
+              minLength={1}
+              maxLength={120}
+              required
+              disabled={props.busy}
+            />
+          </FormField>
+          <div className="mfa-security__actions">
+            <Button type="submit" size="sm" disabled={props.busy}>
+              Save name
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={props.onCancelRename}
+              disabled={props.busy}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : props.confirming ? (
+        <div className="mfa-security__confirmation" role="alert">
+          <p>Revoke this device and every session family that depends on it?</p>
+          <div className="mfa-security__actions">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={props.onRevoke}
+              disabled={props.busy}
+            >
+              <Trash2 aria-hidden="true" /> Confirm revoke
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={props.onCancelRevoke}
+              disabled={props.busy}
+            >
+              Keep device
+            </Button>
+          </div>
+        </div>
+      ) : inactive ? null : (
+        <div className="mfa-security__actions">
+          {device.kind === "passkey" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={props.onBeginRename}
+            >
+              <Pencil aria-hidden="true" /> Rename
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={props.onBeginRevoke}
+          >
+            <Trash2 aria-hidden="true" /> Revoke
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}

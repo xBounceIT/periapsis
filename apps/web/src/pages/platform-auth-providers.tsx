@@ -28,8 +28,6 @@ import {
   TableBody,
   TableCaption,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
@@ -48,7 +46,17 @@ import {
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { useSession } from "../auth/session-context";
 import { FocusedError } from "../components/focused-error";
@@ -60,17 +68,18 @@ import {
   PhaseTwoApiError,
   platformIdentityAccountManagePermission,
   platformIdentityAccountReadPermission,
+  platformIdentityBindingManagePermission,
+  platformIdentityBindingReadPermission,
+  platformIdentityPolicyManagePermission,
   platformIdentityProviderManagePermission,
   platformIdentityProviderReadPermission,
   platformIdentityProviderTestPermission,
-  platformIdentityPolicyManagePermission,
-  platformIdentityBindingManagePermission,
-  platformIdentityBindingReadPermission,
   type PhaseTwoApi,
   type PlatformAuthProviderSummaryView,
   type PlatformAuthProviderView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { PlatformAuthProviderAccounts } from "./platform-auth-provider-accounts";
 import {
   createPlatformAuthProviderDraft,
   derivePlatformAuthProviderDeploymentEndpoints,
@@ -83,18 +92,17 @@ import {
   validatePlatformAuthProviderMetadataDraft,
   validatePlatformOidcClientSecret,
   withPlatformOidcRefreshToken,
-  type PlatformAuthProviderDraft,
   type PlatformAuthProviderDeploymentEndpoints,
+  type PlatformAuthProviderDraft,
   type PlatformAuthProviderKind,
   type PlatformAuthProviderMetadataDraft,
   type PlatformSamlSignatureAlgorithm,
   type PlatformSamlSignaturePolicy,
   type PlatformSamlSubjectSource,
 } from "./platform-auth-provider-model";
-import { PlatformAuthProviderAccounts } from "./platform-auth-provider-accounts";
-import { PlatformLdapProviderAdministration } from "./platform-ldap-provider-administration";
 import { PlatformAuthProviderSamlMaterials } from "./platform-auth-provider-saml-materials";
 import { PlatformAuthProviderTenantBindings } from "./platform-auth-provider-tenant-bindings";
+import { PlatformLdapProviderAdministration } from "./platform-ldap-provider-administration";
 import { LdapProviderEditor } from "./tenant-ldap-providers";
 
 type ProviderListState =
@@ -129,6 +137,12 @@ type ProviderLifecycleCommand = "activate" | "deactivate";
 type ProviderDirectLoginCommand = "activate" | "deactivate";
 
 export function PlatformAuthProvidersPage(): React.JSX.Element {
+  const model = usePlatformAuthProvidersPageModel();
+  if (model.kind === "content") return model.content;
+  return <PlatformAuthProvidersPageView model={model.data} />;
+}
+
+function usePlatformAuthProvidersPageModel() {
   const { api, clearSession, session } = useSession();
   const canRead = hasPermission(
     session,
@@ -162,29 +176,85 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
     session,
     platformIdentityProviderTestPermission,
   );
-  const [listState, setListState] = useState<ProviderListState>({
-    kind: "loading",
-  });
-  const [listRevision, setListRevision] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
-    null,
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<PlatformAuthProvidersPageState>,
+    undefined,
+    (): PlatformAuthProvidersPageState => ({
+      listState: {
+        kind: "loading",
+      },
+      listRevision: 0,
+      createOpen: false,
+      selectedProviderId: null,
+      loadingMore: false,
+      paginationError: null,
+      notice: null,
+    }),
   );
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [paginationError, setPaginationError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<SessionMutationNotice | null>(null);
+  const {
+    listState,
+    listRevision,
+    createOpen,
+    selectedProviderId,
+    loadingMore,
+    paginationError,
+    notice,
+  } = workspaceState;
+  const {
+    setListState,
+    setCreateOpen,
+    setSelectedProviderId,
+    setLoadingMore,
+    setPaginationError,
+    setNotice,
+  } = useMemo(
+    () => ({
+      setListState: (
+        value: React.SetStateAction<
+          PlatformAuthProvidersPageState["listState"]
+        >,
+      ) => updateWorkspaceState({ listState: value }),
+      setCreateOpen: (
+        value: React.SetStateAction<
+          PlatformAuthProvidersPageState["createOpen"]
+        >,
+      ) => updateWorkspaceState({ createOpen: value }),
+      setSelectedProviderId: (
+        value: React.SetStateAction<
+          PlatformAuthProvidersPageState["selectedProviderId"]
+        >,
+      ) => updateWorkspaceState({ selectedProviderId: value }),
+      setLoadingMore: (
+        value: React.SetStateAction<
+          PlatformAuthProvidersPageState["loadingMore"]
+        >,
+      ) => updateWorkspaceState({ loadingMore: value }),
+      setPaginationError: (
+        value: React.SetStateAction<
+          PlatformAuthProvidersPageState["paginationError"]
+        >,
+      ) => updateWorkspaceState({ paginationError: value }),
+      setNotice: (
+        value: React.SetStateAction<PlatformAuthProvidersPageState["notice"]>,
+      ) => updateWorkspaceState({ notice: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const sessionIdRef = useRef(session.id);
   const cursorHistoryRef = useRef(new Set<string>());
   const listEpochRef = useRef(0);
   const paginationAbortRef = useRef<AbortController | null>(null);
   const paginationLockRef = useRef(false);
-  sessionIdRef.current = session.id;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session]);
   const visibleNotice = notice?.sessionId === session.id ? notice : null;
   const publishNotice = useCallback(
     (nextNotice: MutationNotice): void => {
       setNotice({ ...nextNotice, sessionId: session.id });
     },
-    [session.id],
+    [setNotice, session.id],
   );
 
   const handleRequestError = useCallback(
@@ -200,12 +270,14 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
   );
 
   useEffect(() => {
-    setCreateOpen(false);
-    setSelectedProviderId(null);
-    setNotice(null);
-    setListState({ kind: "loading" });
-    setPaginationError(null);
-    setLoadingMore(false);
+    updateWorkspaceState({
+      createOpen: false,
+      selectedProviderId: null,
+      notice: null,
+      listState: { kind: "loading" },
+      paginationError: null,
+      loadingMore: false,
+    });
     paginationAbortRef.current?.abort();
     paginationAbortRef.current = null;
     listEpochRef.current += 1;
@@ -215,12 +287,14 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
 
   useEffect(() => {
     if (canRead) return;
-    setCreateOpen(false);
-    setSelectedProviderId(null);
-    setNotice(null);
-    setListState({ kind: "loading" });
-    setPaginationError(null);
-    setLoadingMore(false);
+    updateWorkspaceState({
+      createOpen: false,
+      selectedProviderId: null,
+      notice: null,
+      listState: { kind: "loading" },
+      paginationError: null,
+      loadingMore: false,
+    });
     paginationAbortRef.current?.abort();
     paginationAbortRef.current = null;
     listEpochRef.current += 1;
@@ -238,11 +312,12 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
     listEpochRef.current = listEpoch;
     paginationLockRef.current = true;
     cursorHistoryRef.current.clear();
-    setLoadingMore(true);
-    setListState((current) =>
-      current.kind === "ready" ? current : { kind: "loading" },
-    );
-    setPaginationError(null);
+    updateWorkspaceState({
+      loadingMore: true,
+      listState: (current) =>
+        current.kind === "ready" ? current : { kind: "loading" },
+      paginationError: null,
+    });
     void api
       .listPlatformAuthProviders({
         includeArchived: true,
@@ -299,7 +374,15 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
         paginationLockRef.current = false;
       }
     };
-  }, [api, canRead, handleRequestError, listRevision, session.id]);
+  }, [
+    setListState,
+    setLoadingMore,
+    api,
+    canRead,
+    handleRequestError,
+    listRevision,
+    session.id,
+  ]);
 
   async function loadMore(): Promise<void> {
     if (
@@ -316,8 +399,7 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
     paginationAbortRef.current?.abort();
     paginationAbortRef.current = controller;
     paginationLockRef.current = true;
-    setLoadingMore(true);
-    setPaginationError(null);
+    updateWorkspaceState({ loadingMore: true, paginationError: null });
     try {
       const page = await api.listPlatformAuthProviders({
         after: cursor,
@@ -392,6 +474,7 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
       ) {
         paginationAbortRef.current = null;
         paginationLockRef.current = false;
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setLoadingMore(false);
       }
     }
@@ -402,8 +485,10 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
     paginationAbortRef.current = null;
     listEpochRef.current += 1;
     paginationLockRef.current = true;
-    setLoadingMore(true);
-    setListRevision((revision) => revision + 1);
+    updateWorkspaceState({
+      loadingMore: true,
+      listRevision: (revision) => revision + 1,
+    });
   }, []);
 
   const handleUnauthenticated = useCallback((): void => {
@@ -420,268 +505,97 @@ export function PlatformAuthProvidersPage(): React.JSX.Element {
 
   if (!canRead) {
     if (canReadBindings || canReadAccounts) {
-      return (
-        <ScopedPlatformAuthProviderPage
-          api={api}
-          canManageAccounts={canManageAccounts}
-          canManageBindings={canManageBindings}
-          canReadAccounts={canReadAccounts}
-          canReadBindings={canReadBindings}
-          csrfToken={session.csrfToken}
-          notice={visibleNotice}
-          onClearNotice={() => setNotice(null)}
-          onNotice={publishNotice}
-          onPermissionError={handlePermissionError}
-          onUnauthenticated={handleUnauthenticated}
-          sessionId={session.id}
-        />
-      );
+      return {
+        kind: "content" as const,
+        content: (
+          <ScopedPlatformAuthProviderPage
+            api={api}
+            canManageAccounts={canManageAccounts}
+            canManageBindings={canManageBindings}
+            canReadAccounts={canReadAccounts}
+            canReadBindings={canReadBindings}
+            csrfToken={session.csrfToken}
+            notice={visibleNotice}
+            onClearNotice={() => setNotice(null)}
+            onNotice={publishNotice}
+            onPermissionError={handlePermissionError}
+            onUnauthenticated={handleUnauthenticated}
+            sessionId={session.id}
+          />
+        ),
+      };
     }
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading" aria-labelledby="platform-idp-denied">
-          <div>
-            <p className="section-label">Platform administration</p>
-            <h1 id="platform-idp-denied">
-              Global identity providers are not available.
-            </h1>
-            <p>
-              This session did not return the explicit platform
-              identity-provider read permission. Tenant identity permissions do
-              not grant access.
-            </p>
-          </div>
-        </section>
-        <Alert variant="destructive">
-          <ShieldX aria-hidden="true" />
-          <AlertTitle>Permission not returned</AlertTitle>
-          <AlertDescription>
-            The API remains the authorization boundary for every request.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <div className="content content--narrow">
+          <section
+            className="page-heading"
+            aria-labelledby="platform-idp-denied"
+          >
+            <div>
+              <p className="section-label">Platform administration</p>
+              <h1 id="platform-idp-denied">
+                Global identity providers are not available.
+              </h1>
+              <p>
+                This session did not return the explicit platform
+                identity-provider read permission. Tenant identity permissions
+                do not grant access.
+              </p>
+            </div>
+          </section>
+          <Alert variant="destructive">
+            <ShieldX aria-hidden="true" />
+            <AlertTitle>Permission not returned</AlertTitle>
+            <AlertDescription>
+              The API remains the authorization boundary for every request.
+            </AlertDescription>
+          </Alert>
+        </div>
+      ),
+    };
   }
 
-  return (
-    <div className="content platform-idp-page">
-      <section className="page-heading platform-idp-page__heading">
-        <div>
-          <p className="section-label">Platform administration</p>
-          <h1>Global identity providers</h1>
-          <p>
-            Manage sanitized OIDC, SAML, and platform-global LDAP definitions.
-            Tenant execution and tenantless platform login remain explicit,
-            audited boundaries.
-          </p>
-        </div>
-        {canManage ? (
-          <Button type="button" onClick={() => setCreateOpen(true)}>
-            <Plus aria-hidden="true" /> Create staged provider
-          </Button>
-        ) : (
-          <Badge variant="outline">
-            <ShieldCheck aria-hidden="true" /> Read-only authority
-          </Badge>
-        )}
-      </section>
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      canManage,
+      canManageAccounts,
+      canManageBindings,
+      canManagePolicy,
+      canRead,
+      canReadAccounts,
+      canReadBindings,
+      canTest,
+      createOpen,
+      handlePermissionError,
+      handleUnauthenticated,
+      listState,
+      loadMore,
+      loadingMore,
+      paginationError,
+      publishNotice,
+      refreshList,
+      selectedProviderId,
+      session,
+      setCreateOpen,
+      setSelectedProviderId,
+      visibleNotice,
+    },
+  };
+}
 
-      <ProviderReadinessBand />
-
-      <PlatformIdentityNotice notice={visibleNotice} />
-
-      {listState.kind === "loading" ? <ProviderListSkeleton /> : null}
-      {listState.kind === "error" ? (
-        <div className="platform-idp-load-error">
-          <FocusedError message={listState.message} />
-          <Button type="button" variant="outline" onClick={refreshList}>
-            <RefreshCw aria-hidden="true" /> Reload inventory
-          </Button>
-        </div>
-      ) : null}
-      {listState.kind === "ready" ? (
-        <Card className="platform-idp-inventory">
-          <CardHeader>
-            <CardTitle>Provider inventory</CardTitle>
-            <CardDescription>
-              List responses contain safe readiness metadata only. Open a row
-              for the sanitized protocol configuration.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {listState.items.length === 0 ? (
-              <div className="platform-idp-empty">
-                <Fingerprint aria-hidden="true" />
-                <h2>No global providers recorded</h2>
-                <p>
-                  Create an OIDC, SAML, or LDAP definition without activating
-                  login.
-                </p>
-              </div>
-            ) : (
-              <div className="platform-idp-table-wrap">
-                <Table className="platform-idp-table">
-                  <TableCaption>
-                    Tenant execution and direct platform login are separate;
-                    each requires its own explicit activation.
-                  </TableCaption>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Protocol</TableHead>
-                      <TableHead>Configuration</TableHead>
-                      <TableHead>Protected material</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {listState.items.map((provider) => (
-                      <TableRow key={provider.id}>
-                        <TableCell>
-                          <div className="platform-idp-provider-cell">
-                            <strong>{provider.displayName}</strong>
-                            <code>{provider.key}</code>
-                          </div>
-                        </TableCell>
-                        <TableCell>{kindLabel(provider.kind)}</TableCell>
-                        <TableCell>
-                          {provider.configured ? "Recorded" : "Incomplete"}
-                        </TableCell>
-                        <TableCell>
-                          {provider.kind === "saml"
-                            ? "Not applicable"
-                            : provider.secretPresent
-                              ? "Present"
-                              : "Not set"}
-                        </TableCell>
-                        <TableCell>
-                          <ProviderStateBadge provider={provider} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            aria-label={`Inspect ${provider.displayName} (${provider.key})`}
-                            onClick={() => setSelectedProviderId(provider.id)}
-                          >
-                            Inspect
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {paginationError ? (
-              <FocusedError autoFocus={false} message={paginationError} />
-            ) : null}
-            {listState.nextCursor ? (
-              <div className="platform-idp-pagination">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={loadingMore}
-                  onClick={() => void loadMore()}
-                >
-                  {loadingMore ? "Loading…" : "Load more providers"}
-                </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <CreateProviderDialog
-        api={api}
-        canManage={canManage}
-        csrfToken={session.csrfToken}
-        onCreated={(provider) => {
-          if (provider.archivedAt !== null) {
-            publishNotice({
-              message: `${provider.displayName} is already archived. The safe retry returned its current state and did not recreate or activate the provider.`,
-              tone: "warning",
-            });
-          } else if (provider.kind === "ldap" && provider.enabled) {
-            publishNotice({
-              message: `${provider.displayName} already has tenantless LDAP login enabled. Existing-identity and TOTP enforcement remain server-side.`,
-              tone: "warning",
-            });
-          } else if (provider.enabled) {
-            publishNotice({
-              message: `${provider.displayName} is already active for tenant execution. The safe retry returned its current state and left direct platform login ${provider.platformLoginEnabled ? "active" : "disabled"}.`,
-              tone: "warning",
-            });
-          } else if (provider.activationAvailable) {
-            publishNotice({
-              message: `${provider.displayName} is already ready for tenant-execution activation. The safe retry returned its current state without activating either login boundary.`,
-              tone: "warning",
-            });
-          } else if (provider.version > 1) {
-            publishNotice({
-              message: `${provider.displayName} already exists and is currently disabled. The safe retry returned its later version without recreating or activating the provider.`,
-              tone: "warning",
-            });
-          } else {
-            publishNotice({
-              message: `${provider.displayName} was staged disabled. Platform login remains blocked.`,
-              tone: "success",
-            });
-          }
-          setCreateOpen(false);
-          setSelectedProviderId(provider.id);
-          refreshList();
-        }}
-        onConflict={() => {
-          publishNotice({
-            message:
-              "The create request conflicted with current state. Exact replay is bounded to 24 hours; the authorized provider inventory is being reloaded before a new attempt.",
-            tone: "warning",
-          });
-          setCreateOpen(false);
-          refreshList();
-        }}
-        onOpenChange={setCreateOpen}
-        onPermissionError={handlePermissionError}
-        onUnauthenticated={handleUnauthenticated}
-        open={createOpen}
-        sessionId={session.id}
-      />
-
-      <ProviderDetailDialog
-        api={api}
-        canManageAccounts={canManageAccounts}
-        canManageBindings={canManageBindings}
-        canReadAccounts={canReadAccounts}
-        canReadBindings={canReadBindings}
-        canManage={canManage}
-        canManagePolicy={canManagePolicy}
-        canRead={canRead}
-        canTest={canTest}
-        csrfToken={session.csrfToken}
-        onArchived={(providerName) => {
-          publishNotice({
-            message: `${providerName} was archived. It remains unavailable for platform login.`,
-            tone: "success",
-          });
-          setSelectedProviderId(null);
-          refreshList();
-        }}
-        onChanged={refreshList}
-        onNotice={publishNotice}
-        onOpenChange={(open) => {
-          if (!open) setSelectedProviderId(null);
-        }}
-        onPermissionError={handlePermissionError}
-        onUnauthenticated={handleUnauthenticated}
-        open={selectedProviderId !== null}
-        providerId={selectedProviderId}
-        sessionId={session.id}
-      />
-    </div>
-  );
+function PlatformAuthProvidersPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformAuthProvidersPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <PlatformProviderWorkspace model={model} />;
 }
 
 interface ScopedPlatformAuthProviderPageProps {
@@ -699,7 +613,14 @@ interface ScopedPlatformAuthProviderPageProps {
   sessionId: string;
 }
 
-function ScopedPlatformAuthProviderPage({
+function ScopedPlatformAuthProviderPage(
+  props: ScopedPlatformAuthProviderPageProps,
+): React.JSX.Element {
+  const model = useScopedPlatformAuthProviderPageModel(props);
+  return <ScopedPlatformAuthProviderPageView model={model.data} />;
+}
+
+function useScopedPlatformAuthProviderPageModel({
   api,
   canManageAccounts,
   canManageBindings,
@@ -712,13 +633,62 @@ function ScopedPlatformAuthProviderPage({
   onPermissionError,
   onUnauthenticated,
   sessionId,
-}: ScopedPlatformAuthProviderPageProps): React.JSX.Element {
+}: ScopedPlatformAuthProviderPageProps) {
   const providerIdInputId = useId();
-  const [providerIdDraft, setProviderIdDraft] = useState("");
-  const [providerId, setProviderId] = useState<string | null>(null);
-  const [providerIdError, setProviderIdError] = useState<string | null>(null);
-  const [accountMutationBusy, setAccountMutationBusy] = useState(false);
-  const [bindingMutationBusy, setBindingMutationBusy] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<ScopedPlatformAuthProviderPageState>,
+    undefined,
+    (): ScopedPlatformAuthProviderPageState => ({
+      providerIdDraft: "",
+      providerId: null,
+      providerIdError: null,
+      accountMutationBusy: false,
+      bindingMutationBusy: false,
+    }),
+  );
+  const {
+    providerIdDraft,
+    providerId,
+    providerIdError,
+    accountMutationBusy,
+    bindingMutationBusy,
+  } = workspaceState;
+  const {
+    setProviderIdDraft,
+    setProviderId,
+    setProviderIdError,
+    setAccountMutationBusy,
+    setBindingMutationBusy,
+  } = useMemo(
+    () => ({
+      setProviderIdDraft: (
+        value: React.SetStateAction<
+          ScopedPlatformAuthProviderPageState["providerIdDraft"]
+        >,
+      ) => updateWorkspaceState({ providerIdDraft: value }),
+      setProviderId: (
+        value: React.SetStateAction<
+          ScopedPlatformAuthProviderPageState["providerId"]
+        >,
+      ) => updateWorkspaceState({ providerId: value }),
+      setProviderIdError: (
+        value: React.SetStateAction<
+          ScopedPlatformAuthProviderPageState["providerIdError"]
+        >,
+      ) => updateWorkspaceState({ providerIdError: value }),
+      setAccountMutationBusy: (
+        value: React.SetStateAction<
+          ScopedPlatformAuthProviderPageState["accountMutationBusy"]
+        >,
+      ) => updateWorkspaceState({ accountMutationBusy: value }),
+      setBindingMutationBusy: (
+        value: React.SetStateAction<
+          ScopedPlatformAuthProviderPageState["bindingMutationBusy"]
+        >,
+      ) => updateWorkspaceState({ bindingMutationBusy: value }),
+    }),
+    [updateWorkspaceState],
+  );
 
   const mutationBusy = accountMutationBusy || bindingMutationBusy;
   const bindingOnly = canReadBindings && !canReadAccounts;
@@ -740,11 +710,13 @@ function ScopedPlatformAuthProviderPage({
       : "Open provider-scoped records";
 
   useEffect(() => {
-    setProviderIdDraft("");
-    setProviderId(null);
-    setProviderIdError(null);
-    setAccountMutationBusy(false);
-    setBindingMutationBusy(false);
+    updateWorkspaceState({
+      providerIdDraft: "",
+      providerId: null,
+      providerIdError: null,
+      accountMutationBusy: false,
+      bindingMutationBusy: false,
+    });
   }, [sessionId]);
 
   function openBindings(event: React.FormEvent<HTMLFormElement>): void {
@@ -753,10 +725,77 @@ function ScopedPlatformAuthProviderPage({
       setProviderIdError("Platform provider ID must be a canonical UUIDv7.");
       return;
     }
-    setProviderIdError(null);
-    setProviderId(providerIdDraft);
+    updateWorkspaceState({
+      providerIdError: null,
+      providerId: providerIdDraft,
+    });
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      accountMutationBusy,
+      accountOnly,
+      api,
+      authorityLabel,
+      bindingMutationBusy,
+      bindingOnly,
+      canManageAccounts,
+      canManageBindings,
+      canReadAccounts,
+      canReadBindings,
+      csrfToken,
+      inventoryTitle,
+      mutationBusy,
+      notice,
+      onClearNotice,
+      onNotice,
+      onPermissionError,
+      onUnauthenticated,
+      openBindings,
+      pageTitle,
+      providerId,
+      providerIdDraft,
+      providerIdError,
+      providerIdInputId,
+      sessionId,
+      setAccountMutationBusy,
+      setBindingMutationBusy,
+      setProviderId,
+      setProviderIdDraft,
+      setProviderIdError,
+    },
+  };
+}
+
+function ScopedPlatformAuthProviderPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useScopedPlatformAuthProviderPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    accountMutationBusy,
+    api,
+    authorityLabel,
+    bindingMutationBusy,
+    canManageAccounts,
+    canManageBindings,
+    canReadAccounts,
+    canReadBindings,
+    csrfToken,
+    notice,
+    onNotice,
+    onPermissionError,
+    onUnauthenticated,
+    pageTitle,
+    providerId,
+    sessionId,
+    setAccountMutationBusy,
+    setBindingMutationBusy,
+  } = model;
   return (
     <div className="content platform-idp-page">
       <section className="page-heading platform-idp-page__heading">
@@ -785,61 +824,7 @@ function ScopedPlatformAuthProviderPage({
 
       <PlatformIdentityNotice notice={notice} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{inventoryTitle}</CardTitle>
-          <CardDescription>
-            The identifier is used only as the explicit API scope; it does not
-            reveal provider metadata.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="platform-idp-action-form"
-            aria-label={`Open ${
-              bindingOnly
-                ? "tenant bindings"
-                : accountOnly
-                  ? "linked platform accounts"
-                  : "provider-scoped identity records"
-            } by provider ID`}
-            onSubmit={openBindings}
-          >
-            <FormField
-              {...(providerIdError ? { error: providerIdError } : {})}
-              htmlFor={providerIdInputId}
-              hint="Canonical UUIDv7 of the platform identity provider."
-              label="Platform provider ID"
-            >
-              <Input
-                aria-describedby={`${providerIdInputId}-${providerIdError ? "error" : "hint"}`}
-                aria-invalid={providerIdError ? true : undefined}
-                id={providerIdInputId}
-                autoComplete="off"
-                disabled={mutationBusy}
-                spellCheck={false}
-                value={providerIdDraft}
-                onChange={(event) => {
-                  const nextProviderId = event.target.value;
-                  setProviderIdDraft(nextProviderId);
-                  if (providerId !== nextProviderId) {
-                    setProviderId(null);
-                    onClearNotice();
-                  }
-                  setProviderIdError(null);
-                }}
-              />
-            </FormField>
-            <Button type="submit" disabled={mutationBusy}>
-              {bindingOnly
-                ? "Open tenant bindings"
-                : accountOnly
-                  ? "Open account register"
-                  : "Open identity records"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      <ScopedPlatformAuthProviderPageCard model={model} />
 
       {providerId && canReadBindings ? (
         <PlatformAuthProviderTenantBindings
@@ -916,7 +901,14 @@ interface CreateProviderDialogProps {
   sessionId: string;
 }
 
-function CreateProviderDialog({
+function CreateProviderDialog(
+  props: CreateProviderDialogProps,
+): React.JSX.Element {
+  const model = useCreateProviderDialogModel(props);
+  return <CreateProviderDialogView model={model.data} />;
+}
+
+function useCreateProviderDialogModel({
   api,
   canManage,
   csrfToken,
@@ -927,17 +919,37 @@ function CreateProviderDialog({
   onUnauthenticated,
   open,
   sessionId,
-}: CreateProviderDialogProps): React.JSX.Element {
-  const [draft, setDraft] = useState<PlatformAuthProviderDraft>(() =>
-    createPlatformAuthProviderDraft("oidc"),
+}: CreateProviderDialogProps) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<CreateProviderDialogState>,
+    undefined,
+    (): CreateProviderDialogState => ({
+      draft: (() => createPlatformAuthProviderDraft("oidc"))(),
+      errors: [],
+      requestError: null,
+      submitting: false,
+    }),
+  );
+  const { draft, errors, requestError, submitting } = workspaceState;
+  const { setDraft, setRequestError, setSubmitting } = useMemo(
+    () => ({
+      setDraft: (
+        value: React.SetStateAction<CreateProviderDialogState["draft"]>,
+      ) => updateWorkspaceState({ draft: value }),
+      setRequestError: (
+        value: React.SetStateAction<CreateProviderDialogState["requestError"]>,
+      ) => updateWorkspaceState({ requestError: value }),
+      setSubmitting: (
+        value: React.SetStateAction<CreateProviderDialogState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+    }),
+    [updateWorkspaceState],
   );
   const deploymentEndpoints = derivePlatformAuthProviderDeploymentEndpoints(
     readBrowserPublicOrigin(),
     draft.key,
   );
-  const [errors, setErrors] = useState<readonly string[]>([]);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+
   const requestSessionRef = useRef(sessionId);
   const mountedRef = useRef(false);
   const idempotencyBindingRef = useRef<{
@@ -951,21 +963,23 @@ function CreateProviderDialog({
     open,
     sessionId,
   });
-  const previousSubmitContext = submitContextRef.current;
-  if (
-    previousSubmitContext.canManage !== canManage ||
-    previousSubmitContext.open !== open ||
-    previousSubmitContext.sessionId !== sessionId
-  ) {
-    submitContextRef.current = {
-      canManage,
-      epoch: previousSubmitContext.epoch + 1,
-      open,
-      sessionId,
-    };
-    submitLockRef.current = null;
-  }
-  requestSessionRef.current = sessionId;
+  useLayoutEffect(() => {
+    const previousSubmitContext = submitContextRef.current;
+    if (
+      previousSubmitContext.canManage !== canManage ||
+      previousSubmitContext.open !== open ||
+      previousSubmitContext.sessionId !== sessionId
+    ) {
+      submitContextRef.current = {
+        canManage,
+        epoch: previousSubmitContext.epoch + 1,
+        open,
+        sessionId,
+      };
+      submitLockRef.current = null;
+    }
+    requestSessionRef.current = sessionId;
+  }, [canManage, open, sessionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -983,10 +997,12 @@ function CreateProviderDialog({
 
   useEffect(() => {
     if (!open) {
-      setDraft(createPlatformAuthProviderDraft("oidc"));
-      setErrors([]);
-      setRequestError(null);
-      setSubmitting(false);
+      updateWorkspaceState({
+        draft: createPlatformAuthProviderDraft("oidc"),
+        errors: [],
+        requestError: null,
+        submitting: false,
+      });
       idempotencyBindingRef.current = null;
       submitLockRef.current = null;
     }
@@ -999,15 +1015,17 @@ function CreateProviderDialog({
   function changeKind(kind: PlatformAuthProviderKind): void {
     if (submitLockRef.current !== null || draft.kind === kind) return;
     const next = createPlatformAuthProviderDraft(kind);
-    setDraft({
-      ...next,
-      auditReason: draft.auditReason,
-      description: draft.description,
-      displayName: draft.displayName,
-      key: draft.key,
+    updateWorkspaceState({
+      draft: {
+        ...next,
+        auditReason: draft.auditReason,
+        description: draft.description,
+        displayName: draft.displayName,
+        key: draft.key,
+      },
+      errors: [],
+      requestError: null,
     });
-    setErrors([]);
-    setRequestError(null);
   }
 
   function submissionIsCurrent(
@@ -1035,8 +1053,7 @@ function CreateProviderDialog({
       draft,
       deploymentEndpoints,
     );
-    setErrors(validationErrors);
-    setRequestError(null);
+    updateWorkspaceState({ errors: validationErrors, requestError: null });
     if (
       validationErrors.length > 0 ||
       (draft.kind !== "ldap" && deploymentEndpoints === null)
@@ -1078,8 +1095,7 @@ function CreateProviderDialog({
       }
       if (caught instanceof PhaseTwoApiError && caught.status === 409) {
         idempotencyBindingRef.current = null;
-        setErrors([]);
-        setRequestError(null);
+        updateWorkspaceState({ errors: [], requestError: null });
         onConflict();
         return;
       }
@@ -1093,169 +1109,41 @@ function CreateProviderDialog({
       if (submitLockRef.current === submitToken) {
         submitLockRef.current = null;
         if (requestSessionRef.current === expectedSessionId) {
+          // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
           setSubmitting(false);
         }
       }
     }
   }
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (submitLockRef.current === null) onOpenChange(next);
-      }}
-    >
-      <DialogContent className="platform-idp-create-dialog">
-        <DialogHeader>
-          <DialogTitle>Create staged identity provider</DialogTitle>
-          <DialogDescription>
-            Record a typed, non-secret definition. Provider execution, account
-            mode, and platform login are fixed disabled.
-          </DialogDescription>
-        </DialogHeader>
-        <fieldset
-          aria-busy={submitting}
-          className="platform-idp-create-lock"
-          disabled={submitting}
-        >
-          <div
-            className="platform-idp-kind-picker"
-            role="group"
-            aria-label="Provider protocol"
-          >
-            <button
-              className={
-                draft.kind === "oidc"
-                  ? "platform-idp-kind-card platform-idp-kind-card--active"
-                  : "platform-idp-kind-card"
-              }
-              aria-pressed={draft.kind === "oidc"}
-              disabled={submitting}
-              type="button"
-              onClick={() => changeKind("oidc")}
-            >
-              <KeyRound aria-hidden="true" />
-              <span>
-                <strong>OIDC</strong>
-                <small>Discovery coordinates; secret set later</small>
-              </span>
-            </button>
-            <button
-              className={
-                draft.kind === "saml"
-                  ? "platform-idp-kind-card platform-idp-kind-card--active"
-                  : "platform-idp-kind-card"
-              }
-              aria-pressed={draft.kind === "saml"}
-              disabled={submitting}
-              type="button"
-              onClick={() => changeKind("saml")}
-            >
-              <Fingerprint aria-hidden="true" />
-              <span>
-                <strong>SAML 2.0</strong>
-                <small>Trust coordinates; encryption unavailable</small>
-              </span>
-            </button>
-            <button
-              className={
-                draft.kind === "ldap"
-                  ? "platform-idp-kind-card platform-idp-kind-card--active"
-                  : "platform-idp-kind-card"
-              }
-              aria-pressed={draft.kind === "ldap"}
-              disabled={submitting}
-              type="button"
-              onClick={() => changeKind("ldap")}
-            >
-              <Network aria-hidden="true" />
-              <span>
-                <strong>LDAP</strong>
-                <small>Existing identities + mandatory TOTP</small>
-              </span>
-            </button>
-          </div>
-          <form
-            className="platform-idp-form"
-            aria-label="Create staged identity provider"
-            onSubmit={(event) => void submit(event)}
-          >
-            {draft.kind === "ldap" ? (
-              <LdapProviderEditor
-                draft={draft}
-                mode="create"
-                policy="platform_global"
-                onChange={(nextDraft) => {
-                  if (submitLockRef.current === null) {
-                    setDraft({
-                      ...nextDraft,
-                      auditReason: draft.auditReason,
-                      kind: "ldap",
-                    });
-                  }
-                }}
-              />
-            ) : (
-              <>
-                <MetadataFields
-                  draft={draft}
-                  onChange={(patch) => {
-                    if (submitLockRef.current === null) {
-                      setDraft({ ...draft, ...patch });
-                    }
-                  }}
-                  prefix="platform-idp-create"
-                />
-                {draft.kind === "oidc" ? (
-                  <OidcCreateFields
-                    deploymentEndpoints={deploymentEndpoints}
-                    draft={draft}
-                    onChange={(nextDraft) => {
-                      if (submitLockRef.current === null) setDraft(nextDraft);
-                    }}
-                  />
-                ) : (
-                  <SamlCreateFields
-                    deploymentEndpoints={deploymentEndpoints}
-                    draft={draft}
-                    onChange={(nextDraft) => {
-                      if (submitLockRef.current === null) setDraft(nextDraft);
-                    }}
-                  />
-                )}
-              </>
-            )}
-            <AuditReasonField
-              id="platform-idp-create-reason"
-              value={draft.auditReason}
-              onChange={(auditReason) => {
-                if (submitLockRef.current === null) {
-                  setDraft({ ...draft, auditReason });
-                }
-              }}
-            />
-            {errors.length > 0 ? <ValidationSummary errors={errors} /> : null}
-            {requestError ? <FocusedError message={requestError} /> : null}
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={submitting}
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={submitting || !canManage}>
-                <Plus aria-hidden="true" />
-                {submitting ? "Creating…" : "Create disabled provider"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </fieldset>
-      </DialogContent>
-    </Dialog>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      canManage,
+      changeKind,
+      deploymentEndpoints,
+      draft,
+      errors,
+      onOpenChange,
+      open,
+      requestError,
+      setDraft,
+      submit,
+      submitLockRef,
+      submitting,
+    },
+  };
+}
+
+function CreateProviderDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useCreateProviderDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <ProviderCreateDialogContent model={model} />;
 }
 
 interface ProviderDetailDialogProps {
@@ -1280,7 +1168,14 @@ interface ProviderDetailDialogProps {
   sessionId: string;
 }
 
-function ProviderDetailDialog({
+function ProviderDetailDialog(
+  props: ProviderDetailDialogProps,
+): React.JSX.Element {
+  const model = useProviderDetailDialogModel(props);
+  return <ProviderDetailDialogView model={model.data} />;
+}
+
+function useProviderDetailDialogModel({
   api,
   canManageAccounts,
   canManageBindings,
@@ -1300,44 +1195,194 @@ function ProviderDetailDialog({
   open,
   providerId,
   sessionId,
-}: ProviderDetailDialogProps): React.JSX.Element {
-  const [state, setState] = useState<ProviderDetailState>({ kind: "loading" });
-  const [refreshRevision, setRefreshRevision] = useState(0);
-  const [metadataDraft, setMetadataDraft] =
-    useState<PlatformAuthProviderMetadataDraft | null>(null);
-  const [metadataErrors, setMetadataErrors] = useState<readonly string[]>([]);
-  const [metadataConflict, setMetadataConflict] = useState(false);
-  const [secretOpen, setSecretOpen] = useState(false);
-  const [clientSecret, setClientSecret] = useState("");
-  const [secretReason, setSecretReason] = useState("");
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [archiveReason, setArchiveReason] = useState("");
-  const [archiveConfirmation, setArchiveConfirmation] = useState("");
-  const [lifecycleCommand, setLifecycleCommand] =
-    useState<ProviderLifecycleCommand | null>(null);
-  const [lifecycleReason, setLifecycleReason] = useState("");
-  const [lifecycleConfirmation, setLifecycleConfirmation] = useState("");
-  const [directLoginCommand, setDirectLoginCommand] =
-    useState<ProviderDirectLoginCommand | null>(null);
-  const [directLoginReason, setDirectLoginReason] = useState("");
-  const [directLoginConfirmation, setDirectLoginConfirmation] = useState("");
-  const [accountMode, setAccountMode] =
-    useState<ProviderActivationAccountMode>("existing_identity");
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<
-    | "activate"
-    | "activate-direct-login"
-    | "archive"
-    | "deactivate"
-    | "deactivate-direct-login"
-    | "metadata"
-    | "secret"
-    | null
-  >(null);
-  const [bindingMutationBusy, setBindingMutationBusy] = useState(false);
-  const [accountMutationBusy, setAccountMutationBusy] = useState(false);
-  const [samlMutationBusy, setSamlMutationBusy] = useState(false);
-  const [bindingRefreshRevision, setBindingRefreshRevision] = useState(0);
+}: ProviderDetailDialogProps) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<ProviderDetailDialogState>,
+    undefined,
+    (): ProviderDetailDialogState => ({
+      state: { kind: "loading" },
+      refreshRevision: 0,
+      metadataDraft: null,
+      metadataErrors: [],
+      metadataConflict: false,
+      secretOpen: false,
+      clientSecret: "",
+      secretReason: "",
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      directLoginCommand: null,
+      directLoginReason: "",
+      directLoginConfirmation: "",
+      accountMode: "existing_identity",
+      mutationError: null,
+      submitting: null,
+      bindingMutationBusy: false,
+      accountMutationBusy: false,
+      samlMutationBusy: false,
+      bindingRefreshRevision: 0,
+    }),
+  );
+  const {
+    state,
+    refreshRevision,
+    metadataDraft,
+    metadataErrors,
+    metadataConflict,
+    secretOpen,
+    clientSecret,
+    secretReason,
+    archiveOpen,
+    archiveReason,
+    archiveConfirmation,
+    lifecycleCommand,
+    lifecycleReason,
+    lifecycleConfirmation,
+    directLoginCommand,
+    directLoginReason,
+    directLoginConfirmation,
+    accountMode,
+    mutationError,
+    submitting,
+    bindingMutationBusy,
+    accountMutationBusy,
+    samlMutationBusy,
+    bindingRefreshRevision,
+  } = workspaceState;
+  const {
+    setState,
+    setRefreshRevision,
+    setMetadataDraft,
+    setMetadataErrors,
+    setMetadataConflict,
+    setSecretOpen,
+    setClientSecret,
+    setSecretReason,
+    setArchiveOpen,
+    setArchiveReason,
+    setArchiveConfirmation,
+    setLifecycleCommand,
+    setLifecycleReason,
+    setLifecycleConfirmation,
+    setDirectLoginCommand,
+    setDirectLoginReason,
+    setDirectLoginConfirmation,
+    setAccountMode,
+    setMutationError,
+    setSubmitting,
+    setBindingMutationBusy,
+    setAccountMutationBusy,
+    setSamlMutationBusy,
+    setBindingRefreshRevision,
+  } = useMemo(
+    () => ({
+      setState: (
+        value: React.SetStateAction<ProviderDetailDialogState["state"]>,
+      ) => updateWorkspaceState({ state: value }),
+      setRefreshRevision: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["refreshRevision"]
+        >,
+      ) => updateWorkspaceState({ refreshRevision: value }),
+      setMetadataDraft: (
+        value: React.SetStateAction<ProviderDetailDialogState["metadataDraft"]>,
+      ) => updateWorkspaceState({ metadataDraft: value }),
+      setMetadataErrors: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["metadataErrors"]
+        >,
+      ) => updateWorkspaceState({ metadataErrors: value }),
+      setMetadataConflict: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["metadataConflict"]
+        >,
+      ) => updateWorkspaceState({ metadataConflict: value }),
+      setSecretOpen: (
+        value: React.SetStateAction<ProviderDetailDialogState["secretOpen"]>,
+      ) => updateWorkspaceState({ secretOpen: value }),
+      setClientSecret: (
+        value: React.SetStateAction<ProviderDetailDialogState["clientSecret"]>,
+      ) => updateWorkspaceState({ clientSecret: value }),
+      setSecretReason: (
+        value: React.SetStateAction<ProviderDetailDialogState["secretReason"]>,
+      ) => updateWorkspaceState({ secretReason: value }),
+      setArchiveOpen: (
+        value: React.SetStateAction<ProviderDetailDialogState["archiveOpen"]>,
+      ) => updateWorkspaceState({ archiveOpen: value }),
+      setArchiveReason: (
+        value: React.SetStateAction<ProviderDetailDialogState["archiveReason"]>,
+      ) => updateWorkspaceState({ archiveReason: value }),
+      setArchiveConfirmation: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["archiveConfirmation"]
+        >,
+      ) => updateWorkspaceState({ archiveConfirmation: value }),
+      setLifecycleCommand: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["lifecycleCommand"]
+        >,
+      ) => updateWorkspaceState({ lifecycleCommand: value }),
+      setLifecycleReason: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["lifecycleReason"]
+        >,
+      ) => updateWorkspaceState({ lifecycleReason: value }),
+      setLifecycleConfirmation: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["lifecycleConfirmation"]
+        >,
+      ) => updateWorkspaceState({ lifecycleConfirmation: value }),
+      setDirectLoginCommand: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["directLoginCommand"]
+        >,
+      ) => updateWorkspaceState({ directLoginCommand: value }),
+      setDirectLoginReason: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["directLoginReason"]
+        >,
+      ) => updateWorkspaceState({ directLoginReason: value }),
+      setDirectLoginConfirmation: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["directLoginConfirmation"]
+        >,
+      ) => updateWorkspaceState({ directLoginConfirmation: value }),
+      setAccountMode: (
+        value: React.SetStateAction<ProviderDetailDialogState["accountMode"]>,
+      ) => updateWorkspaceState({ accountMode: value }),
+      setMutationError: (
+        value: React.SetStateAction<ProviderDetailDialogState["mutationError"]>,
+      ) => updateWorkspaceState({ mutationError: value }),
+      setSubmitting: (
+        value: React.SetStateAction<ProviderDetailDialogState["submitting"]>,
+      ) => updateWorkspaceState({ submitting: value }),
+      setBindingMutationBusy: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["bindingMutationBusy"]
+        >,
+      ) => updateWorkspaceState({ bindingMutationBusy: value }),
+      setAccountMutationBusy: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["accountMutationBusy"]
+        >,
+      ) => updateWorkspaceState({ accountMutationBusy: value }),
+      setSamlMutationBusy: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["samlMutationBusy"]
+        >,
+      ) => updateWorkspaceState({ samlMutationBusy: value }),
+      setBindingRefreshRevision: (
+        value: React.SetStateAction<
+          ProviderDetailDialogState["bindingRefreshRevision"]
+        >,
+      ) => updateWorkspaceState({ bindingRefreshRevision: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const sessionRef = useRef(sessionId);
   const mountedRef = useRef(false);
   const mutationLockRef = useRef<symbol | null>(null);
@@ -1349,25 +1394,27 @@ function ProviderDetailDialog({
     providerId,
     sessionId,
   });
-  const previousContext = mutationContextRef.current;
-  if (
-    previousContext.canManage !== canManage ||
-    previousContext.canRead !== canRead ||
-    previousContext.open !== open ||
-    previousContext.providerId !== providerId ||
-    previousContext.sessionId !== sessionId
-  ) {
-    mutationContextRef.current = {
-      canManage,
-      canRead,
-      epoch: previousContext.epoch + 1,
-      open,
-      providerId,
-      sessionId,
-    };
-    mutationLockRef.current = null;
-  }
-  sessionRef.current = sessionId;
+  useLayoutEffect(() => {
+    const previousContext = mutationContextRef.current;
+    if (
+      previousContext.canManage !== canManage ||
+      previousContext.canRead !== canRead ||
+      previousContext.open !== open ||
+      previousContext.providerId !== providerId ||
+      previousContext.sessionId !== sessionId
+    ) {
+      mutationContextRef.current = {
+        canManage,
+        canRead,
+        epoch: previousContext.epoch + 1,
+        open,
+        providerId,
+        sessionId,
+      };
+      mutationLockRef.current = null;
+    }
+    sessionRef.current = sessionId;
+  }, [canManage, canRead, open, providerId, sessionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1384,52 +1431,56 @@ function ProviderDetailDialog({
   }, []);
 
   useEffect(() => {
-    setState({ kind: "loading" });
-    setMetadataDraft(null);
-    setMetadataErrors([]);
-    setMetadataConflict(false);
-    setSecretOpen(false);
-    setClientSecret("");
-    setSecretReason("");
-    setArchiveOpen(false);
-    setArchiveReason("");
-    setArchiveConfirmation("");
-    setLifecycleCommand(null);
-    setLifecycleReason("");
-    setLifecycleConfirmation("");
-    setDirectLoginCommand(null);
-    setDirectLoginReason("");
-    setDirectLoginConfirmation("");
-    setAccountMode("existing_identity");
-    setMutationError(null);
-    setSubmitting(null);
-    setBindingMutationBusy(false);
-    setAccountMutationBusy(false);
-    setSamlMutationBusy(false);
+    updateWorkspaceState({
+      state: { kind: "loading" },
+      metadataDraft: null,
+      metadataErrors: [],
+      metadataConflict: false,
+      secretOpen: false,
+      clientSecret: "",
+      secretReason: "",
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      directLoginCommand: null,
+      directLoginReason: "",
+      directLoginConfirmation: "",
+      accountMode: "existing_identity",
+      mutationError: null,
+      submitting: null,
+      bindingMutationBusy: false,
+      accountMutationBusy: false,
+      samlMutationBusy: false,
+    });
     mutationLockRef.current = null;
   }, [open, providerId, sessionId]);
 
   useEffect(() => {
     if (canManage && canRead) return;
-    setMetadataDraft(null);
-    setMetadataErrors([]);
-    setMetadataConflict(false);
-    setSecretOpen(false);
-    setClientSecret("");
-    setSecretReason("");
-    setArchiveOpen(false);
-    setArchiveReason("");
-    setArchiveConfirmation("");
-    setLifecycleCommand(null);
-    setLifecycleReason("");
-    setLifecycleConfirmation("");
-    setDirectLoginCommand(null);
-    setDirectLoginReason("");
-    setDirectLoginConfirmation("");
-    setAccountMode("existing_identity");
-    setMutationError(null);
-    setSubmitting(null);
-    setSamlMutationBusy(false);
+    updateWorkspaceState({
+      metadataDraft: null,
+      metadataErrors: [],
+      metadataConflict: false,
+      secretOpen: false,
+      clientSecret: "",
+      secretReason: "",
+      archiveOpen: false,
+      archiveReason: "",
+      archiveConfirmation: "",
+      lifecycleCommand: null,
+      lifecycleReason: "",
+      lifecycleConfirmation: "",
+      directLoginCommand: null,
+      directLoginReason: "",
+      directLoginConfirmation: "",
+      accountMode: "existing_identity",
+      mutationError: null,
+      submitting: null,
+      samlMutationBusy: false,
+    });
     mutationLockRef.current = null;
   }, [canManage, canRead]);
 
@@ -1493,6 +1544,7 @@ function ProviderDetailDialog({
       });
     return () => controller.abort();
   }, [
+    setState,
     api,
     canRead,
     onPermissionError,
@@ -1580,8 +1632,7 @@ function ProviderDetailDialog({
       return;
     }
     const errors = validatePlatformAuthProviderMetadataDraft(metadataDraft);
-    setMetadataErrors(errors);
-    setMutationError(null);
+    updateWorkspaceState({ metadataErrors: errors, mutationError: null });
     if (errors.length > 0) return;
     const expectedSessionId = sessionId;
     const expectedProviderId = providerId;
@@ -1610,10 +1661,12 @@ function ProviderDetailDialog({
       ) {
         return;
       }
-      setState({ kind: "ready", value: updated });
-      setMetadataDraft(null);
-      setMetadataErrors([]);
-      setMetadataConflict(false);
+      updateWorkspaceState({
+        state: { kind: "ready", value: updated },
+        metadataDraft: null,
+        metadataErrors: [],
+        metadataConflict: false,
+      });
       onChanged();
       onNotice({
         message: `${updated.value.displayName} metadata was replaced at version ${updated.value.version}; tenant execution remains ${updated.value.enabled ? "active" : "disabled"} and direct platform login remains ${updated.value.platformLoginEnabled ? "active" : "disabled"}.`,
@@ -1667,8 +1720,7 @@ function ProviderDetailDialog({
     const mutationEpoch = mutationContextRef.current.epoch;
     const mutationToken = Symbol("platform-provider-secret");
     mutationLockRef.current = mutationToken;
-    setClientSecret("");
-    setSubmitting("secret");
+    updateWorkspaceState({ clientSecret: "", submitting: "secret" });
     try {
       await api.replacePlatformOidcAuthProviderClientSecret(
         csrfToken,
@@ -1690,9 +1742,11 @@ function ProviderDetailDialog({
       ) {
         return;
       }
-      setSecretOpen(false);
-      setSecretReason("");
-      setMutationError(null);
+      updateWorkspaceState({
+        secretOpen: false,
+        secretReason: "",
+        mutationError: null,
+      });
       markProjectionStale();
       onChanged();
       onNotice({
@@ -1758,8 +1812,7 @@ function ProviderDetailDialog({
     const command = lifecycleCommand;
     const mutationToken = Symbol(`platform-provider-${command}`);
     mutationLockRef.current = mutationToken;
-    setMutationError(null);
-    setSubmitting(command);
+    updateWorkspaceState({ mutationError: null, submitting: command });
     try {
       const updated =
         command === "activate"
@@ -1790,12 +1843,14 @@ function ProviderDetailDialog({
       ) {
         return;
       }
-      setState({ kind: "ready", value: updated });
-      setLifecycleCommand(null);
-      setLifecycleReason("");
-      setLifecycleConfirmation("");
-      setAccountMode("existing_identity");
-      setBindingRefreshRevision((revision) => revision + 1);
+      updateWorkspaceState({
+        state: { kind: "ready", value: updated },
+        lifecycleCommand: null,
+        lifecycleReason: "",
+        lifecycleConfirmation: "",
+        accountMode: "existing_identity",
+        bindingRefreshRevision: (revision) => revision + 1,
+      });
       onChanged();
       onNotice({
         message:
@@ -1819,9 +1874,11 @@ function ProviderDetailDialog({
         caught instanceof PhaseTwoApiError &&
         (caught.status === 409 || caught.status === 412)
       ) {
-        setLifecycleCommand(null);
-        setLifecycleReason("");
-        setLifecycleConfirmation("");
+        updateWorkspaceState({
+          lifecycleCommand: null,
+          lifecycleReason: "",
+          lifecycleConfirmation: "",
+        });
       }
       handleMutationFailure(
         caught,
@@ -1875,8 +1932,10 @@ function ProviderDetailDialog({
     const submittingCommand = `${command}-direct-login` as const;
     const mutationToken = Symbol(`platform-provider-${submittingCommand}`);
     mutationLockRef.current = mutationToken;
-    setMutationError(null);
-    setSubmitting(submittingCommand);
+    updateWorkspaceState({
+      mutationError: null,
+      submitting: submittingCommand,
+    });
     try {
       const input = { expectedVersion: coherentVersioned.value.version };
       const updated =
@@ -1905,10 +1964,12 @@ function ProviderDetailDialog({
       ) {
         return;
       }
-      setState({ kind: "ready", value: updated });
-      setDirectLoginCommand(null);
-      setDirectLoginReason("");
-      setDirectLoginConfirmation("");
+      updateWorkspaceState({
+        state: { kind: "ready", value: updated },
+        directLoginCommand: null,
+        directLoginReason: "",
+        directLoginConfirmation: "",
+      });
       onChanged();
       onNotice({
         message:
@@ -1932,9 +1993,11 @@ function ProviderDetailDialog({
         caught instanceof PhaseTwoApiError &&
         (caught.status === 409 || caught.status === 412)
       ) {
-        setDirectLoginCommand(null);
-        setDirectLoginReason("");
-        setDirectLoginConfirmation("");
+        updateWorkspaceState({
+          directLoginCommand: null,
+          directLoginReason: "",
+          directLoginConfirmation: "",
+        });
       }
       handleMutationFailure(
         caught,
@@ -1976,8 +2039,7 @@ function ProviderDetailDialog({
     const mutationToken = Symbol("platform-provider-archive");
     mutationLockRef.current = mutationToken;
     const providerName = coherentVersioned.value.displayName;
-    setMutationError(null);
-    setSubmitting("archive");
+    updateWorkspaceState({ mutationError: null, submitting: "archive" });
     try {
       await api.archivePlatformAuthProvider(
         csrfToken,
@@ -1996,8 +2058,7 @@ function ProviderDetailDialog({
       ) {
         return;
       }
-      setArchiveReason("");
-      setArchiveConfirmation("");
+      updateWorkspaceState({ archiveReason: "", archiveConfirmation: "" });
       onArchived(providerName);
     } catch (caught) {
       if (
@@ -2014,9 +2075,11 @@ function ProviderDetailDialog({
         caught instanceof PhaseTwoApiError &&
         (caught.status === 409 || caught.status === 412)
       ) {
-        setArchiveOpen(false);
-        setArchiveReason("");
-        setArchiveConfirmation("");
+        updateWorkspaceState({
+          archiveOpen: false,
+          archiveReason: "",
+          archiveConfirmation: "",
+        });
       }
       handleMutationFailure(
         caught,
@@ -2033,6 +2096,107 @@ function ProviderDetailDialog({
     accountMutationBusy ||
     samlMutationBusy;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      accountMode,
+      accountMutationBusy,
+      api,
+      archiveConfirmation,
+      archiveOpen,
+      archiveProvider,
+      archiveReason,
+      bindingMutationBusy,
+      bindingRefreshRevision,
+      canManage,
+      canManageAccounts,
+      canManageBindings,
+      canManagePolicy,
+      canReadAccounts,
+      canReadBindings,
+      canTest,
+      changeDirectLogin,
+      changeProviderExecution,
+      clientSecret,
+      coherentVersioned,
+      csrfToken,
+      directLoginCommand,
+      directLoginConfirmation,
+      directLoginReason,
+      displayVersioned,
+      lifecycleCommand,
+      lifecycleConfirmation,
+      lifecycleReason,
+      markProjectionStale,
+      metadataConflict,
+      metadataDraft,
+      metadataErrors,
+      mutationError,
+      mutationLockRef,
+      onChanged,
+      onNotice,
+      onOpenChange,
+      onPermissionError,
+      onUnauthenticated,
+      open,
+      provider,
+      providerMutationBlocked,
+      replaceClientSecret,
+      samlMutationBusy,
+      secretOpen,
+      secretReason,
+      sessionId,
+      setAccountMode,
+      setAccountMutationBusy,
+      setArchiveConfirmation,
+      setArchiveOpen,
+      setArchiveReason,
+      setBindingMutationBusy,
+      setClientSecret,
+      setDirectLoginCommand,
+      setDirectLoginConfirmation,
+      setDirectLoginReason,
+      setLifecycleCommand,
+      setLifecycleConfirmation,
+      setLifecycleReason,
+      setMetadataConflict,
+      setMetadataDraft,
+      setMetadataErrors,
+      setMutationError,
+      setRefreshRevision,
+      setSamlMutationBusy,
+      setSecretOpen,
+      setSecretReason,
+      state,
+      submitting,
+      updateMetadata,
+    },
+  };
+}
+
+function ProviderDetailDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useProviderDetailDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    accountMutationBusy,
+    bindingMutationBusy,
+    canManage,
+    coherentVersioned,
+    displayVersioned,
+    mutationError,
+    mutationLockRef,
+    onOpenChange,
+    open,
+    provider,
+    samlMutationBusy,
+    state,
+    submitting,
+  } = model;
   return (
     <Dialog
       open={open}
@@ -2070,141 +2234,18 @@ function ProviderDetailDialog({
         {state.kind === "loading" && !provider ? (
           <ProviderDetailSkeleton />
         ) : null}
-        {state.kind === "error" ? (
-          <div className="platform-idp-load-error">
-            <FocusedError message={state.message} />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRefreshRevision((revision) => revision + 1)}
-            >
-              <RefreshCw aria-hidden="true" /> Reload detail
-            </Button>
-          </div>
-        ) : null}
+        {<ProviderDetailError model={model} />}
         {provider && displayVersioned ? (
           <div className="platform-idp-detail-ready">
-            {state.kind !== "ready" ? (
-              <Alert>
-                <ShieldAlert aria-hidden="true" />
-                <AlertTitle>
-                  Showing a display-only confirmed projection
-                </AlertTitle>
-                <AlertDescription>
-                  Its body and ETag remain paired, but a newer server version is
-                  being loaded. All mutations stay locked until refresh
-                  completes.
-                </AlertDescription>
-              </Alert>
-            ) : null}
+            {<ProviderStaleProjectionNotice model={model} />}
             <ProviderReadinessBand provider={provider} />
             <ProviderFacts provider={provider} etag={displayVersioned.etag} />
             <ProviderConfiguration provider={provider} />
-            {coherentVersioned?.value.kind === "saml" ? (
-              <PlatformAuthProviderSamlMaterials
-                api={api}
-                canManage={canManage}
-                csrfToken={csrfToken}
-                current={{
-                  etag: coherentVersioned.etag,
-                  value: coherentVersioned.value,
-                }}
-                onChanged={onChanged}
-                onMutationBusyChange={setSamlMutationBusy}
-                onNotice={onNotice}
-                onPermissionError={onPermissionError}
-                onProviderProjectionStale={markProjectionStale}
-                onUnauthenticated={onUnauthenticated}
-                providerMutationBusy={
-                  submitting !== null ||
-                  bindingMutationBusy ||
-                  accountMutationBusy
-                }
-                sessionId={sessionId}
-              />
-            ) : null}
-            {coherentVersioned?.value.kind === "ldap" ? (
-              <PlatformLdapProviderAdministration
-                api={api}
-                canManageConfiguration={canManage}
-                canManagePolicy={canManagePolicy}
-                canTest={canTest}
-                csrfToken={csrfToken}
-                current={{
-                  etag: coherentVersioned.etag,
-                  value: coherentVersioned.value,
-                }}
-                onChanged={onChanged}
-                onMutationBusyChange={setSamlMutationBusy}
-                onNotice={onNotice}
-                onPermissionError={onPermissionError}
-                onProviderProjectionStale={markProjectionStale}
-                onUnauthenticated={onUnauthenticated}
-                providerMutationBusy={
-                  submitting !== null ||
-                  bindingMutationBusy ||
-                  accountMutationBusy
-                }
-                sessionId={sessionId}
-              />
-            ) : null}
-            {provider.kind !== "ldap" ? (
-              <PlatformAuthProviderTenantBindings
-                api={api}
-                canManage={canManageBindings}
-                canRead={canReadBindings}
-                csrfToken={csrfToken}
-                onMutationBusyChange={setBindingMutationBusy}
-                onNotice={onNotice}
-                onPermissionError={onPermissionError}
-                onProviderProjectionStale={markProjectionStale}
-                onUnauthenticated={onUnauthenticated}
-                providerArchived={
-                  provider.archivedAt !== null ||
-                  coherentVersioned === undefined
-                }
-                {...(coherentVersioned
-                  ? {
-                      providerAccountMode: provider.accountMode,
-                      providerEnabled: provider.enabled,
-                      providerKind: provider.kind,
-                    }
-                  : {})}
-                providerMutationBusy={
-                  submitting !== null || accountMutationBusy || samlMutationBusy
-                }
-                providerId={provider.id}
-                refreshRevision={bindingRefreshRevision}
-                sessionId={sessionId}
-              />
-            ) : null}
+            {<ProviderSamlAdministration model={model} />}
+            {<ProviderLdapAdministration model={model} />}
+            {<ProviderTenantBindings model={model} />}
 
-            {provider.kind !== "ldap" ? (
-              <PlatformAuthProviderAccounts
-                api={api}
-                canManage={canManageAccounts}
-                canRead={canReadAccounts}
-                csrfToken={csrfToken}
-                onMutationBusyChange={setAccountMutationBusy}
-                onNotice={onNotice}
-                onPermissionError={onPermissionError}
-                onUnauthenticated={onUnauthenticated}
-                {...(provider.kind === "oidc" &&
-                provider.configured &&
-                provider.archivedAt === null
-                  ? { prelinkIssuer: provider.configuration.issuer }
-                  : {})}
-                providerId={provider.id}
-                providerMutationBusy={
-                  submitting !== null ||
-                  bindingMutationBusy ||
-                  samlMutationBusy ||
-                  coherentVersioned === undefined
-                }
-                providerVersion={provider.version}
-                sessionId={sessionId}
-              />
-            ) : null}
+            {<ProviderDetailAccountInventory model={model} />}
 
             {coherentVersioned &&
             canManage &&
@@ -2223,499 +2264,17 @@ function ProviderDetailDialog({
                     If-Match {coherentVersioned.etag}
                   </Badge>
                 </div>
-                <div className="platform-idp-action-buttons">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={providerMutationBlocked}
-                    onClick={() => {
-                      setSecretOpen(false);
-                      setClientSecret("");
-                      setSecretReason("");
-                      setArchiveOpen(false);
-                      setArchiveReason("");
-                      setArchiveConfirmation("");
-                      setLifecycleCommand(null);
-                      setLifecycleReason("");
-                      setLifecycleConfirmation("");
-                      setDirectLoginCommand(null);
-                      setDirectLoginReason("");
-                      setDirectLoginConfirmation("");
-                      setMetadataDraft(metadataDraftFromProvider(provider));
-                      setMetadataErrors([]);
-                      setMetadataConflict(false);
-                      setMutationError(null);
-                    }}
-                  >
-                    <Save aria-hidden="true" /> Edit metadata
-                  </Button>
-                  {provider.kind === "oidc" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={providerMutationBlocked}
-                      onClick={() => {
-                        setMetadataDraft(null);
-                        setMetadataErrors([]);
-                        setMetadataConflict(false);
-                        setArchiveOpen(false);
-                        setArchiveReason("");
-                        setArchiveConfirmation("");
-                        setLifecycleCommand(null);
-                        setLifecycleReason("");
-                        setLifecycleConfirmation("");
-                        setDirectLoginCommand(null);
-                        setDirectLoginReason("");
-                        setDirectLoginConfirmation("");
-                        setSecretOpen(true);
-                        setMutationError(null);
-                      }}
-                    >
-                      <KeyRound aria-hidden="true" />
-                      {provider.configuration.clientSecretPresent
-                        ? "Replace client secret"
-                        : "Set client secret"}
-                    </Button>
-                  ) : null}
-                  {provider.enabled || provider.activationAvailable ? (
-                    <Button
-                      type="button"
-                      variant={provider.enabled ? "destructive" : "default"}
-                      disabled={
-                        providerMutationBlocked ||
-                        (provider.enabled && provider.platformLoginEnabled)
-                      }
-                      onClick={() => {
-                        setMetadataDraft(null);
-                        setMetadataErrors([]);
-                        setMetadataConflict(false);
-                        setSecretOpen(false);
-                        setClientSecret("");
-                        setSecretReason("");
-                        setArchiveOpen(false);
-                        setArchiveReason("");
-                        setArchiveConfirmation("");
-                        setLifecycleCommand(
-                          provider.enabled ? "deactivate" : "activate",
-                        );
-                        setLifecycleReason("");
-                        setLifecycleConfirmation("");
-                        setDirectLoginCommand(null);
-                        setDirectLoginReason("");
-                        setDirectLoginConfirmation("");
-                        setAccountMode("existing_identity");
-                        setMutationError(null);
-                      }}
-                    >
-                      {provider.enabled
-                        ? "Deactivate tenant execution"
-                        : "Activate tenant execution"}
-                    </Button>
-                  ) : null}
-                  {provider.enabled ? (
-                    <Button
-                      type="button"
-                      variant={
-                        provider.platformLoginEnabled
-                          ? "destructive"
-                          : "default"
-                      }
-                      disabled={
-                        providerMutationBlocked ||
-                        (!provider.platformLoginEnabled &&
-                          !provider.platformLoginActivationAvailable)
-                      }
-                      onClick={() => {
-                        setMetadataDraft(null);
-                        setMetadataErrors([]);
-                        setMetadataConflict(false);
-                        setSecretOpen(false);
-                        setClientSecret("");
-                        setSecretReason("");
-                        setArchiveOpen(false);
-                        setArchiveReason("");
-                        setArchiveConfirmation("");
-                        setLifecycleCommand(null);
-                        setLifecycleReason("");
-                        setLifecycleConfirmation("");
-                        setDirectLoginCommand(
-                          provider.platformLoginEnabled
-                            ? "deactivate"
-                            : "activate",
-                        );
-                        setDirectLoginReason("");
-                        setDirectLoginConfirmation("");
-                        setMutationError(null);
-                      }}
-                    >
-                      {provider.platformLoginEnabled
-                        ? "Deactivate direct platform login"
-                        : provider.platformLoginActivationAvailable
-                          ? "Activate direct platform login"
-                          : "Direct platform login unavailable"}
-                    </Button>
-                  ) : null}
-                  {!provider.enabled ? (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      disabled={providerMutationBlocked}
-                      onClick={() => {
-                        setMetadataDraft(null);
-                        setMetadataErrors([]);
-                        setMetadataConflict(false);
-                        setSecretOpen(false);
-                        setClientSecret("");
-                        setSecretReason("");
-                        setLifecycleCommand(null);
-                        setLifecycleReason("");
-                        setLifecycleConfirmation("");
-                        setDirectLoginCommand(null);
-                        setDirectLoginReason("");
-                        setDirectLoginConfirmation("");
-                        setArchiveOpen(true);
-                        setMutationError(null);
-                      }}
-                    >
-                      <Archive aria-hidden="true" /> Archive provider
-                    </Button>
-                  ) : null}
-                </div>
+                <ProviderActionToolbar model={model} />
 
-                {metadataDraft ? (
-                  <form
-                    className="platform-idp-action-form"
-                    aria-label="Edit provider metadata"
-                    aria-busy={submitting === "metadata"}
-                    onSubmit={(event) => void updateMetadata(event)}
-                  >
-                    <h4>Replace metadata</h4>
-                    <MetadataFields
-                      disabled={providerMutationBlocked}
-                      draft={metadataDraft}
-                      keyReadOnly
-                      onChange={(patch) =>
-                        setMetadataDraft({ ...metadataDraft, ...patch })
-                      }
-                      prefix="platform-idp-edit"
-                    />
-                    <AuditReasonField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-edit-reason"
-                      value={metadataDraft.auditReason}
-                      onChange={(auditReason) =>
-                        setMetadataDraft({ ...metadataDraft, auditReason })
-                      }
-                    />
-                    {metadataErrors.length > 0 ? (
-                      <ValidationSummary errors={metadataErrors} />
-                    ) : null}
-                    {metadataConflict ? (
-                      <Alert variant="destructive">
-                        <ShieldAlert aria-hidden="true" />
-                        <AlertTitle>Provider changed on the server</AlertTitle>
-                        <AlertDescription>
-                          This draft was not retried. Close it and start again
-                          from the refreshed version.
-                        </AlertDescription>
-                      </Alert>
-                    ) : null}
-                    <div className="platform-idp-form-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={providerMutationBlocked}
-                        onClick={() => {
-                          setMetadataDraft(null);
-                          setMetadataConflict(false);
-                          setMutationError(null);
-                        }}
-                      >
-                        Cancel edit
-                      </Button>
-                      <Button
-                        type="submit"
-                        disabled={providerMutationBlocked || metadataConflict}
-                      >
-                        <Save aria-hidden="true" />
-                        {submitting === "metadata"
-                          ? "Saving…"
-                          : "Replace metadata"}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
+                {<ProviderMetadataPanel model={model} />}
 
-                {secretOpen && provider.kind === "oidc" ? (
-                  <form
-                    className="platform-idp-action-form platform-idp-secret-form"
-                    aria-label="Replace OIDC client secret"
-                    aria-busy={submitting === "secret"}
-                    onSubmit={(event) => void replaceClientSecret(event)}
-                  >
-                    <div>
-                      <h4>Write-only OIDC client secret</h4>
-                      <p>
-                        The value is submitted once, never read back, and
-                        cleared from this form after every attempt.
-                      </p>
-                    </div>
-                    <TextInputField
-                      autoComplete="new-password"
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-client-secret"
-                      label="Client secret"
-                      type="password"
-                      value={clientSecret}
-                      onChange={setClientSecret}
-                    />
-                    <AuditReasonField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-secret-reason"
-                      value={secretReason}
-                      onChange={setSecretReason}
-                    />
-                    <div className="platform-idp-form-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={providerMutationBlocked}
-                        onClick={() => {
-                          setSecretOpen(false);
-                          setClientSecret("");
-                          setSecretReason("");
-                          setMutationError(null);
-                        }}
-                      >
-                        Cancel secret change
-                      </Button>
-                      <Button type="submit" disabled={providerMutationBlocked}>
-                        <LockKeyhole aria-hidden="true" />
-                        {submitting === "secret"
-                          ? "Submitting…"
-                          : "Store write-only secret"}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
+                {<ProviderOidcSecretForm model={model} />}
 
-                {lifecycleCommand ? (
-                  <form
-                    className="platform-idp-action-form"
-                    aria-label={`${lifecycleCommand === "activate" ? "Activate" : "Deactivate"} provider tenant execution`}
-                    aria-busy={submitting === lifecycleCommand}
-                    onSubmit={(event) => void changeProviderExecution(event)}
-                  >
-                    <div>
-                      <h4>
-                        {lifecycleCommand === "activate"
-                          ? `Activate ${kindLabel(provider.kind)} tenant execution`
-                          : `Deactivate ${kindLabel(provider.kind)} tenant execution`}
-                      </h4>
-                      <p>
-                        This changes tenant-bound authentication only. It cannot
-                        enable direct platform login or create platform roles.
-                      </p>
-                    </div>
-                    {lifecycleCommand === "activate" ? (
-                      <SelectField
-                        disabled={providerMutationBlocked}
-                        id="platform-idp-account-mode"
-                        label="External identity account mode"
-                        value={accountMode}
-                        options={[
-                          ["existing_identity", "Match an existing identity"],
-                          [
-                            "create",
-                            "Create an identity without platform authority",
-                          ],
-                        ]}
-                        onChange={setAccountMode}
-                      />
-                    ) : null}
-                    <AuditReasonField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-lifecycle-reason"
-                      value={lifecycleReason}
-                      onChange={setLifecycleReason}
-                    />
-                    <TextInputField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-lifecycle-confirmation"
-                      label={`Type ${provider.key} to confirm`}
-                      value={lifecycleConfirmation}
-                      onChange={setLifecycleConfirmation}
-                    />
-                    <div className="platform-idp-form-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={providerMutationBlocked}
-                        onClick={() => {
-                          setLifecycleCommand(null);
-                          setLifecycleReason("");
-                          setLifecycleConfirmation("");
-                          setMutationError(null);
-                        }}
-                      >
-                        Cancel {lifecycleCommand}
-                      </Button>
-                      <Button
-                        type="submit"
-                        variant={
-                          lifecycleCommand === "deactivate"
-                            ? "destructive"
-                            : "default"
-                        }
-                        disabled={providerMutationBlocked}
-                      >
-                        {submitting === lifecycleCommand
-                          ? "Submitting…"
-                          : lifecycleCommand === "activate"
-                            ? "Activate tenant execution"
-                            : "Deactivate tenant execution"}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
+                {<ProviderLifecyclePanel model={model} />}
 
-                {directLoginCommand ? (
-                  <form
-                    className="platform-idp-action-form"
-                    aria-label={`${directLoginCommand === "activate" ? "Activate" : "Deactivate"} direct platform login`}
-                    aria-busy={
-                      submitting === `${directLoginCommand}-direct-login`
-                    }
-                    onSubmit={(event) => void changeDirectLogin(event)}
-                  >
-                    <div>
-                      <h4>
-                        {directLoginCommand === "activate"
-                          ? `Activate direct ${kindLabel(provider.kind)} platform login`
-                          : `Deactivate direct ${kindLabel(provider.kind)} platform login`}
-                      </h4>
-                      <p>
-                        {directLoginCommand === "activate" &&
-                        !provider.platformLoginActivationAvailable
-                          ? `Activation prerequisites changed on the server. Refresh the provider after restoring its live ${kindLabel(provider.kind)} runtime, protected material, trust pins, keyring, and platform-floor dependencies.`
-                          : "This is a separate platform-wide login boundary. It admits pre-linked identities only: provider claims cannot create users, platform roles, or tenant access."}
-                      </p>
-                    </div>
-                    <div className="platform-idp-readonly-policy">
-                      <LockKeyhole aria-hidden="true" />
-                      <span>
-                        <strong>Account mode: existing identity</strong>
-                        <small>
-                          Pre-link the external subject to an existing platform
-                          account before activation. This mode cannot be changed
-                          by this command.
-                        </small>
-                      </span>
-                    </div>
-                    <AuditReasonField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-direct-login-reason"
-                      value={directLoginReason}
-                      onChange={setDirectLoginReason}
-                    />
-                    <TextInputField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-direct-login-confirmation"
-                      label={`Type ${provider.key} to confirm`}
-                      value={directLoginConfirmation}
-                      onChange={setDirectLoginConfirmation}
-                    />
-                    <div className="platform-idp-form-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={providerMutationBlocked}
-                        onClick={() => {
-                          setDirectLoginCommand(null);
-                          setDirectLoginReason("");
-                          setDirectLoginConfirmation("");
-                          setMutationError(null);
-                        }}
-                      >
-                        Cancel {directLoginCommand}
-                      </Button>
-                      <Button
-                        type="submit"
-                        variant={
-                          directLoginCommand === "deactivate"
-                            ? "destructive"
-                            : "default"
-                        }
-                        disabled={
-                          providerMutationBlocked ||
-                          (directLoginCommand === "activate" &&
-                            !provider.platformLoginActivationAvailable)
-                        }
-                      >
-                        {submitting === `${directLoginCommand}-direct-login`
-                          ? "Submitting…"
-                          : directLoginCommand === "activate"
-                            ? "Activate direct platform login"
-                            : "Deactivate direct platform login"}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
+                {<ProviderPlatformLoginPanel model={model} />}
 
-                {archiveOpen ? (
-                  <form
-                    className="platform-idp-action-form platform-idp-archive-form"
-                    aria-label="Archive provider"
-                    aria-busy={submitting === "archive"}
-                    onSubmit={(event) => void archiveProvider(event)}
-                  >
-                    <div>
-                      <h4>Archive provider permanently</h4>
-                      <p>
-                        This API cannot unarchive or purge the provider. Type
-                        the stable key to confirm.
-                      </p>
-                    </div>
-                    <AuditReasonField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-archive-reason"
-                      value={archiveReason}
-                      onChange={setArchiveReason}
-                    />
-                    <TextInputField
-                      disabled={providerMutationBlocked}
-                      id="platform-idp-archive-confirmation"
-                      label={`Type ${provider.key} to confirm`}
-                      value={archiveConfirmation}
-                      onChange={setArchiveConfirmation}
-                    />
-                    <div className="platform-idp-form-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={providerMutationBlocked}
-                        onClick={() => {
-                          setArchiveOpen(false);
-                          setArchiveReason("");
-                          setArchiveConfirmation("");
-                          setMutationError(null);
-                        }}
-                      >
-                        Cancel archival
-                      </Button>
-                      <Button
-                        type="submit"
-                        variant="destructive"
-                        disabled={providerMutationBlocked}
-                      >
-                        <Archive aria-hidden="true" />
-                        {submitting === "archive"
-                          ? "Archiving…"
-                          : "Archive provider"}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
+                {<ProviderArchiveForm model={model} />}
                 {mutationError ? (
                   <FocusedError message={mutationError} />
                 ) : null}
@@ -2728,69 +2287,37 @@ function ProviderDetailDialog({
   );
 }
 
-function ProviderReadinessBand({
+function ProviderReadinessBand(props: {
+  provider?: PlatformAuthProviderView;
+}): React.JSX.Element {
+  const model = useProviderReadinessBandModel(props);
+  if (model.kind === "content") return model.content;
+  return <ProviderReadinessBandView model={model.data} />;
+}
+
+function useProviderReadinessBandModel({
   provider,
 }: {
   provider?: PlatformAuthProviderView;
-}): React.JSX.Element {
+}) {
   if (provider?.kind === "ldap") {
-    return (
-      <section
-        className="platform-idp-readiness"
-        aria-label="Platform LDAP readiness"
-      >
-        <div className="platform-idp-readiness__intro">
-          <Network aria-hidden="true" />
-          <span>
-            <small>Directory readiness</small>
-            <strong>{provider.displayName}</strong>
-          </span>
-        </div>
-        <div className="platform-idp-readiness__gate" data-state="ready">
-          <ShieldCheck aria-hidden="true" />
-          <span>
-            <small>Tenant execution</small>
-            <strong>Not applicable</strong>
-          </span>
-        </div>
-        <div
-          className="platform-idp-readiness__gate"
-          data-state={
-            provider.platformLoginEnabled
-              ? "ready"
-              : provider.platformLoginActivationAvailable
-                ? "pending"
-                : "blocked"
-          }
-        >
-          {provider.platformLoginEnabled ? (
-            <ShieldCheck aria-hidden="true" />
-          ) : provider.platformLoginActivationAvailable ? (
-            <ShieldAlert aria-hidden="true" />
-          ) : (
-            <CircleSlash2 aria-hidden="true" />
-          )}
-          <span>
-            <small>Tenantless platform login</small>
-            <strong>
-              {provider.platformLoginEnabled
-                ? "Active · existing identity + TOTP"
-                : provider.platformLoginActivationAvailable
-                  ? "Ready to activate"
-                  : "Blocked by readiness"}
-            </strong>
-          </span>
-        </div>
-        <div className="platform-idp-readiness__gate" data-state="pending">
-          <ShieldAlert aria-hidden="true" />
-          <span>
-            <small>Session provenance</small>
-            <strong>Revalidated on authority drift</strong>
-          </span>
-        </div>
-      </section>
-    );
+    return {
+      kind: "content" as const,
+      content: <LdapProviderReadinessBand provider={provider} />,
+    };
   }
+  return { kind: "ready" as const, data: { provider } };
+}
+
+function ProviderReadinessBandView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useProviderReadinessBandModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { provider } = model;
   return (
     <section
       className="platform-idp-readiness"
@@ -2805,65 +2332,8 @@ function ProviderReadinessBand({
           </strong>
         </span>
       </div>
-      <div
-        className="platform-idp-readiness__gate"
-        data-state={
-          provider?.enabled
-            ? "ready"
-            : provider?.activationAvailable
-              ? "pending"
-              : "blocked"
-        }
-      >
-        {provider?.enabled ? (
-          <ShieldCheck aria-hidden="true" />
-        ) : provider?.activationAvailable ? (
-          <ShieldAlert aria-hidden="true" />
-        ) : (
-          <CircleSlash2 aria-hidden="true" />
-        )}
-        <span>
-          <small>Tenant execution</small>
-          <strong>
-            {provider?.enabled
-              ? "Active"
-              : provider?.activationAvailable
-                ? "Ready to activate"
-                : "Blocked"}
-          </strong>
-        </span>
-      </div>
-      <div
-        className="platform-idp-readiness__gate"
-        data-state={
-          provider?.platformLoginEnabled
-            ? "ready"
-            : provider?.platformLoginActivationAvailable
-              ? "pending"
-              : "blocked"
-        }
-      >
-        {provider?.platformLoginEnabled ? (
-          <ShieldCheck aria-hidden="true" />
-        ) : provider?.platformLoginActivationAvailable ? (
-          <ShieldAlert aria-hidden="true" />
-        ) : (
-          <CircleSlash2 aria-hidden="true" />
-        )}
-        <span>
-          <small>Platform login</small>
-          <strong>
-            {provider?.platformLoginEnabled
-              ? "Active · pre-linked identities"
-              : provider?.platformLoginActivationAvailable
-                ? "Ready to activate"
-                : provider?.kind === "oidc" &&
-                    provider.configuration.useUserInfo
-                  ? "Blocked · UserInfo is tenant-only"
-                  : "Blocked"}
-          </strong>
-        </span>
-      </div>
+      <ProviderTenantExecutionReadiness model={model} />
+      <ProviderPlatformLoginReadiness model={model} />
       <div className="platform-idp-readiness__gate" data-state="pending">
         <ShieldAlert aria-hidden="true" />
         <span>
@@ -3765,4 +3235,1743 @@ function readBrowserPublicOrigin(): string | null {
   } catch {
     return null;
   }
+}
+
+function PlatformProviderWorkspace({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformAuthProvidersPageView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    canManage,
+    canManageAccounts,
+    canManageBindings,
+    canManagePolicy,
+    canRead,
+    canReadAccounts,
+    canReadBindings,
+    canTest,
+    createOpen,
+    handlePermissionError,
+    handleUnauthenticated,
+    listState,
+    publishNotice,
+    refreshList,
+    selectedProviderId,
+    session,
+    setCreateOpen,
+    setSelectedProviderId,
+    visibleNotice,
+  } = model;
+  return (
+    <div className="content platform-idp-page">
+      <section className="page-heading platform-idp-page__heading">
+        <div>
+          <p className="section-label">Platform administration</p>
+          <h1>Global identity providers</h1>
+          <p>
+            Manage sanitized OIDC, SAML, and platform-global LDAP definitions.
+            Tenant execution and tenantless platform login remain explicit,
+            audited boundaries.
+          </p>
+        </div>
+        {canManage ? (
+          <Button type="button" onClick={() => setCreateOpen(true)}>
+            <Plus aria-hidden="true" /> Create staged provider
+          </Button>
+        ) : (
+          <Badge variant="outline">
+            <ShieldCheck aria-hidden="true" /> Read-only authority
+          </Badge>
+        )}
+      </section>
+
+      <ProviderReadinessBand />
+
+      <PlatformIdentityNotice notice={visibleNotice} />
+
+      {listState.kind === "loading" ? <ProviderListSkeleton /> : null}
+      {listState.kind === "error" ? (
+        <div className="platform-idp-load-error">
+          <FocusedError message={listState.message} />
+          <Button type="button" variant="outline" onClick={refreshList}>
+            <RefreshCw aria-hidden="true" /> Reload inventory
+          </Button>
+        </div>
+      ) : null}
+      {listState.kind === "ready" ? (
+        <Card className="platform-idp-inventory">
+          <CardHeader>
+            <CardTitle>Provider inventory</CardTitle>
+            <CardDescription>
+              List responses contain safe readiness metadata only. Open a row
+              for the sanitized protocol configuration.
+            </CardDescription>
+          </CardHeader>
+          <PlatformProviderInventory model={model} />
+        </Card>
+      ) : null}
+
+      <CreateProviderDialog
+        api={api}
+        canManage={canManage}
+        csrfToken={session.csrfToken}
+        onCreated={(provider) => {
+          if (provider.archivedAt !== null) {
+            publishNotice({
+              message: `${provider.displayName} is already archived. The safe retry returned its current state and did not recreate or activate the provider.`,
+              tone: "warning",
+            });
+          } else if (provider.kind === "ldap" && provider.enabled) {
+            publishNotice({
+              message: `${provider.displayName} already has tenantless LDAP login enabled. Existing-identity and TOTP enforcement remain server-side.`,
+              tone: "warning",
+            });
+          } else if (provider.enabled) {
+            publishNotice({
+              message: `${provider.displayName} is already active for tenant execution. The safe retry returned its current state and left direct platform login ${provider.platformLoginEnabled ? "active" : "disabled"}.`,
+              tone: "warning",
+            });
+          } else if (provider.activationAvailable) {
+            publishNotice({
+              message: `${provider.displayName} is already ready for tenant-execution activation. The safe retry returned its current state without activating either login boundary.`,
+              tone: "warning",
+            });
+          } else if (provider.version > 1) {
+            publishNotice({
+              message: `${provider.displayName} already exists and is currently disabled. The safe retry returned its later version without recreating or activating the provider.`,
+              tone: "warning",
+            });
+          } else {
+            publishNotice({
+              message: `${provider.displayName} was staged disabled. Platform login remains blocked.`,
+              tone: "success",
+            });
+          }
+          setCreateOpen(false);
+          setSelectedProviderId(provider.id);
+          refreshList();
+        }}
+        onConflict={() => {
+          publishNotice({
+            message:
+              "The create request conflicted with current state. Exact replay is bounded to 24 hours; the authorized provider inventory is being reloaded before a new attempt.",
+            tone: "warning",
+          });
+          setCreateOpen(false);
+          refreshList();
+        }}
+        onOpenChange={setCreateOpen}
+        onPermissionError={handlePermissionError}
+        onUnauthenticated={handleUnauthenticated}
+        open={createOpen}
+        sessionId={session.id}
+      />
+
+      <ProviderDetailDialog
+        api={api}
+        canManageAccounts={canManageAccounts}
+        canManageBindings={canManageBindings}
+        canReadAccounts={canReadAccounts}
+        canReadBindings={canReadBindings}
+        canManage={canManage}
+        canManagePolicy={canManagePolicy}
+        canRead={canRead}
+        canTest={canTest}
+        csrfToken={session.csrfToken}
+        onArchived={(providerName) => {
+          publishNotice({
+            message: `${providerName} was archived. It remains unavailable for platform login.`,
+            tone: "success",
+          });
+          setSelectedProviderId(null);
+          refreshList();
+        }}
+        onChanged={refreshList}
+        onNotice={publishNotice}
+        onOpenChange={(open) => {
+          if (!open) setSelectedProviderId(null);
+        }}
+        onPermissionError={handlePermissionError}
+        onUnauthenticated={handleUnauthenticated}
+        open={selectedProviderId !== null}
+        providerId={selectedProviderId}
+        sessionId={session.id}
+      />
+    </div>
+  );
+}
+
+function ProviderCreateDialogContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof CreateProviderDialogView>["model"];
+}): React.ReactNode {
+  const { onOpenChange, open, submitLockRef, submitting } = model;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (submitLockRef.current === null) onOpenChange(next);
+      }}
+    >
+      <DialogContent className="platform-idp-create-dialog">
+        <DialogHeader>
+          <DialogTitle>Create staged identity provider</DialogTitle>
+          <DialogDescription>
+            Record a typed, non-secret definition. Provider execution, account
+            mode, and platform login are fixed disabled.
+          </DialogDescription>
+        </DialogHeader>
+        <fieldset
+          aria-busy={submitting}
+          className="platform-idp-create-lock"
+          disabled={submitting}
+        >
+          <ProviderProtocolPicker model={model} />
+          <ProviderCreateForm model={model} />
+        </fieldset>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProviderActionToolbar({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const { provider } = model;
+  if (!provider) return null;
+
+  return (
+    <div className="platform-idp-action-buttons">
+      <ProviderEditMetadataAction model={model} />
+      {<ProviderEditSecretAction model={model} />}
+      {<ProviderExecutionAction model={model} />}
+      {<ProviderPlatformLoginAction model={model} />}
+      {<ProviderArchiveAction model={model} />}
+    </div>
+  );
+}
+
+function ProviderMetadataPanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const { metadataDraft } = model;
+  return metadataDraft ? <ProviderMetadataForm model={model} /> : null;
+}
+
+function ProviderLifecyclePanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const { lifecycleCommand, provider } = model;
+  if (!provider) return null;
+
+  return lifecycleCommand ? <ProviderLifecycleForm model={model} /> : null;
+}
+
+function ProviderPlatformLoginPanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const { directLoginCommand, provider } = model;
+  if (!provider) return null;
+
+  return directLoginCommand ? (
+    <ProviderPlatformLoginForm model={model} />
+  ) : null;
+}
+
+interface PlatformAuthProvidersPageState {
+  listState: ProviderListState;
+  listRevision: number;
+  createOpen: boolean;
+  selectedProviderId: string | null;
+  loadingMore: boolean;
+  paginationError: string | null;
+  notice: SessionMutationNotice | null;
+}
+
+interface CreateProviderDialogState {
+  draft: PlatformAuthProviderDraft;
+  errors: readonly string[];
+  requestError: string | null;
+  submitting: boolean;
+}
+
+interface ProviderDetailDialogState {
+  state: ProviderDetailState;
+  refreshRevision: number;
+  metadataDraft: PlatformAuthProviderMetadataDraft | null;
+  metadataErrors: readonly string[];
+  metadataConflict: boolean;
+  secretOpen: boolean;
+  clientSecret: string;
+  secretReason: string;
+  archiveOpen: boolean;
+  archiveReason: string;
+  archiveConfirmation: string;
+  lifecycleCommand: ProviderLifecycleCommand | null;
+  lifecycleReason: string;
+  lifecycleConfirmation: string;
+  directLoginCommand: ProviderDirectLoginCommand | null;
+  directLoginReason: string;
+  directLoginConfirmation: string;
+  accountMode: ProviderActivationAccountMode;
+  mutationError: string | null;
+  submitting:
+    | "activate"
+    | "activate-direct-login"
+    | "archive"
+    | "deactivate"
+    | "deactivate-direct-login"
+    | "metadata"
+    | "secret"
+    | null;
+  bindingMutationBusy: boolean;
+  accountMutationBusy: boolean;
+  samlMutationBusy: boolean;
+  bindingRefreshRevision: number;
+}
+
+interface ScopedPlatformAuthProviderPageState {
+  providerIdDraft: string;
+  providerId: string | null;
+  providerIdError: string | null;
+  accountMutationBusy: boolean;
+  bindingMutationBusy: boolean;
+}
+
+function ScopedPlatformAuthProviderPageCard({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof ScopedPlatformAuthProviderPageView
+  >["model"];
+}): React.ReactNode {
+  const {
+    accountOnly,
+    bindingOnly,
+    inventoryTitle,
+    mutationBusy,
+    onClearNotice,
+    openBindings,
+    providerId,
+    providerIdDraft,
+    providerIdError,
+    providerIdInputId,
+    setProviderId,
+    setProviderIdDraft,
+    setProviderIdError,
+  } = model;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{inventoryTitle}</CardTitle>
+        <CardDescription>
+          The identifier is used only as the explicit API scope; it does not
+          reveal provider metadata.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="platform-idp-action-form"
+          aria-label={`Open ${
+            bindingOnly
+              ? "tenant bindings"
+              : accountOnly
+                ? "linked platform accounts"
+                : "provider-scoped identity records"
+          } by provider ID`}
+          onSubmit={openBindings}
+        >
+          <FormField
+            {...(providerIdError ? { error: providerIdError } : {})}
+            htmlFor={providerIdInputId}
+            hint="Canonical UUIDv7 of the platform identity provider."
+            label="Platform provider ID"
+          >
+            <Input
+              aria-describedby={`${providerIdInputId}-${providerIdError ? "error" : "hint"}`}
+              aria-invalid={providerIdError ? true : undefined}
+              id={providerIdInputId}
+              autoComplete="off"
+              disabled={mutationBusy}
+              spellCheck={false}
+              value={providerIdDraft}
+              onChange={(event) => {
+                const nextProviderId = event.target.value;
+                setProviderIdDraft(nextProviderId);
+                if (providerId !== nextProviderId) {
+                  setProviderId(null);
+                  onClearNotice();
+                }
+                setProviderIdError(null);
+              }}
+            />
+          </FormField>
+          <Button type="submit" disabled={mutationBusy}>
+            {bindingOnly
+              ? "Open tenant bindings"
+              : accountOnly
+                ? "Open account register"
+                : "Open identity records"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProviderSamlAdministration({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    accountMutationBusy,
+    api,
+    bindingMutationBusy,
+    canManage,
+    coherentVersioned,
+    csrfToken,
+    markProjectionStale,
+    onChanged,
+    onNotice,
+    onPermissionError,
+    onUnauthenticated,
+    sessionId,
+    setSamlMutationBusy,
+    submitting,
+  } = model;
+  return coherentVersioned?.value.kind === "saml" ? (
+    <PlatformAuthProviderSamlMaterials
+      api={api}
+      canManage={canManage}
+      csrfToken={csrfToken}
+      current={{
+        etag: coherentVersioned.etag,
+        value: coherentVersioned.value,
+      }}
+      onChanged={onChanged}
+      onMutationBusyChange={setSamlMutationBusy}
+      onNotice={onNotice}
+      onPermissionError={onPermissionError}
+      onProviderProjectionStale={markProjectionStale}
+      onUnauthenticated={onUnauthenticated}
+      providerMutationBusy={
+        submitting !== null || bindingMutationBusy || accountMutationBusy
+      }
+      sessionId={sessionId}
+    />
+  ) : null;
+}
+
+function ProviderLdapAdministration({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    accountMutationBusy,
+    api,
+    bindingMutationBusy,
+    canManage,
+    canManagePolicy,
+    canTest,
+    coherentVersioned,
+    csrfToken,
+    markProjectionStale,
+    onChanged,
+    onNotice,
+    onPermissionError,
+    onUnauthenticated,
+    sessionId,
+    setSamlMutationBusy,
+    submitting,
+  } = model;
+  return coherentVersioned?.value.kind === "ldap" ? (
+    <PlatformLdapProviderAdministration
+      api={api}
+      canManageConfiguration={canManage}
+      canManagePolicy={canManagePolicy}
+      canTest={canTest}
+      csrfToken={csrfToken}
+      current={{
+        etag: coherentVersioned.etag,
+        value: coherentVersioned.value,
+      }}
+      onChanged={onChanged}
+      onMutationBusyChange={setSamlMutationBusy}
+      onNotice={onNotice}
+      onPermissionError={onPermissionError}
+      onProviderProjectionStale={markProjectionStale}
+      onUnauthenticated={onUnauthenticated}
+      providerMutationBusy={
+        submitting !== null || bindingMutationBusy || accountMutationBusy
+      }
+      sessionId={sessionId}
+    />
+  ) : null;
+}
+
+function ProviderTenantBindings({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    accountMutationBusy,
+    api,
+    bindingRefreshRevision,
+    canManageBindings,
+    canReadBindings,
+    coherentVersioned,
+    csrfToken,
+    markProjectionStale,
+    onNotice,
+    onPermissionError,
+    onUnauthenticated,
+    provider,
+    samlMutationBusy,
+    sessionId,
+    setBindingMutationBusy,
+    submitting,
+  } = model;
+  if (!provider) return null;
+  return provider.kind !== "ldap" ? (
+    <PlatformAuthProviderTenantBindings
+      api={api}
+      canManage={canManageBindings}
+      canRead={canReadBindings}
+      csrfToken={csrfToken}
+      onMutationBusyChange={setBindingMutationBusy}
+      onNotice={onNotice}
+      onPermissionError={onPermissionError}
+      onProviderProjectionStale={markProjectionStale}
+      onUnauthenticated={onUnauthenticated}
+      providerArchived={
+        provider.archivedAt !== null || coherentVersioned === undefined
+      }
+      {...(coherentVersioned
+        ? {
+            providerAccountMode: provider.accountMode,
+            providerEnabled: provider.enabled,
+            providerKind: provider.kind,
+          }
+        : {})}
+      providerMutationBusy={
+        submitting !== null || accountMutationBusy || samlMutationBusy
+      }
+      providerId={provider.id}
+      refreshRevision={bindingRefreshRevision}
+      sessionId={sessionId}
+    />
+  ) : null;
+}
+
+function ProviderDetailAccountInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    bindingMutationBusy,
+    canManageAccounts,
+    canReadAccounts,
+    coherentVersioned,
+    csrfToken,
+    onNotice,
+    onPermissionError,
+    onUnauthenticated,
+    provider,
+    samlMutationBusy,
+    sessionId,
+    setAccountMutationBusy,
+    submitting,
+  } = model;
+  if (!provider) return null;
+
+  return provider.kind !== "ldap" ? (
+    <PlatformAuthProviderAccounts
+      api={api}
+      canManage={canManageAccounts}
+      canRead={canReadAccounts}
+      csrfToken={csrfToken}
+      onMutationBusyChange={setAccountMutationBusy}
+      onNotice={onNotice}
+      onPermissionError={onPermissionError}
+      onUnauthenticated={onUnauthenticated}
+      {...(provider.kind === "oidc" &&
+      provider.configured &&
+      provider.archivedAt === null
+        ? { prelinkIssuer: provider.configuration.issuer }
+        : {})}
+      providerId={provider.id}
+      providerMutationBusy={
+        submitting !== null ||
+        bindingMutationBusy ||
+        samlMutationBusy ||
+        coherentVersioned === undefined
+      }
+      providerVersion={provider.version}
+      sessionId={sessionId}
+    />
+  ) : null;
+}
+
+function ProviderOidcSecretForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    clientSecret,
+    provider,
+    providerMutationBlocked,
+    replaceClientSecret,
+    secretOpen,
+    secretReason,
+    setClientSecret,
+    setMutationError,
+    setSecretOpen,
+    setSecretReason,
+    submitting,
+  } = model;
+  if (!provider) return null;
+  return secretOpen && provider.kind === "oidc" ? (
+    <form
+      className="platform-idp-action-form platform-idp-secret-form"
+      aria-label="Replace OIDC client secret"
+      aria-busy={submitting === "secret"}
+      onSubmit={(event) => void replaceClientSecret(event)}
+    >
+      <div>
+        <h4>Write-only OIDC client secret</h4>
+        <p>
+          The value is submitted once, never read back, and cleared from this
+          form after every attempt.
+        </p>
+      </div>
+      <TextInputField
+        autoComplete="new-password"
+        disabled={providerMutationBlocked}
+        id="platform-idp-client-secret"
+        label="Client secret"
+        type="password"
+        value={clientSecret}
+        onChange={setClientSecret}
+      />
+      <AuditReasonField
+        disabled={providerMutationBlocked}
+        id="platform-idp-secret-reason"
+        value={secretReason}
+        onChange={setSecretReason}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={providerMutationBlocked}
+          onClick={() => {
+            setSecretOpen(false);
+            setClientSecret("");
+            setSecretReason("");
+            setMutationError(null);
+          }}
+        >
+          Cancel secret change
+        </Button>
+        <Button type="submit" disabled={providerMutationBlocked}>
+          <LockKeyhole aria-hidden="true" />
+          {submitting === "secret" ? "Submitting…" : "Store write-only secret"}
+        </Button>
+      </div>
+    </form>
+  ) : null;
+}
+
+function ProviderArchiveForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    archiveConfirmation,
+    archiveOpen,
+    archiveProvider,
+    archiveReason,
+    provider,
+    providerMutationBlocked,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    setMutationError,
+    submitting,
+  } = model;
+  if (!provider) return null;
+  return archiveOpen ? (
+    <form
+      className="platform-idp-action-form platform-idp-archive-form"
+      aria-label="Archive provider"
+      aria-busy={submitting === "archive"}
+      onSubmit={(event) => void archiveProvider(event)}
+    >
+      <div>
+        <h4>Archive provider permanently</h4>
+        <p>
+          This API cannot unarchive or purge the provider. Type the stable key
+          to confirm.
+        </p>
+      </div>
+      <AuditReasonField
+        disabled={providerMutationBlocked}
+        id="platform-idp-archive-reason"
+        value={archiveReason}
+        onChange={setArchiveReason}
+      />
+      <TextInputField
+        disabled={providerMutationBlocked}
+        id="platform-idp-archive-confirmation"
+        label={`Type ${provider.key} to confirm`}
+        value={archiveConfirmation}
+        onChange={setArchiveConfirmation}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={providerMutationBlocked}
+          onClick={() => {
+            setArchiveOpen(false);
+            setArchiveReason("");
+            setArchiveConfirmation("");
+            setMutationError(null);
+          }}
+        >
+          Cancel archival
+        </Button>
+        <Button
+          type="submit"
+          variant="destructive"
+          disabled={providerMutationBlocked}
+        >
+          <Archive aria-hidden="true" />
+          {submitting === "archive" ? "Archiving…" : "Archive provider"}
+        </Button>
+      </div>
+    </form>
+  ) : null;
+}
+
+function ProviderTenantExecutionReadiness({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderReadinessBandView>["model"];
+}): React.ReactNode {
+  const { provider } = model;
+  return (
+    <div
+      className="platform-idp-readiness__gate"
+      data-state={
+        provider?.enabled
+          ? "ready"
+          : provider?.activationAvailable
+            ? "pending"
+            : "blocked"
+      }
+    >
+      {provider?.enabled ? (
+        <ShieldCheck aria-hidden="true" />
+      ) : provider?.activationAvailable ? (
+        <ShieldAlert aria-hidden="true" />
+      ) : (
+        <CircleSlash2 aria-hidden="true" />
+      )}
+      <span>
+        <small>Tenant execution</small>
+        <strong>
+          {provider?.enabled
+            ? "Active"
+            : provider?.activationAvailable
+              ? "Ready to activate"
+              : "Blocked"}
+        </strong>
+      </span>
+    </div>
+  );
+}
+
+function ProviderPlatformLoginReadiness({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderReadinessBandView>["model"];
+}): React.ReactNode {
+  const { provider } = model;
+  return (
+    <div
+      className="platform-idp-readiness__gate"
+      data-state={
+        provider?.platformLoginEnabled
+          ? "ready"
+          : provider?.platformLoginActivationAvailable
+            ? "pending"
+            : "blocked"
+      }
+    >
+      {provider?.platformLoginEnabled ? (
+        <ShieldCheck aria-hidden="true" />
+      ) : provider?.platformLoginActivationAvailable ? (
+        <ShieldAlert aria-hidden="true" />
+      ) : (
+        <CircleSlash2 aria-hidden="true" />
+      )}
+      <span>
+        <small>Platform login</small>
+        <strong>
+          {provider?.platformLoginEnabled
+            ? "Active · pre-linked identities"
+            : provider?.platformLoginActivationAvailable
+              ? "Ready to activate"
+              : provider?.kind === "oidc" && provider.configuration.useUserInfo
+                ? "Blocked · UserInfo is tenant-only"
+                : "Blocked"}
+        </strong>
+      </span>
+    </div>
+  );
+}
+
+function PlatformProviderInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformProviderWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    listState,
+    loadMore,
+    loadingMore,
+    paginationError,
+    setSelectedProviderId,
+  } = model;
+  if (listState.kind !== "ready") return null;
+  return (
+    <CardContent>
+      {listState.items.length === 0 ? (
+        <div className="platform-idp-empty">
+          <Fingerprint aria-hidden="true" />
+          <h2>No global providers recorded</h2>
+          <p>
+            Create an OIDC, SAML, or LDAP definition without activating login.
+          </p>
+        </div>
+      ) : (
+        <div className="platform-idp-table-wrap">
+          <Table className="platform-idp-table">
+            <TableCaption>
+              Tenant execution and direct platform login are separate; each
+              requires its own explicit activation.
+            </TableCaption>
+            <TableColumnHeaders
+              columns={[
+                "Provider",
+                "Protocol",
+                "Configuration",
+                "Protected material",
+                "State",
+              ]}
+              actionLabel="Action"
+              actionPresentation="visible"
+            />
+            <TableBody>
+              {listState.items.map((provider) => (
+                <TableRow key={provider.id}>
+                  <TableCell>
+                    <div className="platform-idp-provider-cell">
+                      <strong>{provider.displayName}</strong>
+                      <code>{provider.key}</code>
+                    </div>
+                  </TableCell>
+                  <TableCell>{kindLabel(provider.kind)}</TableCell>
+                  <TableCell>
+                    {provider.configured ? "Recorded" : "Incomplete"}
+                  </TableCell>
+                  <TableCell>
+                    {provider.kind === "saml"
+                      ? "Not applicable"
+                      : provider.secretPresent
+                        ? "Present"
+                        : "Not set"}
+                  </TableCell>
+                  <TableCell>
+                    <ProviderStateBadge provider={provider} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Inspect ${provider.displayName} (${provider.key})`}
+                      onClick={() => setSelectedProviderId(provider.id)}
+                    >
+                      Inspect
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {paginationError ? (
+        <FocusedError autoFocus={false} message={paginationError} />
+      ) : null}
+      {listState.nextCursor ? (
+        <div className="platform-idp-pagination">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loadingMore}
+            onClick={() => void loadMore()}
+          >
+            {loadingMore ? "Loading…" : "Load more providers"}
+          </Button>
+        </div>
+      ) : null}
+    </CardContent>
+  );
+}
+
+function ProviderProtocolPicker({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderCreateDialogContent>["model"];
+}): React.ReactNode {
+  const { changeKind, draft, submitting } = model;
+  return (
+    <div
+      className="platform-idp-kind-picker"
+      role="group"
+      aria-label="Provider protocol"
+    >
+      <button
+        className={
+          draft.kind === "oidc"
+            ? "platform-idp-kind-card platform-idp-kind-card--active"
+            : "platform-idp-kind-card"
+        }
+        aria-pressed={draft.kind === "oidc"}
+        disabled={submitting}
+        type="button"
+        onClick={() => changeKind("oidc")}
+      >
+        <KeyRound aria-hidden="true" />
+        <span>
+          <strong>OIDC</strong>
+          <small>Discovery coordinates; secret set later</small>
+        </span>
+      </button>
+      <button
+        className={
+          draft.kind === "saml"
+            ? "platform-idp-kind-card platform-idp-kind-card--active"
+            : "platform-idp-kind-card"
+        }
+        aria-pressed={draft.kind === "saml"}
+        disabled={submitting}
+        type="button"
+        onClick={() => changeKind("saml")}
+      >
+        <Fingerprint aria-hidden="true" />
+        <span>
+          <strong>SAML 2.0</strong>
+          <small>Trust coordinates; encryption unavailable</small>
+        </span>
+      </button>
+      <button
+        className={
+          draft.kind === "ldap"
+            ? "platform-idp-kind-card platform-idp-kind-card--active"
+            : "platform-idp-kind-card"
+        }
+        aria-pressed={draft.kind === "ldap"}
+        disabled={submitting}
+        type="button"
+        onClick={() => changeKind("ldap")}
+      >
+        <Network aria-hidden="true" />
+        <span>
+          <strong>LDAP</strong>
+          <small>Existing identities + mandatory TOTP</small>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function ProviderCreateForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderCreateDialogContent>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    deploymentEndpoints,
+    draft,
+    errors,
+    onOpenChange,
+    requestError,
+    setDraft,
+    submit,
+    submitLockRef,
+    submitting,
+  } = model;
+  return (
+    <form
+      className="platform-idp-form"
+      aria-label="Create staged identity provider"
+      onSubmit={(event) => void submit(event)}
+    >
+      {draft.kind === "ldap" ? (
+        <LdapProviderEditor
+          draft={draft}
+          mode="create"
+          policy="platform_global"
+          onChange={(nextDraft) => {
+            if (submitLockRef.current === null) {
+              setDraft({
+                ...nextDraft,
+                auditReason: draft.auditReason,
+                kind: "ldap",
+              });
+            }
+          }}
+        />
+      ) : (
+        <>
+          <MetadataFields
+            draft={draft}
+            onChange={(patch) => {
+              if (submitLockRef.current === null) {
+                setDraft({ ...draft, ...patch });
+              }
+            }}
+            prefix="platform-idp-create"
+          />
+          {draft.kind === "oidc" ? (
+            <OidcCreateFields
+              deploymentEndpoints={deploymentEndpoints}
+              draft={draft}
+              onChange={(nextDraft) => {
+                if (submitLockRef.current === null) setDraft(nextDraft);
+              }}
+            />
+          ) : (
+            <SamlCreateFields
+              deploymentEndpoints={deploymentEndpoints}
+              draft={draft}
+              onChange={(nextDraft) => {
+                if (submitLockRef.current === null) setDraft(nextDraft);
+              }}
+            />
+          )}
+        </>
+      )}
+      <AuditReasonField
+        id="platform-idp-create-reason"
+        value={draft.auditReason}
+        onChange={(auditReason) => {
+          if (submitLockRef.current === null) {
+            setDraft({ ...draft, auditReason });
+          }
+        }}
+      />
+      {errors.length > 0 ? <ValidationSummary errors={errors} /> : null}
+      {requestError ? <FocusedError message={requestError} /> : null}
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={submitting}
+          onClick={() => onOpenChange(false)}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={submitting || !canManage}>
+          <Plus aria-hidden="true" />
+          {submitting ? "Creating…" : "Create disabled provider"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function ProviderEditMetadataAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderActionToolbar>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    providerMutationBlocked,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    setClientSecret,
+    setDirectLoginCommand,
+    setDirectLoginConfirmation,
+    setDirectLoginReason,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMetadataConflict,
+    setMetadataDraft,
+    setMetadataErrors,
+    setMutationError,
+    setSecretOpen,
+    setSecretReason,
+  } = model;
+  if (!provider) return null;
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={providerMutationBlocked}
+      onClick={() => {
+        setSecretOpen(false);
+        setClientSecret("");
+        setSecretReason("");
+        setArchiveOpen(false);
+        setArchiveReason("");
+        setArchiveConfirmation("");
+        setLifecycleCommand(null);
+        setLifecycleReason("");
+        setLifecycleConfirmation("");
+        setDirectLoginCommand(null);
+        setDirectLoginReason("");
+        setDirectLoginConfirmation("");
+        setMetadataDraft(metadataDraftFromProvider(provider));
+        setMetadataErrors([]);
+        setMetadataConflict(false);
+        setMutationError(null);
+      }}
+    >
+      <Save aria-hidden="true" /> Edit metadata
+    </Button>
+  );
+}
+
+function ProviderEditSecretAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderActionToolbar>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    providerMutationBlocked,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    setDirectLoginCommand,
+    setDirectLoginConfirmation,
+    setDirectLoginReason,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMetadataConflict,
+    setMetadataDraft,
+    setMetadataErrors,
+    setMutationError,
+    setSecretOpen,
+  } = model;
+  if (!provider) return null;
+  if (provider.kind !== "oidc") return null;
+  return provider.kind === "oidc" ? (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={providerMutationBlocked}
+      onClick={() => {
+        setMetadataDraft(null);
+        setMetadataErrors([]);
+        setMetadataConflict(false);
+        setArchiveOpen(false);
+        setArchiveReason("");
+        setArchiveConfirmation("");
+        setLifecycleCommand(null);
+        setLifecycleReason("");
+        setLifecycleConfirmation("");
+        setDirectLoginCommand(null);
+        setDirectLoginReason("");
+        setDirectLoginConfirmation("");
+        setSecretOpen(true);
+        setMutationError(null);
+      }}
+    >
+      <KeyRound aria-hidden="true" />
+      {provider.configuration.clientSecretPresent
+        ? "Replace client secret"
+        : "Set client secret"}
+    </Button>
+  ) : null;
+}
+
+function ProviderExecutionAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderActionToolbar>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    providerMutationBlocked,
+    setAccountMode,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    setClientSecret,
+    setDirectLoginCommand,
+    setDirectLoginConfirmation,
+    setDirectLoginReason,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMetadataConflict,
+    setMetadataDraft,
+    setMetadataErrors,
+    setMutationError,
+    setSecretOpen,
+    setSecretReason,
+  } = model;
+  if (!provider) return null;
+  return provider.enabled || provider.activationAvailable ? (
+    <Button
+      type="button"
+      variant={provider.enabled ? "destructive" : "default"}
+      disabled={
+        providerMutationBlocked ||
+        (provider.enabled && provider.platformLoginEnabled)
+      }
+      onClick={() => {
+        setMetadataDraft(null);
+        setMetadataErrors([]);
+        setMetadataConflict(false);
+        setSecretOpen(false);
+        setClientSecret("");
+        setSecretReason("");
+        setArchiveOpen(false);
+        setArchiveReason("");
+        setArchiveConfirmation("");
+        setLifecycleCommand(provider.enabled ? "deactivate" : "activate");
+        setLifecycleReason("");
+        setLifecycleConfirmation("");
+        setDirectLoginCommand(null);
+        setDirectLoginReason("");
+        setDirectLoginConfirmation("");
+        setAccountMode("existing_identity");
+        setMutationError(null);
+      }}
+    >
+      {provider.enabled
+        ? "Deactivate tenant execution"
+        : "Activate tenant execution"}
+    </Button>
+  ) : null;
+}
+
+function ProviderPlatformLoginAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderActionToolbar>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    providerMutationBlocked,
+    setArchiveConfirmation,
+    setArchiveOpen,
+    setArchiveReason,
+    setClientSecret,
+    setDirectLoginCommand,
+    setDirectLoginConfirmation,
+    setDirectLoginReason,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMetadataConflict,
+    setMetadataDraft,
+    setMetadataErrors,
+    setMutationError,
+    setSecretOpen,
+    setSecretReason,
+  } = model;
+  if (!provider) return null;
+  return provider.enabled ? (
+    <Button
+      type="button"
+      variant={provider.platformLoginEnabled ? "destructive" : "default"}
+      disabled={
+        providerMutationBlocked ||
+        (!provider.platformLoginEnabled &&
+          !provider.platformLoginActivationAvailable)
+      }
+      onClick={() => {
+        setMetadataDraft(null);
+        setMetadataErrors([]);
+        setMetadataConflict(false);
+        setSecretOpen(false);
+        setClientSecret("");
+        setSecretReason("");
+        setArchiveOpen(false);
+        setArchiveReason("");
+        setArchiveConfirmation("");
+        setLifecycleCommand(null);
+        setLifecycleReason("");
+        setLifecycleConfirmation("");
+        setDirectLoginCommand(
+          provider.platformLoginEnabled ? "deactivate" : "activate",
+        );
+        setDirectLoginReason("");
+        setDirectLoginConfirmation("");
+        setMutationError(null);
+      }}
+    >
+      {provider.platformLoginEnabled
+        ? "Deactivate direct platform login"
+        : provider.platformLoginActivationAvailable
+          ? "Activate direct platform login"
+          : "Direct platform login unavailable"}
+    </Button>
+  ) : null;
+}
+
+function ProviderArchiveAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderActionToolbar>["model"];
+}): React.ReactNode {
+  const {
+    provider,
+    providerMutationBlocked,
+    setArchiveOpen,
+    setClientSecret,
+    setDirectLoginCommand,
+    setDirectLoginConfirmation,
+    setDirectLoginReason,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMetadataConflict,
+    setMetadataDraft,
+    setMetadataErrors,
+    setMutationError,
+    setSecretOpen,
+    setSecretReason,
+  } = model;
+  if (!provider) return null;
+  return !provider.enabled ? (
+    <Button
+      type="button"
+      variant="destructive"
+      disabled={providerMutationBlocked}
+      onClick={() => {
+        setMetadataDraft(null);
+        setMetadataErrors([]);
+        setMetadataConflict(false);
+        setSecretOpen(false);
+        setClientSecret("");
+        setSecretReason("");
+        setLifecycleCommand(null);
+        setLifecycleReason("");
+        setLifecycleConfirmation("");
+        setDirectLoginCommand(null);
+        setDirectLoginReason("");
+        setDirectLoginConfirmation("");
+        setArchiveOpen(true);
+        setMutationError(null);
+      }}
+    >
+      <Archive aria-hidden="true" /> Archive provider
+    </Button>
+  ) : null;
+}
+
+function ProviderMetadataForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderMetadataPanel>["model"];
+}): React.ReactNode {
+  const {
+    metadataConflict,
+    metadataDraft,
+    metadataErrors,
+    providerMutationBlocked,
+    setMetadataConflict,
+    setMetadataDraft,
+    setMutationError,
+    submitting,
+    updateMetadata,
+  } = model;
+  if (!metadataDraft) return null;
+  return (
+    <form
+      className="platform-idp-action-form"
+      aria-label="Edit provider metadata"
+      aria-busy={submitting === "metadata"}
+      onSubmit={(event) => void updateMetadata(event)}
+    >
+      <h4>Replace metadata</h4>
+      <MetadataFields
+        disabled={providerMutationBlocked}
+        draft={metadataDraft}
+        keyReadOnly
+        onChange={(patch) => setMetadataDraft({ ...metadataDraft, ...patch })}
+        prefix="platform-idp-edit"
+      />
+      <AuditReasonField
+        disabled={providerMutationBlocked}
+        id="platform-idp-edit-reason"
+        value={metadataDraft.auditReason}
+        onChange={(auditReason) =>
+          setMetadataDraft({ ...metadataDraft, auditReason })
+        }
+      />
+      {metadataErrors.length > 0 ? (
+        <ValidationSummary errors={metadataErrors} />
+      ) : null}
+      {metadataConflict ? (
+        <Alert variant="destructive">
+          <ShieldAlert aria-hidden="true" />
+          <AlertTitle>Provider changed on the server</AlertTitle>
+          <AlertDescription>
+            This draft was not retried. Close it and start again from the
+            refreshed version.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={providerMutationBlocked}
+          onClick={() => {
+            setMetadataDraft(null);
+            setMetadataConflict(false);
+            setMutationError(null);
+          }}
+        >
+          Cancel edit
+        </Button>
+        <Button
+          type="submit"
+          disabled={providerMutationBlocked || metadataConflict}
+        >
+          <Save aria-hidden="true" />
+          {submitting === "metadata" ? "Saving…" : "Replace metadata"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ProviderLifecycleForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderLifecyclePanel>["model"];
+}): React.ReactNode {
+  const {
+    accountMode,
+    changeProviderExecution,
+    lifecycleCommand,
+    lifecycleConfirmation,
+    lifecycleReason,
+    provider,
+    providerMutationBlocked,
+    setAccountMode,
+    setLifecycleCommand,
+    setLifecycleConfirmation,
+    setLifecycleReason,
+    setMutationError,
+    submitting,
+  } = model;
+  if (!provider) return null;
+  return (
+    <form
+      className="platform-idp-action-form"
+      aria-label={`${lifecycleCommand === "activate" ? "Activate" : "Deactivate"} provider tenant execution`}
+      aria-busy={submitting === lifecycleCommand}
+      onSubmit={(event) => void changeProviderExecution(event)}
+    >
+      <div>
+        <h4>
+          {lifecycleCommand === "activate"
+            ? `Activate ${kindLabel(provider.kind)} tenant execution`
+            : `Deactivate ${kindLabel(provider.kind)} tenant execution`}
+        </h4>
+        <p>
+          This changes tenant-bound authentication only. It cannot enable direct
+          platform login or create platform roles.
+        </p>
+      </div>
+      {lifecycleCommand === "activate" ? (
+        <SelectField
+          disabled={providerMutationBlocked}
+          id="platform-idp-account-mode"
+          label="External identity account mode"
+          value={accountMode}
+          options={[
+            ["existing_identity", "Match an existing identity"],
+            ["create", "Create an identity without platform authority"],
+          ]}
+          onChange={setAccountMode}
+        />
+      ) : null}
+      <AuditReasonField
+        disabled={providerMutationBlocked}
+        id="platform-idp-lifecycle-reason"
+        value={lifecycleReason}
+        onChange={setLifecycleReason}
+      />
+      <TextInputField
+        disabled={providerMutationBlocked}
+        id="platform-idp-lifecycle-confirmation"
+        label={`Type ${provider.key} to confirm`}
+        value={lifecycleConfirmation}
+        onChange={setLifecycleConfirmation}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={providerMutationBlocked}
+          onClick={() => {
+            setLifecycleCommand(null);
+            setLifecycleReason("");
+            setLifecycleConfirmation("");
+            setMutationError(null);
+          }}
+        >
+          Cancel {lifecycleCommand}
+        </Button>
+        <Button
+          type="submit"
+          variant={
+            lifecycleCommand === "deactivate" ? "destructive" : "default"
+          }
+          disabled={providerMutationBlocked}
+        >
+          {submitting === lifecycleCommand
+            ? "Submitting…"
+            : lifecycleCommand === "activate"
+              ? "Activate tenant execution"
+              : "Deactivate tenant execution"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ProviderPlatformLoginForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderPlatformLoginPanel>["model"];
+}): React.ReactNode {
+  const {
+    changeDirectLogin,
+    directLoginCommand,
+    directLoginConfirmation,
+    directLoginReason,
+    provider,
+    providerMutationBlocked,
+    setDirectLoginCommand,
+    setDirectLoginConfirmation,
+    setDirectLoginReason,
+    setMutationError,
+    submitting,
+  } = model;
+  if (!provider) return null;
+  return (
+    <form
+      className="platform-idp-action-form"
+      aria-label={`${directLoginCommand === "activate" ? "Activate" : "Deactivate"} direct platform login`}
+      aria-busy={submitting === `${directLoginCommand}-direct-login`}
+      onSubmit={(event) => void changeDirectLogin(event)}
+    >
+      <div>
+        <h4>
+          {directLoginCommand === "activate"
+            ? `Activate direct ${kindLabel(provider.kind)} platform login`
+            : `Deactivate direct ${kindLabel(provider.kind)} platform login`}
+        </h4>
+        <p>
+          {directLoginCommand === "activate" &&
+          !provider.platformLoginActivationAvailable
+            ? `Activation prerequisites changed on the server. Refresh the provider after restoring its live ${kindLabel(provider.kind)} runtime, protected material, trust pins, keyring, and platform-floor dependencies.`
+            : "This is a separate platform-wide login boundary. It admits pre-linked identities only: provider claims cannot create users, platform roles, or tenant access."}
+        </p>
+      </div>
+      <div className="platform-idp-readonly-policy">
+        <LockKeyhole aria-hidden="true" />
+        <span>
+          <strong>Account mode: existing identity</strong>
+          <small>
+            Pre-link the external subject to an existing platform account before
+            activation. This mode cannot be changed by this command.
+          </small>
+        </span>
+      </div>
+      <AuditReasonField
+        disabled={providerMutationBlocked}
+        id="platform-idp-direct-login-reason"
+        value={directLoginReason}
+        onChange={setDirectLoginReason}
+      />
+      <TextInputField
+        disabled={providerMutationBlocked}
+        id="platform-idp-direct-login-confirmation"
+        label={`Type ${provider.key} to confirm`}
+        value={directLoginConfirmation}
+        onChange={setDirectLoginConfirmation}
+      />
+      <div className="platform-idp-form-actions">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={providerMutationBlocked}
+          onClick={() => {
+            setDirectLoginCommand(null);
+            setDirectLoginReason("");
+            setDirectLoginConfirmation("");
+            setMutationError(null);
+          }}
+        >
+          Cancel {directLoginCommand}
+        </Button>
+        <Button
+          type="submit"
+          variant={
+            directLoginCommand === "deactivate" ? "destructive" : "default"
+          }
+          disabled={
+            providerMutationBlocked ||
+            (directLoginCommand === "activate" &&
+              !provider.platformLoginActivationAvailable)
+          }
+        >
+          {submitting === `${directLoginCommand}-direct-login`
+            ? "Submitting…"
+            : directLoginCommand === "activate"
+              ? "Activate direct platform login"
+              : "Deactivate direct platform login"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ProviderDetailError({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const { setRefreshRevision, state } = model;
+  return state.kind === "error" ? (
+    <div className="platform-idp-load-error">
+      <FocusedError message={state.message} />
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setRefreshRevision((revision) => revision + 1)}
+      >
+        <RefreshCw aria-hidden="true" /> Reload detail
+      </Button>
+    </div>
+  ) : null;
+}
+
+function ProviderStaleProjectionNotice({
+  model,
+}: {
+  model: React.ComponentProps<typeof ProviderDetailDialogView>["model"];
+}): React.ReactNode {
+  const { state } = model;
+  return state.kind !== "ready" ? (
+    <Alert>
+      <ShieldAlert aria-hidden="true" />
+      <AlertTitle>Showing a display-only confirmed projection</AlertTitle>
+      <AlertDescription>
+        Its body and ETag remain paired, but a newer server version is being
+        loaded. All mutations stay locked until refresh completes.
+      </AlertDescription>
+    </Alert>
+  ) : null;
+}
+
+function LdapProviderReadinessBand({
+  provider,
+}: {
+  provider: PlatformAuthProviderView;
+}): React.JSX.Element {
+  return (
+    <section
+      className="platform-idp-readiness"
+      aria-label="Platform LDAP readiness"
+    >
+      <div className="platform-idp-readiness__intro">
+        <Network aria-hidden="true" />
+        <span>
+          <small>Directory readiness</small>
+          <strong>{provider.displayName}</strong>
+        </span>
+      </div>
+      <div className="platform-idp-readiness__gate" data-state="ready">
+        <ShieldCheck aria-hidden="true" />
+        <span>
+          <small>Tenant execution</small>
+          <strong>Not applicable</strong>
+        </span>
+      </div>
+      <div
+        className="platform-idp-readiness__gate"
+        data-state={
+          provider.platformLoginEnabled
+            ? "ready"
+            : provider.platformLoginActivationAvailable
+              ? "pending"
+              : "blocked"
+        }
+      >
+        {provider.platformLoginEnabled ? (
+          <ShieldCheck aria-hidden="true" />
+        ) : provider.platformLoginActivationAvailable ? (
+          <ShieldAlert aria-hidden="true" />
+        ) : (
+          <CircleSlash2 aria-hidden="true" />
+        )}
+        <span>
+          <small>Tenantless platform login</small>
+          <strong>
+            {provider.platformLoginEnabled
+              ? "Active · existing identity + TOTP"
+              : provider.platformLoginActivationAvailable
+                ? "Ready to activate"
+                : "Blocked by readiness"}
+          </strong>
+        </span>
+      </div>
+      <div className="platform-idp-readiness__gate" data-state="pending">
+        <ShieldAlert aria-hidden="true" />
+        <span>
+          <small>Session provenance</small>
+          <strong>Revalidated on authority drift</strong>
+        </span>
+      </div>
+    </section>
+  );
 }

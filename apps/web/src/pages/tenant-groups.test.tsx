@@ -27,7 +27,8 @@ import {
   type TenantUserSummaryView,
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
-import { mergeTenantGroups, TenantGroupsPage } from "./tenant-groups";
+import { TenantGroupsPage } from "./tenant-groups";
+import { mergeTenantGroups } from "./tenant-groups-model";
 
 const tenantId = "0198c97d-cf4f-7000-8000-000000000010";
 const otherTenantId = "0198c97d-cf4f-7000-8000-000000000011";

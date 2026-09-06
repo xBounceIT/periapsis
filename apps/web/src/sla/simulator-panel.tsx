@@ -479,36 +479,30 @@ function simulationRequest(draft: SimulationDraft): SlaSimulationRequest {
 }
 
 const simulationFactsSchema: z.ZodType<SlaSimulationFact[]> = z.array(
-  z
-    .object({
-      path: z
-        .object({
-          kind: z.enum([
-            "customer_tier",
-            "severity",
-            "priority",
-            "category",
-            "source",
-            "operator_team",
-            "tag",
-            "custom_field",
-            "customer_contact_class",
-          ]),
-          key: z.string().optional(),
-        })
-        .strict(),
-      values: z.array(z.string()),
-    })
-    .strict(),
+  z.strictObject({
+    path: z.strictObject({
+      kind: z.enum([
+        "customer_tier",
+        "severity",
+        "priority",
+        "category",
+        "source",
+        "operator_team",
+        "tag",
+        "custom_field",
+        "customer_contact_class",
+      ]),
+      key: z.string().optional(),
+    }),
+    values: z.array(z.string()),
+  }),
 );
 const simulationEventsSchema: z.ZodType<SlaSimulationEvent[]> = z.array(
-  z
-    .object({
-      key: z.string(),
-      eventId: z.string(),
-      occurredAt: z.string(),
-    })
-    .strict(),
+  z.strictObject({
+    key: z.string(),
+    eventId: z.string(),
+    occurredAt: z.string(),
+  }),
 );
 
 function bindPolicy(

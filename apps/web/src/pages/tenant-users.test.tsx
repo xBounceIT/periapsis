@@ -24,13 +24,12 @@ import {
   type TenantUserSummaryView,
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
+import { InheritedGroupPaths, TenantUsersPage } from "./tenant-users";
 import {
   deriveDelegableRoleChoice,
   effectiveAuthorityPathKey,
-  InheritedGroupPaths,
   mergeTenantUsers,
-  TenantUsersPage,
-} from "./tenant-users";
+} from "./tenant-users-model";
 
 const tenantId = "0198c97d-cf4f-7000-8000-000000000010";
 const directGrantEtag = '"v7-n4bQgYhMfWWaL-qgxVrQFaO_T_ZiMsT94ORZLlH_wZA"';

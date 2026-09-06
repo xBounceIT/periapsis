@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -117,15 +118,21 @@ export function TenantAuthorityProvider({
 }: {
   children: ReactNode;
 }): React.JSX.Element {
+  const value = useTenantAuthorityCoordinator();
+  return (
+    <TenantAuthorityContext.Provider value={value}>
+      {children}
+    </TenantAuthorityContext.Provider>
+  );
+}
+
+function useTenantAuthorityCoordinator(): TenantAuthorityContextValue {
   const { api, clearSession, session } = useSession();
   const tenantId = session.activeTenantId;
   const pairKey = authorityPairKey(session.id, tenantId);
   const currentPairRef = useRef(pairKey);
-  currentPairRef.current = pairKey;
   const currentTenantRef = useRef(tenantId);
-  currentTenantRef.current = tenantId;
   const currentSessionIdRef = useRef(session.id);
-  currentSessionIdRef.current = session.id;
   const requestGenerationRef = useRef(0);
   const [reloadRevision, setReloadRevision] = useState(0);
   const reloadSequenceRef = useRef(0);
@@ -156,25 +163,30 @@ export function TenantAuthorityProvider({
         ? "loading"
         : "inactive";
   const currentStatusRef = useRef(currentStatus);
-  currentStatusRef.current = currentStatus;
+  useLayoutEffect(() => {
+    currentPairRef.current = pairKey;
+    currentTenantRef.current = tenantId;
+    currentSessionIdRef.current = session.id;
+    currentStatusRef.current = currentStatus;
 
-  if (coordinatorSessionRef.current !== session.id) {
-    coordinatorSessionRef.current = session.id;
-    mutationRegistrationsRef.current = new WeakMap();
-    activeMutationsRef.current.clear();
-    dirtyPairVersionsRef.current.clear();
-    idempotencyBindingBucketsRef.current.clear();
-    idempotencyBindingOwnershipRef.current = new WeakMap();
-    idempotencyPairRef.current = pairKey;
-    reloadAttemptRef.current = null;
-  } else if (idempotencyPairRef.current !== pairKey) {
-    idempotencyPairRef.current = pairKey;
-    idempotencyBindingBucketsRef.current.clear();
-    idempotencyBindingOwnershipRef.current = new WeakMap();
-  }
-  if (reloadAttemptRef.current?.pairKey !== pairKey) {
-    reloadAttemptRef.current = null;
-  }
+    if (coordinatorSessionRef.current !== session.id) {
+      coordinatorSessionRef.current = session.id;
+      mutationRegistrationsRef.current = new WeakMap();
+      activeMutationsRef.current.clear();
+      dirtyPairVersionsRef.current.clear();
+      idempotencyBindingBucketsRef.current.clear();
+      idempotencyBindingOwnershipRef.current = new WeakMap();
+      idempotencyPairRef.current = pairKey;
+      reloadAttemptRef.current = null;
+    } else if (idempotencyPairRef.current !== pairKey) {
+      idempotencyPairRef.current = pairKey;
+      idempotencyBindingBucketsRef.current.clear();
+      idempotencyBindingOwnershipRef.current = new WeakMap();
+    }
+    if (reloadAttemptRef.current?.pairKey !== pairKey) {
+      reloadAttemptRef.current = null;
+    }
+  }, [currentStatus, pairKey, session.id, tenantId]);
 
   const triggerReload = useCallback(
     (expectedPair: string, coordinated: boolean): boolean => {
@@ -634,11 +646,7 @@ export function TenantAuthorityProvider({
     ],
   );
 
-  return (
-    <TenantAuthorityContext.Provider value={value}>
-      {children}
-    </TenantAuthorityContext.Provider>
-  );
+  return value;
 }
 
 function idempotencyBucketKey(

@@ -1,6 +1,6 @@
 import { Button } from "@periapsis/ui/components/ui/button";
 import { RefreshCw, ShieldAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useSession } from "../auth/session-context";
 import {
@@ -18,7 +18,7 @@ type MembershipState =
     }
   | { kind: "loading" };
 
-export function TenantSwitcher(): React.JSX.Element {
+function useTenantSwitcher() {
   const { api, clearSession, membershipRevision, session, updateSession } =
     useSession();
   const [membershipState, setMembershipState] = useState<MembershipState>({
@@ -30,7 +30,9 @@ export function TenantSwitcher(): React.JSX.Element {
   const [paginationError, setPaginationError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const sessionIdRef = useRef(session.id);
-  sessionIdRef.current = session.id;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session.id]);
 
   useEffect(() => {
     setIsLoadingMore(false);
@@ -117,6 +119,7 @@ export function TenantSwitcher(): React.JSX.Element {
       );
     } finally {
       if (sessionIdRef.current === requestedSessionId) {
+        // eslint-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This reset is inside finally and only the originating session may clear its pending flag.
         setIsLoadingMore(false);
       }
     }
@@ -163,6 +166,31 @@ export function TenantSwitcher(): React.JSX.Element {
     }
   }
 
+  return {
+    membershipState,
+    switchError,
+    isSwitching,
+    isLoadingMore,
+    paginationError,
+    setLoadAttempt,
+    session,
+    selectTenant,
+    loadMore,
+  };
+}
+
+export function TenantSwitcher(): React.JSX.Element {
+  const {
+    membershipState,
+    switchError,
+    isSwitching,
+    isLoadingMore,
+    paginationError,
+    setLoadAttempt,
+    session,
+    selectTenant,
+    loadMore,
+  } = useTenantSwitcher();
   if (membershipState.kind === "loading") {
     return (
       <div
@@ -210,6 +238,40 @@ export function TenantSwitcher(): React.JSX.Element {
     );
   }
 
+  return (
+    <MembershipSelector
+      controller={{
+        membershipState,
+        switchError,
+        isSwitching,
+        isLoadingMore,
+        paginationError,
+        setLoadAttempt,
+        session,
+        selectTenant,
+        loadMore,
+      }}
+      membershipState={membershipState}
+    />
+  );
+}
+
+function MembershipSelector({
+  controller,
+  membershipState,
+}: {
+  controller: ReturnType<typeof useTenantSwitcher>;
+  membershipState: Extract<MembershipState, { kind: "ready" }>;
+}): React.JSX.Element {
+  const {
+    session,
+    isSwitching,
+    selectTenant,
+    switchError,
+    isLoadingMore,
+    loadMore,
+    paginationError,
+  } = controller;
   const activeMembership = membershipState.items.find(
     (item) => item.tenantId === session.activeTenantId,
   );
@@ -276,7 +338,7 @@ function formatRole(value: string): string {
   return value.replaceAll("_", " ");
 }
 
-export function appendUniqueMemberships(
+function appendUniqueMemberships(
   current: readonly TenantMembershipView[],
   incoming: readonly TenantMembershipView[],
 ): readonly TenantMembershipView[] {

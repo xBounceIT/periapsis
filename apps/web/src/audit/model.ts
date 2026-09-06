@@ -1,7 +1,7 @@
 import type { AuditActorType, AuditOutcome } from "@periapsis/contracts";
 
 import { parseRfc3339Instant } from "../lib/rfc3339-instant";
-import { formatTenantInstant } from "../lib/tenant-date-time-context";
+import { formatTenantInstant } from "../lib/tenant-date-time";
 
 export const tenantAuditPermission = "audit.read" as const;
 export const platformAuditPermission = "platform.audit.read" as const;

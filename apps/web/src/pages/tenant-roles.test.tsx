@@ -22,7 +22,8 @@ import {
   type TenantRoleView,
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
-import { mergeTenantRoles, TenantRolesPage } from "./tenant-roles";
+import { TenantRolesPage } from "./tenant-roles";
+import { mergeTenantRoles } from "./tenant-roles-model";
 
 const tenantId = "0198c97d-cf4f-7000-8000-000000000010";
 const roleId = "0198c97d-cf4f-7000-8000-000000000040";

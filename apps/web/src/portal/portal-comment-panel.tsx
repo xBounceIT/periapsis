@@ -20,25 +20,25 @@ import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
 import { FocusedError } from "../components/focused-error";
 import {
-  hasGoTrimSpaceAtEdge,
-  hasUnpairedSurrogate,
-} from "../lib/canonical-display-name";
-import { hasForbiddenCommentMarkdownCharacters } from "../lib/text-validation";
-import {
   ContactApiError,
   type ContactPortalApi,
   type PortalComment,
   type PortalCommentPreview,
 } from "../contacts/contact-api";
 import {
+  hasGoTrimSpaceAtEdge,
+  hasUnpairedSurrogate,
+} from "../lib/canonical-display-name";
+import {
   idempotencyKeyForPayload,
   type IdempotencyReference,
 } from "../lib/payload-idempotency";
+import { hasForbiddenCommentMarkdownCharacters } from "../lib/text-validation";
 import { SafeMarkdown } from "../ticketing/safe-markdown";
 
 type PortalKind = "alert" | "case";
 
-export function PortalCommentPanel({
+function usePortalCommentPanelState({
   api,
   canComment,
   csrfToken,
@@ -52,7 +52,7 @@ export function PortalCommentPanel({
   kind: PortalKind;
   resourceId: string;
   tenantId: string;
-}): React.JSX.Element | null {
+}) {
   const { session } = useSession();
   const authority = useTenantAuthority();
   const client = useQueryClient();
@@ -88,7 +88,6 @@ export function PortalCommentPanel({
     canComment,
   ]);
   const boundaryRef = useRef(boundary);
-
   useLayoutEffect(() => {
     boundaryRef.current = boundary;
     controllerRef.current?.abort();
@@ -109,7 +108,6 @@ export function PortalCommentPanel({
     setEditAttachmentText("");
     return () => controllerRef.current?.abort();
   }, [boundary]);
-
   const comments = useInfiniteQuery({
     enabled: canComment,
     queryKey: ["customer-portal-comments", boundary],
@@ -137,7 +135,84 @@ export function PortalCommentPanel({
       }),
   });
   const items = comments.data?.pages.flatMap((page) => page.items) ?? [];
+  return {
+    api,
+    canComment,
+    csrfToken,
+    kind,
+    resourceId,
+    tenantId,
+    session,
+    authority,
+    client,
+    bodyMarkdown,
+    setBodyMarkdown,
+    attachmentText,
+    setAttachmentText,
+    mode,
+    setMode,
+    preview,
+    setPreview,
+    selected,
+    setSelected,
+    dialogMode,
+    setDialogMode,
+    editBody,
+    setEditBody,
+    editAttachmentText,
+    setEditAttachmentText,
+    editPreview,
+    setEditPreview,
+    pending,
+    setPending,
+    error,
+    setError,
+    editError,
+    setEditError,
+    commentAttempt,
+    editAttempt,
+    controllerRef,
+    boundary,
+    boundaryRef,
+    comments,
+    history,
+    items,
+  };
+}
 
+function createPortalCommentPanelActions({
+  api,
+  canComment,
+  csrfToken,
+  kind,
+  resourceId,
+  tenantId,
+  client,
+  bodyMarkdown,
+  setBodyMarkdown,
+  attachmentText,
+  setAttachmentText,
+  setMode,
+  setPreview,
+  selected,
+  setSelected,
+  setDialogMode,
+  editBody,
+  setEditBody,
+  editAttachmentText,
+  setEditAttachmentText,
+  setEditPreview,
+  setPending,
+  setError,
+  setEditError,
+  commentAttempt,
+  editAttempt,
+  controllerRef,
+  boundary,
+  boundaryRef,
+  comments,
+  history,
+}: ReturnType<typeof usePortalCommentPanelState>) {
   function beginRequest(): {
     controller: AbortController;
     requestedBoundary: string;
@@ -147,7 +222,6 @@ export function PortalCommentPanel({
     controllerRef.current = controller;
     return { controller, requestedBoundary: boundary };
   }
-
   function current(
     controller: AbortController,
     requestedBoundary: string,
@@ -156,7 +230,6 @@ export function PortalCommentPanel({
       !controller.signal.aborted && boundaryRef.current === requestedBoundary
     );
   }
-
   async function requestPreview(editing: boolean): Promise<void> {
     const draft = portalDraft(
       editing ? editBody : bodyMarkdown,
@@ -193,7 +266,6 @@ export function PortalCommentPanel({
       if (current(controller, requestedBoundary)) setPending(null);
     }
   }
-
   async function create(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const draft = portalDraft(bodyMarkdown, attachmentText);
@@ -237,7 +309,6 @@ export function PortalCommentPanel({
       if (current(controller, requestedBoundary)) setPending(null);
     }
   }
-
   async function edit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!selected || !isPortalCommentEditable(selected, canComment)) {
@@ -313,7 +384,6 @@ export function PortalCommentPanel({
       if (current(controller, requestedBoundary)) setPending(null);
     }
   }
-
   function openDialog(
     comment: PortalComment,
     nextMode: "edit" | "history",
@@ -328,9 +398,49 @@ export function PortalCommentPanel({
     setEditError(null);
     editAttempt.current = null;
   }
+  return { beginRequest, current, requestPreview, create, edit, openDialog };
+}
 
+export function PortalCommentPanel(props: {
+  api: ContactPortalApi;
+  canComment: boolean;
+  csrfToken: string;
+  kind: PortalKind;
+  resourceId: string;
+  tenantId: string;
+}): React.JSX.Element | null {
+  const state = usePortalCommentPanelState(props);
+  const {
+    canComment,
+    bodyMarkdown,
+    setBodyMarkdown,
+    attachmentText,
+    setAttachmentText,
+    mode,
+    setMode,
+    preview,
+    setPreview,
+    selected,
+    setSelected,
+    dialogMode,
+    setDialogMode,
+    editBody,
+    setEditBody,
+    editAttachmentText,
+    setEditAttachmentText,
+    editPreview,
+    setEditPreview,
+    pending,
+    error,
+    editError,
+    controllerRef,
+    comments,
+    history,
+    items,
+  } = state;
   if (!canComment) return null;
-
+  const { requestPreview, create, edit, openDialog } =
+    createPortalCommentPanelActions(state);
   return (
     <section
       className="portal-comments"
@@ -353,45 +463,11 @@ export function PortalCommentPanel({
       {!comments.isPending && items.length === 0 ? (
         <p>No public comments.</p>
       ) : null}
-      <ol className="portal-comment-list">
-        {items.map((comment) => (
-          <li key={comment.id}>
-            <header>
-              <strong>{comment.author.displayName}</strong>
-              <span>{comment.origin}</span>
-              <time dateTime={comment.createdAt}>
-                {formatDate(comment.createdAt)}
-              </time>
-            </header>
-            <SafeMarkdown markdown={comment.bodyMarkdown} />
-            {comment.attachments.length ? (
-              <ul aria-label="Comment attachments">
-                {comment.attachments.map((attachment) => (
-                  <li key={attachment.id}>{attachment.originalFilename}</li>
-                ))}
-              </ul>
-            ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => openDialog(comment, "history")}
-            >
-              <History aria-hidden="true" /> History
-            </Button>
-            {isPortalCommentEditable(comment, canComment) ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => openDialog(comment, "edit")}
-              >
-                <Pencil aria-hidden="true" /> Edit
-              </Button>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      <PortalCommentInventory
+        canComment={canComment}
+        items={items}
+        openDialog={openDialog}
+      />
       {comments.hasNextPage ? (
         <Button
           type="button"
@@ -403,148 +479,39 @@ export function PortalCommentPanel({
         </Button>
       ) : null}
       {canComment ? (
-        <form
-          className="portal-comment-form"
-          onSubmit={(event) => void create(event)}
-        >
-          <div role="tablist" aria-label="Public comment composer mode">
-            <Button
-              type="button"
-              role="tab"
-              aria-selected={mode === "write"}
-              onClick={() => setMode("write")}
-            >
-              Write
-            </Button>
-            <Button
-              type="button"
-              role="tab"
-              aria-selected={mode === "preview"}
-              disabled={pending !== null}
-              onClick={() => void requestPreview(false)}
-            >
-              Preview
-            </Button>
-          </div>
-          {error ? (
-            <FocusedError title="Comment was not sent" message={error} />
-          ) : null}
-          {mode === "write" ? (
-            <>
-              <Label htmlFor="portal-comment">Add a public comment</Label>
-              <Textarea
-                id="portal-comment"
-                maxLength={40_000}
-                required
-                value={bodyMarkdown}
-                onChange={(event) => {
-                  setBodyMarkdown(event.currentTarget.value);
-                  setPreview(null);
-                }}
-              />
-              <PortalAttachmentIds
-                value={attachmentText}
-                onChange={(value) => {
-                  setAttachmentText(value);
-                  setPreview(null);
-                }}
-              />
-            </>
-          ) : preview ? (
-            <PortalPreview preview={preview} />
-          ) : (
-            <p>No accepted preview is available.</p>
-          )}
-          <Button
-            type="submit"
-            disabled={pending !== null || bodyMarkdown.length === 0}
-          >
-            <Send aria-hidden="true" />{" "}
-            {pending === "create" ? "Sending…" : "Send public comment"}
-          </Button>
-        </form>
+        <PortalCommentComposer
+          attachmentText={attachmentText}
+          bodyMarkdown={bodyMarkdown}
+          create={create}
+          error={error}
+          mode={mode}
+          pending={pending}
+          preview={preview}
+          requestPreview={requestPreview}
+          setAttachmentText={setAttachmentText}
+          setBodyMarkdown={setBodyMarkdown}
+          setMode={setMode}
+          setPreview={setPreview}
+        />
       ) : null}
-      <Dialog
-        open={selected !== null && dialogMode !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            controllerRef.current?.abort();
-            setSelected(null);
-            setDialogMode(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {dialogMode === "edit"
-                ? "Correct your public comment"
-                : "Public comment history"}
-            </DialogTitle>
-            <DialogDescription>
-              Corrections append immutable public revisions. Visibility and
-              mentions cannot be changed.
-            </DialogDescription>
-          </DialogHeader>
-          {dialogMode === "edit" ? (
-            <form onSubmit={(event) => void edit(event)}>
-              {editError ? (
-                <FocusedError title="Comment not edited" message={editError} />
-              ) : null}
-              <Label htmlFor="portal-comment-edit">Comment</Label>
-              <Textarea
-                id="portal-comment-edit"
-                maxLength={40_000}
-                value={editBody}
-                onChange={(event) => {
-                  setEditBody(event.target.value);
-                  setEditPreview(null);
-                }}
-              />
-              <PortalAttachmentIds
-                id="portal-comment-edit-attachments"
-                value={editAttachmentText}
-                onChange={(value) => {
-                  setEditAttachmentText(value);
-                  setEditPreview(null);
-                }}
-              />
-              {editPreview ? <PortalPreview preview={editPreview} /> : null}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={pending !== null}
-                onClick={() => void requestPreview(true)}
-              >
-                Preview correction
-              </Button>
-              <Button type="submit" disabled={pending !== null}>
-                {pending === "edit" ? "Saving correction…" : "Save correction"}
-              </Button>
-            </form>
-          ) : null}
-          {history.isPending ? (
-            <p aria-live="polite">Loading public history…</p>
-          ) : null}
-          {history.isError ? (
-            <FocusedError
-              title="History unavailable"
-              message={portalError(history.error)}
-            />
-          ) : null}
-          <ol>
-            {history.data?.items.map((revision) => (
-              <li key={revision.revision}>
-                <strong>Revision {revision.revision}</strong>
-                <time dateTime={revision.editedAt}>
-                  {formatDate(revision.editedAt)}
-                </time>
-                <SafeMarkdown markdown={revision.bodyMarkdown} />
-              </li>
-            ))}
-          </ol>
-        </DialogContent>
-      </Dialog>
+      <PortalCommentDialog
+        controllerRef={controllerRef}
+        dialogMode={dialogMode}
+        edit={edit}
+        editAttachmentText={editAttachmentText}
+        editBody={editBody}
+        editError={editError}
+        editPreview={editPreview}
+        history={history}
+        pending={pending}
+        requestPreview={requestPreview}
+        selected={selected}
+        setDialogMode={setDialogMode}
+        setEditAttachmentText={setEditAttachmentText}
+        setEditBody={setEditBody}
+        setEditPreview={setEditPreview}
+        setSelected={setSelected}
+      />
     </section>
   );
 }
@@ -668,8 +635,295 @@ function portalError(value: unknown): string {
 }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return portalCommentDateFormatter.format(new Date(value));
+}
+
+const portalCommentDateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+interface PortalCommentDialogProps {
+  controllerRef: ReturnType<typeof usePortalCommentPanelState>["controllerRef"];
+  dialogMode: ReturnType<typeof usePortalCommentPanelState>["dialogMode"];
+  edit: ReturnType<typeof createPortalCommentPanelActions>["edit"];
+  editAttachmentText: ReturnType<
+    typeof usePortalCommentPanelState
+  >["editAttachmentText"];
+  editBody: ReturnType<typeof usePortalCommentPanelState>["editBody"];
+  editError: ReturnType<typeof usePortalCommentPanelState>["editError"];
+  editPreview: ReturnType<typeof usePortalCommentPanelState>["editPreview"];
+  history: ReturnType<typeof usePortalCommentPanelState>["history"];
+  pending: ReturnType<typeof usePortalCommentPanelState>["pending"];
+  requestPreview: ReturnType<
+    typeof createPortalCommentPanelActions
+  >["requestPreview"];
+  selected: ReturnType<typeof usePortalCommentPanelState>["selected"];
+  setDialogMode: ReturnType<typeof usePortalCommentPanelState>["setDialogMode"];
+  setEditAttachmentText: ReturnType<
+    typeof usePortalCommentPanelState
+  >["setEditAttachmentText"];
+  setEditBody: ReturnType<typeof usePortalCommentPanelState>["setEditBody"];
+  setEditPreview: ReturnType<
+    typeof usePortalCommentPanelState
+  >["setEditPreview"];
+  setSelected: ReturnType<typeof usePortalCommentPanelState>["setSelected"];
+}
+
+function PortalCommentDialog({
+  controllerRef,
+  dialogMode,
+  edit,
+  editAttachmentText,
+  editBody,
+  editError,
+  editPreview,
+  history,
+  pending,
+  requestPreview,
+  selected,
+  setDialogMode,
+  setEditAttachmentText,
+  setEditBody,
+  setEditPreview,
+  setSelected,
+}: PortalCommentDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open={selected !== null && dialogMode !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          controllerRef.current?.abort();
+          setSelected(null);
+          setDialogMode(null);
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {dialogMode === "edit"
+              ? "Correct your public comment"
+              : "Public comment history"}
+          </DialogTitle>
+          <DialogDescription>
+            Corrections append immutable public revisions. Visibility and
+            mentions cannot be changed.
+          </DialogDescription>
+        </DialogHeader>
+        {dialogMode === "edit" ? (
+          <form onSubmit={(event) => void edit(event)}>
+            {editError ? (
+              <FocusedError title="Comment not edited" message={editError} />
+            ) : null}
+            <Label htmlFor="portal-comment-edit">Comment</Label>
+            <Textarea
+              id="portal-comment-edit"
+              maxLength={40_000}
+              value={editBody}
+              onChange={(event) => {
+                setEditBody(event.target.value);
+                setEditPreview(null);
+              }}
+            />
+            <PortalAttachmentIds
+              id="portal-comment-edit-attachments"
+              value={editAttachmentText}
+              onChange={(value) => {
+                setEditAttachmentText(value);
+                setEditPreview(null);
+              }}
+            />
+            {editPreview ? <PortalPreview preview={editPreview} /> : null}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending !== null}
+              onClick={() => void requestPreview(true)}
+            >
+              Preview correction
+            </Button>
+            <Button type="submit" disabled={pending !== null}>
+              {pending === "edit" ? "Saving correction…" : "Save correction"}
+            </Button>
+          </form>
+        ) : null}
+        {history.isPending ? (
+          <p aria-live="polite">Loading public history…</p>
+        ) : null}
+        {history.isError ? (
+          <FocusedError
+            title="History unavailable"
+            message={portalError(history.error)}
+          />
+        ) : null}
+        <ol>
+          {history.data?.items.map((revision) => (
+            <li key={revision.revision}>
+              <strong>Revision {revision.revision}</strong>
+              <time dateTime={revision.editedAt}>
+                {formatDate(revision.editedAt)}
+              </time>
+              <SafeMarkdown markdown={revision.bodyMarkdown} />
+            </li>
+          ))}
+        </ol>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface PortalCommentInventoryProps {
+  canComment: ReturnType<typeof usePortalCommentPanelState>["canComment"];
+  items: ReturnType<typeof usePortalCommentPanelState>["items"];
+  openDialog: ReturnType<typeof createPortalCommentPanelActions>["openDialog"];
+}
+
+function PortalCommentInventory({
+  canComment,
+  items,
+  openDialog,
+}: PortalCommentInventoryProps): React.JSX.Element {
+  return (
+    <ol className="portal-comment-list">
+      {items.map((comment) => (
+        <li key={comment.id}>
+          <header>
+            <strong>{comment.author.displayName}</strong>
+            <span>{comment.origin}</span>
+            <time dateTime={comment.createdAt}>
+              {formatDate(comment.createdAt)}
+            </time>
+          </header>
+          <SafeMarkdown markdown={comment.bodyMarkdown} />
+          {comment.attachments.length ? (
+            <ul aria-label="Comment attachments">
+              {comment.attachments.map((attachment) => (
+                <li key={attachment.id}>{attachment.originalFilename}</li>
+              ))}
+            </ul>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => openDialog(comment, "history")}
+          >
+            <History aria-hidden="true" /> History
+          </Button>
+          {isPortalCommentEditable(comment, canComment) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => openDialog(comment, "edit")}
+            >
+              <Pencil aria-hidden="true" /> Edit
+            </Button>
+          ) : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+interface PortalCommentComposerProps {
+  attachmentText: ReturnType<
+    typeof usePortalCommentPanelState
+  >["attachmentText"];
+  bodyMarkdown: ReturnType<typeof usePortalCommentPanelState>["bodyMarkdown"];
+  create: ReturnType<typeof createPortalCommentPanelActions>["create"];
+  error: ReturnType<typeof usePortalCommentPanelState>["error"];
+  mode: ReturnType<typeof usePortalCommentPanelState>["mode"];
+  pending: ReturnType<typeof usePortalCommentPanelState>["pending"];
+  preview: ReturnType<typeof usePortalCommentPanelState>["preview"];
+  requestPreview: ReturnType<
+    typeof createPortalCommentPanelActions
+  >["requestPreview"];
+  setAttachmentText: ReturnType<
+    typeof usePortalCommentPanelState
+  >["setAttachmentText"];
+  setBodyMarkdown: ReturnType<
+    typeof usePortalCommentPanelState
+  >["setBodyMarkdown"];
+  setMode: ReturnType<typeof usePortalCommentPanelState>["setMode"];
+  setPreview: ReturnType<typeof usePortalCommentPanelState>["setPreview"];
+}
+
+function PortalCommentComposer({
+  attachmentText,
+  bodyMarkdown,
+  create,
+  error,
+  mode,
+  pending,
+  preview,
+  requestPreview,
+  setAttachmentText,
+  setBodyMarkdown,
+  setMode,
+  setPreview,
+}: PortalCommentComposerProps): React.JSX.Element {
+  return (
+    <form
+      className="portal-comment-form"
+      onSubmit={(event) => void create(event)}
+    >
+      <div role="tablist" aria-label="Public comment composer mode">
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={mode === "write"}
+          onClick={() => setMode("write")}
+        >
+          Write
+        </Button>
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={mode === "preview"}
+          disabled={pending !== null}
+          onClick={() => void requestPreview(false)}
+        >
+          Preview
+        </Button>
+      </div>
+      {error ? (
+        <FocusedError title="Comment was not sent" message={error} />
+      ) : null}
+      {mode === "write" ? (
+        <>
+          <Label htmlFor="portal-comment">Add a public comment</Label>
+          <Textarea
+            id="portal-comment"
+            maxLength={40_000}
+            required
+            value={bodyMarkdown}
+            onChange={(event) => {
+              setBodyMarkdown(event.currentTarget.value);
+              setPreview(null);
+            }}
+          />
+          <PortalAttachmentIds
+            value={attachmentText}
+            onChange={(value) => {
+              setAttachmentText(value);
+              setPreview(null);
+            }}
+          />
+        </>
+      ) : preview ? (
+        <PortalPreview preview={preview} />
+      ) : (
+        <p>No accepted preview is available.</p>
+      )}
+      <Button
+        type="submit"
+        disabled={pending !== null || bodyMarkdown.length === 0}
+      >
+        <Send aria-hidden="true" />{" "}
+        {pending === "create" ? "Sending…" : "Send public comment"}
+      </Button>
+    </form>
+  );
 }

@@ -11,15 +11,15 @@ import {
 import { z } from "zod";
 
 import {
-  hasBidiControlCharacters,
-  hasControlCharacters,
-} from "../lib/text-validation";
-import {
   hasGoTrimSpaceAtEdge,
   hasUnpairedSurrogate,
 } from "../lib/canonical-display-name";
 import { parseRfc3339Instant } from "../lib/rfc3339-instant";
 import { sessionAwareFetch } from "../lib/session-transition-transport";
+import {
+  hasBidiControlCharacters,
+  hasControlCharacters,
+} from "../lib/text-validation";
 
 export interface CursorPage<T> {
   items: readonly T[];
@@ -108,21 +108,18 @@ const canonicalInstantSchema = z
   .refine((value) => parseRfc3339Instant(value) !== undefined);
 const resourceVersionSchema = z.number().int().min(1).max(2_147_483_647);
 const notificationWindowSchema = z
-  .object({
+  .strictObject({
     endMinute: z.number().int().min(1).max(1440),
     isoWeekday: z.number().int().min(1).max(7),
     startMinute: z.number().int().min(0).max(1439),
   })
-  .strict()
   .refine((value) => value.startMinute < value.endMinute);
-const linkedAccountSchema = z
-  .object({
-    membershipId: z.string().regex(caseContactUuidV7Pattern),
-    userId: z.string().regex(caseContactUuidV7Pattern),
-  })
-  .strict();
+const linkedAccountSchema = z.strictObject({
+  membershipId: z.string().regex(caseContactUuidV7Pattern),
+  userId: z.string().regex(caseContactUuidV7Pattern),
+});
 const contactSchema = z
-  .object({
+  .strictObject({
     active: z.literal(true),
     archivedAt: z.never().optional(),
     contactClass: z.string().regex(stableKeyPattern),
@@ -153,7 +150,6 @@ const contactSchema = z
     updatedAt: canonicalInstantSchema,
     version: resourceVersionSchema,
   })
-  .strict()
   .superRefine((contact, context) => {
     if (!isSameOrLaterInstant(contact.updatedAt, contact.createdAt)) {
       context.addIssue({ code: "custom", message: "Invalid contact timeline" });
@@ -694,7 +690,8 @@ function hasOnlyKeys(
   allowed: readonly string[],
 ): boolean {
   const keys = Object.keys(value);
-  return keys.every((key) => allowed.includes(key));
+  const allowedKeys = new Set(allowed);
+  return keys.every((key) => allowedKeys.has(key));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

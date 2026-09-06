@@ -11,6 +11,15 @@ import type {
 export const workflowTenantId = "01991c20-7d5f-7000-8000-000000000201";
 export const alertWorkflowId = "01991c20-7d5f-7000-8000-000000000202";
 
+function requireInitialState(
+  states: readonly { key: string; initial: boolean }[],
+): string {
+  const initialState = states.find((state) => state.initial);
+  if (!initialState)
+    throw new TypeError("The workflow fixture requires an initial state.");
+  return initialState.key;
+}
+
 export const alertWorkflowFixture: ManagedWorkflow = {
   id: alertWorkflowId,
   tenantId: workflowTenantId,
@@ -142,7 +151,7 @@ export function createWorkflowApiMock(
           id: alertWorkflowId,
           kind: body.kind,
           version: 1,
-          initialState: body.design.states.find((state) => state.initial)!.key,
+          initialState: requireInitialState(body.design.states),
         },
       }),
     publish: async ({ body }) =>
@@ -155,7 +164,7 @@ export function createWorkflowApiMock(
           id: alertWorkflowId,
           kind: "alert",
           version: alertWorkflowFixture.currentVersion + 1,
-          initialState: body.design.states.find((state) => state.initial)!.key,
+          initialState: requireInitialState(body.design.states),
         },
         updatedAt: "2026-08-26T09:00:00Z",
       }),

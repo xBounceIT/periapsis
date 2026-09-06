@@ -11,11 +11,9 @@ import {
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  TenantDateTimeProvider,
-  formatTenantInstant,
-} from "../lib/tenant-date-time-context";
+import { formatTenantInstant } from "../lib/tenant-date-time";
 import type * as TenantDateTime from "../lib/tenant-date-time-context";
+import { TenantDateTimeProvider } from "../lib/tenant-date-time-context";
 import { projectAlertWorkspace } from "./alert-dfir-api";
 import { AlertDfirPanel } from "./alert-dfir-panel";
 import {

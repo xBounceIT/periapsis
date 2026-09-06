@@ -39,12 +39,20 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
+import { reduceWorkspaceState } from "./workspace-state";
 
 import { useSession } from "../auth/session-context";
 import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
-import { platformUtf8ByteLength } from "../lib/platform-auth-provider-validation";
 import {
   describePhaseTwoError,
   hasPermission,
@@ -56,6 +64,7 @@ import {
   type PlatformLocalAccountView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { platformUtf8ByteLength } from "../lib/platform-auth-provider-validation";
 
 type AccountListState =
   | { kind: "error"; message: string }
@@ -85,29 +94,103 @@ const auditReasonPattern =
 const ceremonyTokenPattern = /^(?!A{43}$)[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 
 export function PlatformLocalAccountsPage(): React.JSX.Element {
+  const model = usePlatformLocalAccountsPageModel();
+  if (model.kind === "content") return model.content;
+  return <PlatformLocalAccountsPageView model={model.data} />;
+}
+
+function usePlatformLocalAccountsPageModel() {
   const { api, clearSession, session } = useSession();
   const canRead = hasPermission(session, platformIdentityAccountReadPermission);
   const canManage =
     canRead && hasPermission(session, platformIdentityAccountManagePermission);
-  const [includeDisabled, setIncludeDisabled] = useState(true);
-  const [listState, setListState] = useState<AccountListState>({
-    kind: "loading",
-  });
-  const [revision, setRevision] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [listPageError, setListPageError] = useState<string | null>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    null,
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<PlatformLocalAccountsPageState>,
+    undefined,
+    (): PlatformLocalAccountsPageState => ({
+      includeDisabled: true,
+      listState: {
+        kind: "loading",
+      },
+      revision: 0,
+      loadingMore: false,
+      listPageError: null,
+      inviteOpen: false,
+      selectedAccountId: null,
+      detailState: {
+        kind: "loading",
+      },
+      notice: null,
+    }),
   );
-  const [detailState, setDetailState] = useState<DetailState>({
-    kind: "loading",
-  });
-  const [notice, setNotice] = useState<CeremonyNotice | null>(null);
+  const {
+    includeDisabled,
+    listState,
+    revision,
+    loadingMore,
+    listPageError,
+    inviteOpen,
+    selectedAccountId,
+    detailState,
+    notice,
+  } = workspaceState;
+  const {
+    setIncludeDisabled,
+    setListState,
+    setRevision,
+    setLoadingMore,
+    setListPageError,
+    setInviteOpen,
+    setDetailState,
+    setNotice,
+  } = useMemo(
+    () => ({
+      setIncludeDisabled: (
+        value: React.SetStateAction<
+          PlatformLocalAccountsPageState["includeDisabled"]
+        >,
+      ) => updateWorkspaceState({ includeDisabled: value }),
+      setListState: (
+        value: React.SetStateAction<
+          PlatformLocalAccountsPageState["listState"]
+        >,
+      ) => updateWorkspaceState({ listState: value }),
+      setRevision: (
+        value: React.SetStateAction<PlatformLocalAccountsPageState["revision"]>,
+      ) => updateWorkspaceState({ revision: value }),
+      setLoadingMore: (
+        value: React.SetStateAction<
+          PlatformLocalAccountsPageState["loadingMore"]
+        >,
+      ) => updateWorkspaceState({ loadingMore: value }),
+      setListPageError: (
+        value: React.SetStateAction<
+          PlatformLocalAccountsPageState["listPageError"]
+        >,
+      ) => updateWorkspaceState({ listPageError: value }),
+      setInviteOpen: (
+        value: React.SetStateAction<
+          PlatformLocalAccountsPageState["inviteOpen"]
+        >,
+      ) => updateWorkspaceState({ inviteOpen: value }),
+      setDetailState: (
+        value: React.SetStateAction<
+          PlatformLocalAccountsPageState["detailState"]
+        >,
+      ) => updateWorkspaceState({ detailState: value }),
+      setNotice: (
+        value: React.SetStateAction<PlatformLocalAccountsPageState["notice"]>,
+      ) => updateWorkspaceState({ notice: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const sessionIdRef = useRef(session.id);
   const listEpochRef = useRef(0);
   const detailEpochRef = useRef(0);
-  sessionIdRef.current = session.id;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session]);
   const visibleNotice = notice?.sessionId === session.id ? notice : null;
 
   const handleError = useCallback(
@@ -125,12 +208,14 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
   );
 
   useEffect(() => {
-    setInviteOpen(false);
-    setSelectedAccountId(null);
-    setDetailState({ kind: "loading" });
-    setNotice(null);
-    setLoadingMore(false);
-    setListPageError(null);
+    updateWorkspaceState({
+      inviteOpen: false,
+      selectedAccountId: null,
+      detailState: { kind: "loading" },
+      notice: null,
+      loadingMore: false,
+      listPageError: null,
+    });
     listEpochRef.current += 1;
     detailEpochRef.current += 1;
   }, [session.id]);
@@ -141,9 +226,11 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
     const epoch = listEpochRef.current + 1;
     listEpochRef.current = epoch;
     const expectedSessionId = session.id;
-    setListState({ kind: "loading" });
-    setLoadingMore(false);
-    setListPageError(null);
+    updateWorkspaceState({
+      listState: { kind: "loading" },
+      loadingMore: false,
+      listPageError: null,
+    });
     void api
       .listPlatformLocalAccounts({
         includeDisabled,
@@ -183,7 +270,15 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
         });
       });
     return () => controller.abort();
-  }, [api, canRead, handleError, includeDisabled, revision, session.id]);
+  }, [
+    setListState,
+    api,
+    canRead,
+    handleError,
+    includeDisabled,
+    revision,
+    session.id,
+  ]);
 
   async function loadMoreAccounts(): Promise<void> {
     if (
@@ -196,8 +291,7 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
     const cursor = listState.nextCursor;
     const epoch = listEpochRef.current;
     const expectedSessionId = session.id;
-    setLoadingMore(true);
-    setListPageError(null);
+    updateWorkspaceState({ loadingMore: true, listPageError: null });
     try {
       const page = await api.listPlatformLocalAccounts({
         after: cursor,
@@ -239,6 +333,7 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
         listEpochRef.current === epoch &&
         sessionIdRef.current === expectedSessionId
       ) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setLoadingMore(false);
       }
     }
@@ -249,8 +344,10 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
       const epoch = detailEpochRef.current + 1;
       detailEpochRef.current = epoch;
       const expectedSessionId = session.id;
-      setSelectedAccountId(accountId);
-      setDetailState({ kind: "loading" });
+      updateWorkspaceState({
+        selectedAccountId: accountId,
+        detailState: { kind: "loading" },
+      });
       void api
         .getPlatformLocalAccount(accountId)
         .then((resource) => {
@@ -277,35 +374,41 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
           }
         });
     },
-    [api, handleError, session.id],
+    [setDetailState, api, handleError, session.id],
   );
 
   function closeAccount(): void {
     detailEpochRef.current += 1;
-    setSelectedAccountId(null);
-    setDetailState({ kind: "loading" });
+    updateWorkspaceState({
+      selectedAccountId: null,
+      detailState: { kind: "loading" },
+    });
   }
 
   function acceptMutation(mutation: PlatformLocalAccountMutationView): void {
-    setListState((current) => {
-      if (current.kind !== "ready") return current;
-      const items = current.items
-        .map((account) =>
-          account.id === mutation.account.value.id
-            ? mutation.account.value
-            : account,
-        )
-        .filter((account) => includeDisabled || account.status !== "disabled")
-        .toSorted((first, second) => first.id.localeCompare(second.id));
-      return {
-        items,
-        kind: "ready",
-        ...(current.nextCursor === undefined
-          ? {}
-          : { nextCursor: current.nextCursor }),
-      };
+    updateWorkspaceState({
+      listState: (current) => {
+        if (current.kind !== "ready") return current;
+        const items: (typeof current.items)[number][] = [];
+        for (const previous of current.items) {
+          const account =
+            previous.id === mutation.account.value.id
+              ? mutation.account.value
+              : previous;
+          if (includeDisabled || account.status !== "disabled")
+            items.push(account);
+        }
+        items.sort((first, second) => first.id.localeCompare(second.id));
+        return {
+          items,
+          kind: "ready",
+          ...(current.nextCursor === undefined
+            ? {}
+            : { nextCursor: current.nextCursor }),
+        };
+      },
+      detailState: { kind: "ready", resource: mutation.account },
     });
-    setDetailState({ kind: "ready", resource: mutation.account });
     if (mutation.ceremonyToken && mutation.totpEnrollment) {
       setNotice({
         accountLabel: mutation.account.value.displayName,
@@ -324,17 +427,20 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
   }
 
   if (!canRead) {
-    return (
-      <section className="content-stack">
-        <div className="page-heading">
-          <div>
-            <p className="eyebrow">Platform recovery</p>
-            <h1>Local recovery accounts</h1>
+    return {
+      kind: "content" as const,
+      content: (
+        <section className="content-stack">
+          <div className="page-heading">
+            <div>
+              <p className="eyebrow">Platform recovery</p>
+              <h1>Local recovery accounts</h1>
+            </div>
           </div>
-        </div>
-        <FocusedError message="Your current platform session cannot read local recovery accounts. Server authorization is enforced independently of this page." />
-      </section>
-    );
+          <FocusedError message="Your current platform session cannot read local recovery accounts. Server authorization is enforced independently of this page." />
+        </section>
+      ),
+    };
   }
 
   const accounts = listState.kind === "ready" ? listState.items : [];
@@ -343,218 +449,62 @@ export function PlatformLocalAccountsPage(): React.JSX.Element {
       account.protectedRecoveryPrincipal && account.status === "active",
   ).length;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      acceptMutation,
+      api,
+      canManage,
+      closeAccount,
+      detailState,
+      includeDisabled,
+      inviteOpen,
+      listPageError,
+      listState,
+      loadMoreAccounts,
+      loadingMore,
+      openAccount,
+      readyProtectedCount,
+      selectedAccountId,
+      session,
+      setIncludeDisabled,
+      setInviteOpen,
+      setNotice,
+      setRevision,
+      visibleNotice,
+    },
+  };
+}
+
+function PlatformLocalAccountsPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof usePlatformLocalAccountsPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    acceptMutation,
+    api,
+    canManage,
+    closeAccount,
+    detailState,
+    inviteOpen,
+    selectedAccountId,
+    session,
+    setInviteOpen,
+    setRevision,
+  } = model;
   return (
     <section className="content-stack platform-local-account-page">
-      <div className="page-heading platform-local-account-heading">
-        <div>
-          <p className="eyebrow">Platform recovery</p>
-          <h1>Local recovery accounts</h1>
-          <p>
-            Keep an independently authenticated path into the platform. Every
-            lifecycle change requires a fresh local factor and leaves a redacted
-            audit record.
-          </p>
-        </div>
-        <div className="platform-local-account-heading__actions">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setRevision((value) => value + 1)}
-          >
-            <RefreshCw aria-hidden="true" /> Refresh
-          </Button>
-          {canManage ? (
-            <Button type="button" onClick={() => setInviteOpen(true)}>
-              <Plus aria-hidden="true" /> Invite recovery account
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <LocalAccountPageHeading model={model} />
 
-      {visibleNotice ? (
-        <Alert className="platform-local-account-token">
-          <KeyRound aria-hidden="true" />
-          <AlertTitle>
-            One-time {visibleNotice.kind} token for {visibleNotice.accountLabel}
-          </AlertTitle>
-          <AlertDescription>
-            <p>
-              Enroll the authenticator and transfer the ceremony token through
-              the approved secure channel now. None of this material can be read
-              again, and an exact retry will not return it.
-            </p>
-            <dl className="platform-local-account-enrollment-material">
-              <div>
-                <dt>Ceremony token</dt>
-                <dd>
-                  <code>{visibleNotice.token}</code>
-                </dd>
-              </div>
-              <div>
-                <dt>TOTP secret</dt>
-                <dd>
-                  <code>{visibleNotice.secret}</code>
-                </dd>
-              </div>
-              <div>
-                <dt>Authenticator URI</dt>
-                <dd>
-                  <code>{visibleNotice.provisioningUri}</code>
-                </dd>
-              </div>
-            </dl>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setNotice(null)}
-            >
-              I have stored the enrollment material
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      {<LocalAccountCreationCeremony model={model} />}
 
-      <Card className="platform-local-account-posture">
-        <CardHeader>
-          <div>
-            <CardTitle>Recovery posture</CardTitle>
-            <CardDescription>
-              The backend prevents an action that would remove the last ready
-              protected human recovery principal.
-            </CardDescription>
-          </div>
-          <Badge
-            variant={readyProtectedCount > 1 ? "secondary" : "destructive"}
-          >
-            {readyProtectedCount} ready protected
-          </Badge>
-        </CardHeader>
-        <CardContent>
-          <div
-            className="platform-local-account-recovery-rail"
-            data-state={readyProtectedCount > 1 ? "redundant" : "at-risk"}
-          >
-            <span aria-hidden="true" />
-            <div>
-              <strong>
-                {readyProtectedCount > 1
-                  ? "Recovery has redundancy"
-                  : "Recovery floor needs attention"}
-              </strong>
-              <small>
-                Inventory signals are informative; the locked database check
-                decides whether a mutation is safe.
-              </small>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <PlatformLocalAccountsPageRecoveryPosture model={model} />
 
-      <Card className="platform-local-account-inventory">
-        <CardHeader className="platform-local-account-inventory-header">
-          <div>
-            <CardTitle>Account inventory</CardTitle>
-            <CardDescription>
-              Safe lifecycle projections only. Credentials, factors, ceremony
-              digests, recovery codes, and session provenance never appear.
-            </CardDescription>
-          </div>
-          <div className="platform-local-account-filter">
-            <Checkbox
-              id="platform-local-account-show-disabled"
-              checked={includeDisabled}
-              onCheckedChange={(checked) =>
-                setIncludeDisabled(checked === true)
-              }
-            />
-            <Label htmlFor="platform-local-account-show-disabled">
-              Show disabled accounts
-            </Label>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {listState.kind === "loading" ? (
-            <p aria-live="polite">Loading local recovery accounts…</p>
-          ) : null}
-          {listState.kind === "error" ? (
-            <FocusedError message={listState.message} />
-          ) : null}
-          {listState.kind === "ready" && listState.items.length === 0 ? (
-            <div className="platform-local-account-empty">
-              <ShieldCheck aria-hidden="true" />
-              <div>
-                <strong>No local recovery accounts are visible.</strong>
-                <p>
-                  Invite a reviewed emergency operator before relying on this
-                  authentication path.
-                </p>
-              </div>
-            </div>
-          ) : null}
-          {listState.kind === "ready" && listState.items.length > 0 ? (
-            <Table className="platform-local-account-table">
-              <TableCaption>
-                Local recovery accounts ordered by immutable account ID.
-              </TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Operator</TableHead>
-                  <TableHead>Lifecycle</TableHead>
-                  <TableHead>Recovery role</TableHead>
-                  <TableHead>Revision</TableHead>
-                  <TableHead className="text-right">Controls</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {listState.items.map((account) => (
-                  <TableRow key={account.id} data-state={account.status}>
-                    <TableCell>
-                      <strong>{account.displayName}</strong>
-                      <small>{account.loginIdentifier}</small>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusBadgeVariant(account.status)}>
-                        {statusLabel(account.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {account.protectedRecoveryPrincipal
-                        ? "Protected principal"
-                        : "Standard local account"}
-                    </TableCell>
-                    <TableCell>v{account.revision}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openAccount(account.id)}
-                      >
-                        {canManage ? "Manage" : "Inspect"}
-                        <span className="sr-only"> {account.displayName}</span>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : null}
-          {listPageError ? <FocusedError message={listPageError} /> : null}
-          {listState.kind === "ready" && listState.nextCursor ? (
-            <div className="platform-local-account-load-more">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={loadingMore}
-                onClick={() => void loadMoreAccounts()}
-              >
-                {loadingMore ? "Loading…" : "Load more accounts"}
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      <PlatformLocalAccountsPageAccountInventory model={model} />
 
       <InviteLocalAccountDialog
         api={api}
@@ -607,21 +557,74 @@ function InviteLocalAccountDialog({
   const loginId = useId();
   const reasonId = useId();
   const protectedId = useId();
-  const [displayName, setDisplayName] = useState("");
-  const [loginIdentifier, setLoginIdentifier] = useState("");
-  const [protectedPrincipal, setProtectedPrincipal] = useState(true);
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<InviteLocalAccountDialogState>,
+    undefined,
+    (): InviteLocalAccountDialogState => ({
+      displayName: "",
+      loginIdentifier: "",
+      protectedPrincipal: true,
+      reason: "",
+      error: null,
+      busy: false,
+    }),
+  );
+  const {
+    displayName,
+    loginIdentifier,
+    protectedPrincipal,
+    reason,
+    error,
+    busy,
+  } = workspaceState;
+  const {
+    setDisplayName,
+    setLoginIdentifier,
+    setProtectedPrincipal,
+    setReason,
+    setError,
+    setBusy,
+  } = useMemo(
+    () => ({
+      setDisplayName: (
+        value: React.SetStateAction<
+          InviteLocalAccountDialogState["displayName"]
+        >,
+      ) => updateWorkspaceState({ displayName: value }),
+      setLoginIdentifier: (
+        value: React.SetStateAction<
+          InviteLocalAccountDialogState["loginIdentifier"]
+        >,
+      ) => updateWorkspaceState({ loginIdentifier: value }),
+      setProtectedPrincipal: (
+        value: React.SetStateAction<
+          InviteLocalAccountDialogState["protectedPrincipal"]
+        >,
+      ) => updateWorkspaceState({ protectedPrincipal: value }),
+      setReason: (
+        value: React.SetStateAction<InviteLocalAccountDialogState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setError: (
+        value: React.SetStateAction<InviteLocalAccountDialogState["error"]>,
+      ) => updateWorkspaceState({ error: value }),
+      setBusy: (
+        value: React.SetStateAction<InviteLocalAccountDialogState["busy"]>,
+      ) => updateWorkspaceState({ busy: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const idempotencyKeyRef = useRef<string | null>(null);
 
   const reset = useCallback((): void => {
-    setDisplayName("");
-    setLoginIdentifier("");
-    setProtectedPrincipal(true);
-    setReason("");
-    setError(null);
-    setBusy(false);
+    updateWorkspaceState({
+      displayName: "",
+      loginIdentifier: "",
+      protectedPrincipal: true,
+      reason: "",
+      error: null,
+      busy: false,
+    });
     idempotencyKeyRef.current = null;
   }, []);
 
@@ -647,8 +650,7 @@ function InviteLocalAccountDialog({
       return;
     }
     idempotencyKeyRef.current ??= globalThis.crypto.randomUUID();
-    setBusy(true);
-    setError(null);
+    updateWorkspaceState({ busy: true, error: null });
     try {
       const result = await api.invitePlatformLocalAccount(
         csrfToken,
@@ -785,7 +787,12 @@ interface ManageDialogProps {
   sessionId: string;
 }
 
-function ManageLocalAccountDialog({
+function ManageLocalAccountDialog(props: ManageDialogProps): React.JSX.Element {
+  const model = useManageLocalAccountDialogModel(props);
+  return <ManageLocalAccountDialogView model={model.data} />;
+}
+
+function useManageLocalAccountDialogModel({
   api,
   canManage,
   csrfToken,
@@ -794,32 +801,80 @@ function ManageLocalAccountDialog({
   onMutation,
   open,
   sessionId,
-}: ManageDialogProps): React.JSX.Element {
+}: ManageDialogProps) {
   const reasonId = useId();
   const tokenId = useId();
   const passwordId = useId();
   const factorId = useId();
-  const [reason, setReason] = useState("");
-  const [ceremonyToken, setCeremonyToken] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [factorProof, setFactorProof] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<ManageLocalAccountDialogState>,
+    undefined,
+    (): ManageLocalAccountDialogState => ({
+      reason: "",
+      ceremonyToken: "",
+      newPassword: "",
+      factorProof: "",
+      error: null,
+      busyAction: null,
+    }),
+  );
+  const { reason, ceremonyToken, newPassword, factorProof, error, busyAction } =
+    workspaceState;
+  const {
+    setReason,
+    setCeremonyToken,
+    setNewPassword,
+    setFactorProof,
+    setError,
+    setBusyAction,
+  } = useMemo(
+    () => ({
+      setReason: (
+        value: React.SetStateAction<ManageLocalAccountDialogState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setCeremonyToken: (
+        value: React.SetStateAction<
+          ManageLocalAccountDialogState["ceremonyToken"]
+        >,
+      ) => updateWorkspaceState({ ceremonyToken: value }),
+      setNewPassword: (
+        value: React.SetStateAction<
+          ManageLocalAccountDialogState["newPassword"]
+        >,
+      ) => updateWorkspaceState({ newPassword: value }),
+      setFactorProof: (
+        value: React.SetStateAction<
+          ManageLocalAccountDialogState["factorProof"]
+        >,
+      ) => updateWorkspaceState({ factorProof: value }),
+      setError: (
+        value: React.SetStateAction<ManageLocalAccountDialogState["error"]>,
+      ) => updateWorkspaceState({ error: value }),
+      setBusyAction: (
+        value: React.SetStateAction<
+          ManageLocalAccountDialogState["busyAction"]
+        >,
+      ) => updateWorkspaceState({ busyAction: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const idempotencyKeyRef = useRef<string | null>(null);
 
   const clearSensitiveDraft = useCallback((): void => {
-    setCeremonyToken("");
-    setNewPassword("");
-    setFactorProof("");
+    updateWorkspaceState({
+      ceremonyToken: "",
+      newPassword: "",
+      factorProof: "",
+    });
   }, []);
 
   const reset = useCallback((): void => {
     setReason("");
     clearSensitiveDraft();
-    setError(null);
-    setBusyAction(null);
+    updateWorkspaceState({ error: null, busyAction: null });
     idempotencyKeyRef.current = null;
-  }, [clearSensitiveDraft]);
+  }, [setReason, clearSensitiveDraft]);
 
   useEffect(() => reset(), [open, reset, sessionId]);
 
@@ -855,8 +910,7 @@ function ManageLocalAccountDialog({
       return;
     }
     idempotencyKeyRef.current ??= globalThis.crypto.randomUUID();
-    setBusyAction(action);
-    setError(null);
+    updateWorkspaceState({ busyAction: action, error: null });
     const resource = detailState.resource;
     try {
       let result: PlatformLocalAccountMutationView;
@@ -929,208 +983,45 @@ function ManageLocalAccountDialog({
   const activationAvailable =
     account?.status === "invited" || account?.status === "recovery_restricted";
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          reset();
-          onClose();
-        }
-      }}
-    >
-      <DialogContent className="platform-local-account-dialog">
-        <DialogHeader>
-          <DialogTitle>
-            {canManage ? "Manage" : "Inspect"} local recovery account
-          </DialogTitle>
-          <DialogDescription>
-            The database rechecks live platform authority, fresh local MFA,
-            current revision, and the recovery floor before committing.
-          </DialogDescription>
-        </DialogHeader>
-        {detailState.kind === "loading" ? (
-          <p aria-live="polite">Loading the current account revision…</p>
-        ) : null}
-        {detailState.kind === "error" ? (
-          <FocusedError message={detailState.message} />
-        ) : null}
-        {account ? (
-          <div className="platform-local-account-detail">
-            <div className="platform-local-account-detail__identity">
-              <div>
-                <span>Operator</span>
-                <strong>{account.displayName}</strong>
-                <small>{account.loginIdentifier}</small>
-              </div>
-              <Badge variant={statusBadgeVariant(account.status)}>
-                {statusLabel(account.status)} · v{account.revision}
-              </Badge>
-            </div>
-            <dl>
-              <div>
-                <dt>Credential generation</dt>
-                <dd>{account.credentialVersion}</dd>
-              </div>
-              <div>
-                <dt>Confirmed factors</dt>
-                <dd>{account.confirmedAcceptableFactors}</dd>
-              </div>
-              <div>
-                <dt>Identity epoch</dt>
-                <dd>{account.identityEpoch}</dd>
-              </div>
-            </dl>
-            {canManage ? (
-              <div className="platform-local-account-form">
-                {error ? <FocusedError message={error} /> : null}
-                <FormField
-                  htmlFor={reasonId}
-                  label="Audit reason"
-                  hint="Visible ASCII only. Never include secrets, identifiers, or customer data."
-                >
-                  <Input
-                    id={reasonId}
-                    value={reason}
-                    maxLength={500}
-                    autoComplete="off"
-                    onChange={(event) =>
-                      changed(() => setReason(event.target.value))
-                    }
-                  />
-                </FormField>
-                {activationAvailable ? (
-                  <div className="platform-local-account-ceremony">
-                    <p className="section-label">Activation ceremony</p>
-                    <FormField htmlFor={tokenId} label="One-time token">
-                      <Input
-                        id={tokenId}
-                        value={ceremonyToken}
-                        minLength={43}
-                        maxLength={43}
-                        autoComplete="off"
-                        spellCheck={false}
-                        onChange={(event) =>
-                          changed(() => setCeremonyToken(event.target.value))
-                        }
-                      />
-                    </FormField>
-                    <SecretFields
-                      factorId={factorId}
-                      factorProof={factorProof}
-                      passwordId={passwordId}
-                      newPassword={newPassword}
-                      onFactorChange={(value) =>
-                        changed(() => setFactorProof(value))
-                      }
-                      onPasswordChange={(value) =>
-                        changed(() => setNewPassword(value))
-                      }
-                      showFactor
-                    />
-                    <Button
-                      type="button"
-                      disabled={busyAction !== null}
-                      onClick={() => void mutate("activate")}
-                    >
-                      {busyAction === "activate"
-                        ? "Activating…"
-                        : "Complete activation"}
-                    </Button>
-                  </div>
-                ) : null}
-                {account.status === "active" ? (
-                  <div className="platform-local-account-ceremony">
-                    <p className="section-label">Credential replacement</p>
-                    <SecretFields
-                      factorId={factorId}
-                      factorProof={factorProof}
-                      passwordId={passwordId}
-                      newPassword={newPassword}
-                      onFactorChange={(value) =>
-                        changed(() => setFactorProof(value))
-                      }
-                      onPasswordChange={(value) =>
-                        changed(() => setNewPassword(value))
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={busyAction !== null}
-                      onClick={() => void mutate("rotate")}
-                    >
-                      {busyAction === "rotate"
-                        ? "Rotating…"
-                        : "Rotate password"}
-                    </Button>
-                  </div>
-                ) : null}
-                <div className="platform-local-account-lifecycle-actions">
-                  {account.status === "disabled" ? (
-                    <Button
-                      type="button"
-                      disabled={busyAction !== null}
-                      onClick={() => void mutate("enable")}
-                    >
-                      {busyAction === "enable" ? "Enabling…" : "Enable account"}
-                    </Button>
-                  ) : null}
-                  {account.status === "active" ||
-                  account.status === "recovery_restricted" ? (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      disabled={busyAction !== null}
-                      onClick={() => void mutate("disable")}
-                    >
-                      {busyAction === "disable"
-                        ? "Disabling…"
-                        : "Disable and revoke sessions"}
-                    </Button>
-                  ) : null}
-                  {account.status === "active" ||
-                  account.status === "disabled" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={busyAction !== null}
-                      onClick={() => void mutate("recover")}
-                    >
-                      {busyAction === "recover"
-                        ? "Starting recovery…"
-                        : "Start restricted recovery"}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <Alert>
-                <CircleAlert aria-hidden="true" />
-                <AlertTitle>Read-only platform access</AlertTitle>
-                <AlertDescription>
-                  Lifecycle controls require both platform identity-account read
-                  and manage permissions.
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-        ) : null}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              reset();
-              onClose();
-            }}
-          >
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      account,
+      activationAvailable,
+      busyAction,
+      canManage,
+      ceremonyToken,
+      changed,
+      detailState,
+      error,
+      factorId,
+      factorProof,
+      mutate,
+      newPassword,
+      onClose,
+      open,
+      passwordId,
+      reason,
+      reasonId,
+      reset,
+      setCeremonyToken,
+      setFactorProof,
+      setNewPassword,
+      setReason,
+      tokenId,
+    },
+  };
+}
+
+function ManageLocalAccountDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useManageLocalAccountDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <LocalAccountDialogContent model={model} />;
 }
 
 interface SecretFieldsProps {
@@ -1220,4 +1111,560 @@ function statusBadgeVariant(
     recovery_restricted: "destructive",
   } as const;
   return variants[status];
+}
+
+function PlatformLocalAccountsPageAccountInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformLocalAccountsPageView>["model"];
+}): React.ReactNode {
+  const { includeDisabled, setIncludeDisabled } = model;
+  return (
+    <Card className="platform-local-account-inventory">
+      <CardHeader className="platform-local-account-inventory-header">
+        <div>
+          <CardTitle>Account inventory</CardTitle>
+          <CardDescription>
+            Safe lifecycle projections only. Credentials, factors, ceremony
+            digests, recovery codes, and session provenance never appear.
+          </CardDescription>
+        </div>
+        <div className="platform-local-account-filter">
+          <Checkbox
+            id="platform-local-account-show-disabled"
+            checked={includeDisabled}
+            onCheckedChange={(checked) => setIncludeDisabled(checked === true)}
+          />
+          <Label htmlFor="platform-local-account-show-disabled">
+            Show disabled accounts
+          </Label>
+        </div>
+      </CardHeader>
+      <LocalAccountInventoryContent model={model} />
+    </Card>
+  );
+}
+
+function LocalAccountDialogContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof ManageLocalAccountDialogView>["model"];
+}): React.ReactNode {
+  const {
+    account,
+    canManage,
+    changed,
+    detailState,
+    error,
+    onClose,
+    open,
+    reason,
+    reasonId,
+    reset,
+    setReason,
+  } = model;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          reset();
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="platform-local-account-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            {canManage ? "Manage" : "Inspect"} local recovery account
+          </DialogTitle>
+          <DialogDescription>
+            The database rechecks live platform authority, fresh local MFA,
+            current revision, and the recovery floor before committing.
+          </DialogDescription>
+        </DialogHeader>
+        {detailState.kind === "loading" ? (
+          <p aria-live="polite">Loading the current account revision…</p>
+        ) : null}
+        {detailState.kind === "error" ? (
+          <FocusedError message={detailState.message} />
+        ) : null}
+        {account ? (
+          <div className="platform-local-account-detail">
+            <div className="platform-local-account-detail__identity">
+              <div>
+                <span>Operator</span>
+                <strong>{account.displayName}</strong>
+                <small>{account.loginIdentifier}</small>
+              </div>
+              <Badge variant={statusBadgeVariant(account.status)}>
+                {statusLabel(account.status)} · v{account.revision}
+              </Badge>
+            </div>
+            <dl>
+              <div>
+                <dt>Credential generation</dt>
+                <dd>{account.credentialVersion}</dd>
+              </div>
+              <div>
+                <dt>Confirmed factors</dt>
+                <dd>{account.confirmedAcceptableFactors}</dd>
+              </div>
+              <div>
+                <dt>Identity epoch</dt>
+                <dd>{account.identityEpoch}</dd>
+              </div>
+            </dl>
+            {canManage ? (
+              <div className="platform-local-account-form">
+                {error ? <FocusedError message={error} /> : null}
+                <FormField
+                  htmlFor={reasonId}
+                  label="Audit reason"
+                  hint="Visible ASCII only. Never include secrets, identifiers, or customer data."
+                >
+                  <Input
+                    id={reasonId}
+                    value={reason}
+                    maxLength={500}
+                    autoComplete="off"
+                    onChange={(event) =>
+                      changed(() => setReason(event.target.value))
+                    }
+                  />
+                </FormField>
+                {<LocalAccountPasswordCeremony model={model} />}
+                {<LocalAccountTotpCeremony model={model} />}
+                <LocalAccountLifecycleActions model={model} />
+              </div>
+            ) : (
+              <Alert>
+                <CircleAlert aria-hidden="true" />
+                <AlertTitle>Read-only platform access</AlertTitle>
+                <AlertDescription>
+                  Lifecycle controls require both platform identity-account read
+                  and manage permissions.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+          >
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface PlatformLocalAccountsPageState {
+  includeDisabled: boolean;
+  listState: AccountListState;
+  revision: number;
+  loadingMore: boolean;
+  listPageError: string | null;
+  inviteOpen: boolean;
+  selectedAccountId: string | null;
+  detailState: DetailState;
+  notice: CeremonyNotice | null;
+}
+
+interface ManageLocalAccountDialogState {
+  reason: string;
+  ceremonyToken: string;
+  newPassword: string;
+  factorProof: string;
+  error: string | null;
+  busyAction: string | null;
+}
+
+interface InviteLocalAccountDialogState {
+  displayName: string;
+  loginIdentifier: string;
+  protectedPrincipal: boolean;
+  reason: string;
+  error: string | null;
+  busy: boolean;
+}
+
+function LocalAccountPageHeading({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformLocalAccountsPageView>["model"];
+}): React.ReactNode {
+  const { canManage, setInviteOpen, setRevision } = model;
+  return (
+    <div className="page-heading platform-local-account-heading">
+      <div>
+        <p className="eyebrow">Platform recovery</p>
+        <h1>Local recovery accounts</h1>
+        <p>
+          Keep an independently authenticated path into the platform. Every
+          lifecycle change requires a fresh local factor and leaves a redacted
+          audit record.
+        </p>
+      </div>
+      <div className="platform-local-account-heading__actions">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setRevision((value) => value + 1)}
+        >
+          <RefreshCw aria-hidden="true" /> Refresh
+        </Button>
+        {canManage ? (
+          <Button type="button" onClick={() => setInviteOpen(true)}>
+            <Plus aria-hidden="true" /> Invite recovery account
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LocalAccountCreationCeremony({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformLocalAccountsPageView>["model"];
+}): React.ReactNode {
+  const { setNotice, visibleNotice } = model;
+  return visibleNotice ? (
+    <Alert className="platform-local-account-token">
+      <KeyRound aria-hidden="true" />
+      <AlertTitle>
+        One-time {visibleNotice.kind} token for {visibleNotice.accountLabel}
+      </AlertTitle>
+      <AlertDescription>
+        <p>
+          Enroll the authenticator and transfer the ceremony token through the
+          approved secure channel now. None of this material can be read again,
+          and an exact retry will not return it.
+        </p>
+        <dl className="platform-local-account-enrollment-material">
+          <div>
+            <dt>Ceremony token</dt>
+            <dd>
+              <code>{visibleNotice.token}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>TOTP secret</dt>
+            <dd>
+              <code>{visibleNotice.secret}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Authenticator URI</dt>
+            <dd>
+              <code>{visibleNotice.provisioningUri}</code>
+            </dd>
+          </div>
+        </dl>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setNotice(null)}
+        >
+          I have stored the enrollment material
+        </Button>
+      </AlertDescription>
+    </Alert>
+  ) : null;
+}
+
+function PlatformLocalAccountsPageRecoveryPosture({
+  model,
+}: {
+  model: React.ComponentProps<typeof PlatformLocalAccountsPageView>["model"];
+}): React.ReactNode {
+  const { readyProtectedCount } = model;
+  return (
+    <Card className="platform-local-account-posture">
+      <CardHeader>
+        <div>
+          <CardTitle>Recovery posture</CardTitle>
+          <CardDescription>
+            The backend prevents an action that would remove the last ready
+            protected human recovery principal.
+          </CardDescription>
+        </div>
+        <Badge variant={readyProtectedCount > 1 ? "secondary" : "destructive"}>
+          {readyProtectedCount} ready protected
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <div
+          className="platform-local-account-recovery-rail"
+          data-state={readyProtectedCount > 1 ? "redundant" : "at-risk"}
+        >
+          <span aria-hidden="true" />
+          <div>
+            <strong>
+              {readyProtectedCount > 1
+                ? "Recovery has redundancy"
+                : "Recovery floor needs attention"}
+            </strong>
+            <small>
+              Inventory signals are informative; the locked database check
+              decides whether a mutation is safe.
+            </small>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LocalAccountInventoryContent({
+  model,
+}: {
+  model: React.ComponentProps<
+    typeof PlatformLocalAccountsPageAccountInventory
+  >["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    listPageError,
+    listState,
+    loadMoreAccounts,
+    loadingMore,
+    openAccount,
+  } = model;
+  return (
+    <CardContent>
+      {listState.kind === "loading" ? (
+        <p aria-live="polite">Loading local recovery accounts…</p>
+      ) : null}
+      {listState.kind === "error" ? (
+        <FocusedError message={listState.message} />
+      ) : null}
+      {listState.kind === "ready" && listState.items.length === 0 ? (
+        <div className="platform-local-account-empty">
+          <ShieldCheck aria-hidden="true" />
+          <div>
+            <strong>No local recovery accounts are visible.</strong>
+            <p>
+              Invite a reviewed emergency operator before relying on this
+              authentication path.
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {listState.kind === "ready" && listState.items.length > 0 ? (
+        <Table className="platform-local-account-table">
+          <TableCaption>
+            Local recovery accounts ordered by immutable account ID.
+          </TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Operator</TableHead>
+              <TableHead>Lifecycle</TableHead>
+              <TableHead>Recovery role</TableHead>
+              <TableHead>Revision</TableHead>
+              <TableHead className="text-right">Controls</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {listState.items.map((account) => (
+              <TableRow key={account.id} data-state={account.status}>
+                <TableCell>
+                  <strong>{account.displayName}</strong>
+                  <small>{account.loginIdentifier}</small>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={statusBadgeVariant(account.status)}>
+                    {statusLabel(account.status)}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {account.protectedRecoveryPrincipal
+                    ? "Protected principal"
+                    : "Standard local account"}
+                </TableCell>
+                <TableCell>v{account.revision}</TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openAccount(account.id)}
+                  >
+                    {canManage ? "Manage" : "Inspect"}
+                    <span className="sr-only"> {account.displayName}</span>
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : null}
+      {listPageError ? <FocusedError message={listPageError} /> : null}
+      {listState.kind === "ready" && listState.nextCursor ? (
+        <div className="platform-local-account-load-more">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loadingMore}
+            onClick={() => void loadMoreAccounts()}
+          >
+            {loadingMore ? "Loading…" : "Load more accounts"}
+          </Button>
+        </div>
+      ) : null}
+    </CardContent>
+  );
+}
+
+function LocalAccountPasswordCeremony({
+  model,
+}: {
+  model: React.ComponentProps<typeof LocalAccountDialogContent>["model"];
+}): React.ReactNode {
+  const {
+    activationAvailable,
+    busyAction,
+    ceremonyToken,
+    changed,
+    factorId,
+    factorProof,
+    mutate,
+    newPassword,
+    passwordId,
+    setCeremonyToken,
+    setFactorProof,
+    setNewPassword,
+    tokenId,
+  } = model;
+  return activationAvailable ? (
+    <div className="platform-local-account-ceremony">
+      <p className="section-label">Activation ceremony</p>
+      <FormField htmlFor={tokenId} label="One-time token">
+        <Input
+          id={tokenId}
+          value={ceremonyToken}
+          minLength={43}
+          maxLength={43}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) =>
+            changed(() => setCeremonyToken(event.target.value))
+          }
+        />
+      </FormField>
+      <SecretFields
+        factorId={factorId}
+        factorProof={factorProof}
+        passwordId={passwordId}
+        newPassword={newPassword}
+        onFactorChange={(value) => changed(() => setFactorProof(value))}
+        onPasswordChange={(value) => changed(() => setNewPassword(value))}
+        showFactor
+      />
+      <Button
+        type="button"
+        disabled={busyAction !== null}
+        onClick={() => void mutate("activate")}
+      >
+        {busyAction === "activate" ? "Activating…" : "Complete activation"}
+      </Button>
+    </div>
+  ) : null;
+}
+
+function LocalAccountTotpCeremony({
+  model,
+}: {
+  model: React.ComponentProps<typeof LocalAccountDialogContent>["model"];
+}): React.ReactNode {
+  const {
+    account,
+    busyAction,
+    changed,
+    factorId,
+    factorProof,
+    mutate,
+    newPassword,
+    passwordId,
+    setFactorProof,
+    setNewPassword,
+  } = model;
+  if (!account) return null;
+  return account.status === "active" ? (
+    <div className="platform-local-account-ceremony">
+      <p className="section-label">Credential replacement</p>
+      <SecretFields
+        factorId={factorId}
+        factorProof={factorProof}
+        passwordId={passwordId}
+        newPassword={newPassword}
+        onFactorChange={(value) => changed(() => setFactorProof(value))}
+        onPasswordChange={(value) => changed(() => setNewPassword(value))}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        disabled={busyAction !== null}
+        onClick={() => void mutate("rotate")}
+      >
+        {busyAction === "rotate" ? "Rotating…" : "Rotate password"}
+      </Button>
+    </div>
+  ) : null;
+}
+
+function LocalAccountLifecycleActions({
+  model,
+}: {
+  model: React.ComponentProps<typeof LocalAccountDialogContent>["model"];
+}): React.ReactNode {
+  const { account, busyAction, mutate } = model;
+  if (!account) return null;
+  return (
+    <div className="platform-local-account-lifecycle-actions">
+      {account.status === "disabled" ? (
+        <Button
+          type="button"
+          disabled={busyAction !== null}
+          onClick={() => void mutate("enable")}
+        >
+          {busyAction === "enable" ? "Enabling…" : "Enable account"}
+        </Button>
+      ) : null}
+      {account.status === "active" ||
+      account.status === "recovery_restricted" ? (
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={busyAction !== null}
+          onClick={() => void mutate("disable")}
+        >
+          {busyAction === "disable"
+            ? "Disabling…"
+            : "Disable and revoke sessions"}
+        </Button>
+      ) : null}
+      {account.status === "active" || account.status === "disabled" ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busyAction !== null}
+          onClick={() => void mutate("recover")}
+        >
+          {busyAction === "recover"
+            ? "Starting recovery…"
+            : "Start restricted recovery"}
+        </Button>
+      ) : null}
+    </div>
+  );
 }

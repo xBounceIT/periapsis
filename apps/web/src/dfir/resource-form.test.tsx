@@ -7,12 +7,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DfirResourceForm } from "./resource-form";
 import {
-  DfirResourceForm,
   formInstant,
   instantInputValue,
   taskSpecFromDraft,
-} from "./resource-form";
+} from "./resource-form-model";
 
 afterEach(cleanup);
 

@@ -1,8 +1,3 @@
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
 import type {
   ActivityProjection,
   AlertCaseLinkView,
@@ -20,6 +15,11 @@ import {
 } from "@periapsis/ui/components/ui/dialog";
 import { Label } from "@periapsis/ui/components/ui/label";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Activity,
   ArrowDown,
@@ -49,12 +49,13 @@ import {
 } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
-import { useSession } from "../auth/session-context";
-import { useTenantAuthority } from "../auth/tenant-authority-context";
 import { auditReaderApi, type AuditReaderApi } from "../audit/audit-api";
 import { compactAuditIdentifier, tenantAuditPermission } from "../audit/model";
+import { useSession } from "../auth/session-context";
+import { useTenantAuthority } from "../auth/tenant-authority-context";
 import { FocusedError } from "../components/focused-error";
 import { ServerDenied } from "../components/server-denied";
+import { TenantRequiredPage } from "../components/tenant-required-page";
 import {
   CustomFieldApiError,
   customFieldObjectApi,
@@ -91,18 +92,23 @@ import {
   type TicketProjection,
   type VersionedTicket,
 } from "../lib/ticketing-api";
-import { SafeMarkdown } from "./safe-markdown";
+import { slaAdminApi } from "../sla/sla-api";
+import { TicketSlaPanel } from "../sla/ticket-sla-panel";
+import { alertRelationApi, type AlertRelationApi } from "./alert-relation-api";
+import { AlertRelationPanel } from "./alert-relation-panel";
 import { caseContactApi, type CaseContactApi } from "./case-contact-api";
 import { CaseContactPanel } from "./case-contact-panel";
+import { SafeMarkdown } from "./safe-markdown";
 import { TicketCommentPanel } from "./ticket-comment-panel";
-import { useTicketingApi } from "./ticketing-context";
 import {
   ticketMetadataApi,
   type TicketMetadataApi,
 } from "./ticket-metadata-api";
 import { TicketMetadataPanel } from "./ticket-metadata-panel";
+import { TicketOperations } from "./ticket-operations";
 import { ticketWatcherApi, type TicketWatcherApi } from "./ticket-watcher-api";
 import { TicketWatcherPanel } from "./ticket-watcher-panel";
+import { useTicketingApi } from "./ticketing-context";
 import {
   compactIdentifier,
   hasAllTicketPermissionsAtOneScope,
@@ -115,11 +121,6 @@ import {
   severityTone,
   ticketNumber,
 } from "./ticketing-model";
-import { TicketOperations } from "./ticket-operations";
-import { alertRelationApi, type AlertRelationApi } from "./alert-relation-api";
-import { AlertRelationPanel } from "./alert-relation-panel";
-import { slaAdminApi } from "../sla/sla-api";
-import { TicketSlaPanel } from "../sla/ticket-sla-panel";
 
 type DetailTab =
   | "activity"
@@ -145,7 +146,7 @@ export function CaseDetailPage(): React.JSX.Element {
   return <TicketDetailPage kind="case" />;
 }
 
-export function TicketDetailPage({
+function useTicketDetailPageState({
   alertRelationApi: relationsApi = alertRelationApi,
   auditApi = auditReaderApi,
   contactApi = caseContactApi,
@@ -161,7 +162,7 @@ export function TicketDetailPage({
   kind: TicketKind;
   metadataApi?: TicketMetadataApi;
   watcherApi?: TicketWatcherApi;
-}): React.JSX.Element {
+}) {
   const api = useTicketingApi();
   const alertDfirApi = useAlertDfirApi();
   const caseDfirApi = useCaseDfirApi();
@@ -186,54 +187,114 @@ export function TicketDetailPage({
         [403, 404].includes(error.status ?? 0)
       ) && count < 1,
   });
-  const hasDfirPermission = (
-    permission: DfirPermission | DfirReadPermission,
-  ): boolean =>
-    authority.hasPermission(permission, "assigned") ||
-    authority.hasPermission(permission, "operator_team") ||
-    authority.hasPermission(permission, "tenant");
-  const canUseDfir =
-    ticketQuery.data?.value.projection === "operator" &&
-    (kind === "alert" ? alertDfirReadPermissions : dfirReadPermissions).every(
-      hasDfirPermission,
-    );
-  const authorityReady = authority.status === "ready";
-  const canReadCustomFields =
-    authorityReady &&
-    hasAnyTicketPermission(authority.hasPermission, "custom_field.read");
-  const canManageCustomFields =
-    authorityReady &&
-    hasAnyTicketPermission(authority.hasPermission, "custom_field.manage");
-  const canEditMetadata =
-    authorityReady &&
-    hasAnyTicketPermission(
-      authority.hasPermission,
-      kind === "alert" ? "alert.update" : "case.update",
-    );
-  const canReadWatchers =
-    authorityReady &&
-    hasAnyTicketPermission(
-      authority.hasPermission,
-      kind === "alert" ? "alert.read" : "case.read",
-    );
-  const canReadAudit =
-    authorityReady && authority.hasPermission(tenantAuditPermission, "tenant");
-  const canReadCaseContacts =
-    kind === "case" &&
-    ticketQuery.data?.value.projection === "operator" &&
-    authorityReady &&
-    hasAnyTicketPermission(authority.hasPermission, "case.read") &&
-    authority.hasPermission("contact.read", "tenant");
-  const canEditCaseContacts =
-    canReadCaseContacts &&
-    hasAnyTicketPermission(authority.hasPermission, "case.update");
+  const {
+    hasDfirPermission,
+    canUseDfir,
+    authorityReady,
+    canReadCustomFields,
+    canManageCustomFields,
+    canEditMetadata,
+    canReadWatchers,
+    canReadAudit,
+    canReadCaseContacts,
+    canEditCaseContacts,
+  } = ticketDetailCapabilities(
+    authority,
+    kind,
+    ticketQuery.data?.value.projection === "operator",
+  );
 
-  useEffect(() => {
+  {
     if (tab === "dfir" && !canUseDfir) setTab("overview");
     if (tab === "audit" && !canReadAudit) setTab("overview");
     if (tab === "contacts" && !canReadCaseContacts) setTab("overview");
-  }, [canReadAudit, canReadCaseContacts, canUseDfir, tab]);
+  }
+  return {
+    relationsApi,
+    auditApi,
+    contactApi,
+    customFieldApi,
+    kind,
+    metadataApi,
+    watcherApi,
+    api,
+    alertDfirApi,
+    caseDfirApi,
+    session,
+    authority,
+    navigate,
+    queryClient,
+    parameters,
+    resourceId,
+    tenantId,
+    tab,
+    setTab,
+    queryKey,
+    ticketQuery,
+    hasDfirPermission,
+    canUseDfir,
+    authorityReady,
+    canReadCustomFields,
+    canManageCustomFields,
+    canEditMetadata,
+    canReadWatchers,
+    canReadAudit,
+    canReadCaseContacts,
+    canEditCaseContacts,
+  };
+}
 
+function createTicketDetailPageActions({
+  kind,
+  queryClient,
+  resourceId,
+  tenantId,
+  queryKey,
+  ticketQuery,
+}: ReturnType<typeof useTicketDetailPageState>) {
+  function commit(next: VersionedTicket<OperatorTicketProjection>): void {
+    queryClient.setQueryData(queryKey, next);
+    void queryClient.invalidateQueries({
+      queryKey: ["tickets", kind, tenantId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["ticket-activity", kind, tenantId, resourceId],
+    });
+  }
+  async function reloadLatestTicketBoundary(): Promise<{
+    etag: string;
+    version: number;
+  } | null> {
+    const result = await ticketQuery.refetch();
+    if (!result.isSuccess || !result.data) return null;
+    void queryClient.invalidateQueries({
+      queryKey: ["tickets", kind, tenantId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["ticket-activity", kind, tenantId, resourceId],
+    });
+    return {
+      etag: result.data.etag,
+      version: result.data.value.version,
+    };
+  }
+  async function reloadLatestTicket(): Promise<boolean> {
+    return (await reloadLatestTicketBoundary()) !== null;
+  }
+  return { commit, reloadLatestTicketBoundary, reloadLatestTicket };
+}
+
+export function TicketDetailPage(props: {
+  alertRelationApi?: AlertRelationApi;
+  auditApi?: AuditReaderApi;
+  contactApi?: CaseContactApi;
+  customFieldApi?: CustomFieldObjectApi;
+  kind: TicketKind;
+  metadataApi?: TicketMetadataApi;
+  watcherApi?: TicketWatcherApi;
+}): React.JSX.Element {
+  const state = useTicketDetailPageState(props);
+  const { kind, resourceId, tenantId, ticketQuery } = state;
   if (!tenantId) return <NoTenantDetail kind={kind} />;
   if (!resourceId) return <MissingTicket kind={kind} />;
   if (
@@ -242,7 +303,6 @@ export function TicketDetailPage({
   ) {
     return <ServerDenied resource={`${kindLabel(kind)} detail`} />;
   }
-
   const ticket = ticketQuery.data;
   if (ticketQuery.isPending) {
     return <TicketDetailSkeleton kind={kind} />;
@@ -263,42 +323,32 @@ export function TicketDetailPage({
       </div>
     );
   }
+  const model: TicketDetailModel = {
+    ...state,
+    ...createTicketDetailPageActions(state),
+    tenantId,
+    resourceId,
+    ticket,
+    operatorTicket: isOperatorVersionedTicket(ticket) ? ticket : null,
+  };
+  return <TicketDetailContent model={model} />;
+}
 
-  const value = ticket.value;
-  const operatorTicket = isOperatorVersionedTicket(ticket) ? ticket : null;
+type TicketDetailModel = ReturnType<typeof useTicketDetailPageState> &
+  ReturnType<typeof createTicketDetailPageActions> & {
+    tenantId: string;
+    resourceId: string;
+    ticket: VersionedTicket;
+    operatorTicket: VersionedTicket<OperatorTicketProjection> | null;
+  };
 
-  function commit(next: VersionedTicket<OperatorTicketProjection>): void {
-    queryClient.setQueryData(queryKey, next);
-    void queryClient.invalidateQueries({
-      queryKey: ["tickets", kind, tenantId],
-    });
-    void queryClient.invalidateQueries({
-      queryKey: ["ticket-activity", kind, tenantId, resourceId],
-    });
-  }
-
-  async function reloadLatestTicketBoundary(): Promise<{
-    etag: string;
-    version: number;
-  } | null> {
-    const result = await ticketQuery.refetch();
-    if (!result.isSuccess || !result.data) return null;
-    void queryClient.invalidateQueries({
-      queryKey: ["tickets", kind, tenantId],
-    });
-    void queryClient.invalidateQueries({
-      queryKey: ["ticket-activity", kind, tenantId, resourceId],
-    });
-    return {
-      etag: result.data.etag,
-      version: result.data.value.version,
-    };
-  }
-
-  async function reloadLatestTicket(): Promise<boolean> {
-    return (await reloadLatestTicketBoundary()) !== null;
-  }
-
+function TicketDetailContent({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element {
+  const { kind, tab, canReadAudit, canReadCaseContacts, canUseDfir, setTab } =
+    model;
   return (
     <div className="content ticket-detail-page">
       <Link
@@ -307,73 +357,9 @@ export function TicketDetailPage({
       >
         <ArrowLeft aria-hidden="true" /> Back to {kindLabelPlural(kind)}
       </Link>
-      <section
-        className="ticket-detail-hero"
-        aria-labelledby="ticket-detail-title"
-      >
-        <div className="ticket-detail-hero__identity">
-          <p className="section-label">
-            {kindLabel(kind)} / {ticketNumber(kind, value)}
-          </p>
-          <h1 id="ticket-detail-title">{value.title}</h1>
-          <div className="ticket-detail-hero__signals">
-            <span className={severityTone(value.severity)}>
-              {humanizeKey(value.severity)} severity
-            </span>
-            <span className={priorityTone(value.priority)}>
-              {humanizeKey(value.priority)} priority
-            </span>
-            <Badge variant="outline">
-              {humanizeKey(value.workflow.stateKey)}
-            </Badge>
-            <Badge variant={value.customerVisible ? "secondary" : "outline"}>
-              {value.customerVisible ? "Customer visible" : "Internal"}
-            </Badge>
-          </div>
-        </div>
-        <div className="ticket-detail-hero__version">
-          <span>Snapshot</span>
-          <strong>v{value.version}</strong>
-          <small>
-            Workflow {value.workflow.version} · {value.projection} projection
-          </small>
-        </div>
-      </section>
-
-      {operatorTicket ? (
-        <TicketOperations
-          kind={kind}
-          ticket={operatorTicket}
-          onCommitted={commit}
-          onConflict={() => ticketQuery.refetch()}
-          onDeleted={() => {
-            queryClient.removeQueries({ exact: true, queryKey });
-            void queryClient.invalidateQueries({
-              queryKey: ["tickets", "alert", tenantId],
-            });
-            void navigate("/alerts", { replace: true });
-          }}
-          onEscalated={(caseId) => void navigate(`/cases/${caseId}`)}
-        />
-      ) : null}
-
-      <TicketSlaPanel
-        api={slaAdminApi}
-        canOverride={hasAnyTicketPermission(
-          authority.hasPermission,
-          kind === "alert" ? "alert.sla.override" : "case.sla.override",
-        )}
-        canRead={hasAnyTicketPermission(
-          authority.hasPermission,
-          kind === "alert" ? "alert.read" : "case.read",
-        )}
-        csrfToken={session.csrfToken}
-        expectedAudience="operator"
-        kind={kind}
-        objectId={resourceId}
-        tenantId={tenantId}
-      />
-
+      <TicketDetailHeader kind={kind} value={model.ticket.value} />
+      <TicketDetailOperations model={model} />
+      <TicketDetailSla model={model} />
       <TicketTabs
         active={tab}
         includeAudit={canReadAudit}
@@ -382,165 +368,370 @@ export function TicketDetailPage({
         onChange={setTab}
       />
       <section className="ticket-detail-panel" aria-live="polite">
-        {tab === "overview" ? (
-          <Overview
-            customFields={
-              operatorTicket ? (
-                <TicketCustomFieldsPanel
-                  api={customFieldApi}
-                  canManage={canManageCustomFields}
-                  canRead={canReadCustomFields}
-                  csrfToken={session.csrfToken}
-                  objectId={resourceId}
-                  objectType={kind}
-                  tenantId={tenantId}
-                />
-              ) : null
-            }
-            kind={kind}
-            metadata={
-              operatorTicket ? (
-                <TicketMetadataPanel
-                  api={metadataApi}
-                  canEdit={canEditMetadata}
-                  csrfToken={session.csrfToken}
-                  kind={kind}
-                  onReloadLatest={reloadLatestTicket}
-                  sessionId={session.id}
-                  tenantId={tenantId}
-                  ticket={operatorTicket}
-                />
-              ) : null
-            }
-            ticket={value}
-            watchers={
-              operatorTicket ? (
-                <TicketWatcherPanel
-                  api={watcherApi}
-                  authorityEpoch={JSON.stringify([
-                    authority.pairKey,
-                    authority.revision,
-                    authority.authority?.evaluatedAt ?? null,
-                  ])}
-                  canEdit={canEditMetadata}
-                  canRead={canReadWatchers}
-                  csrfToken={session.csrfToken}
-                  kind={kind}
-                  onReloadLatest={reloadLatestTicketBoundary}
-                  resourceId={resourceId}
-                  sessionId={session.id}
-                  tenantId={tenantId}
-                  ticketEtag={operatorTicket.etag}
-                  ticketVersion={operatorTicket.value.version}
-                />
-              ) : null
-            }
-          />
-        ) : null}
-        {tab === "linked" ? (
-          <LinkedPanel
-            alertRelation={
-              kind === "alert" && operatorTicket !== null
-                ? {
-                    alertEtag: operatorTicket.etag,
-                    alertVersion: operatorTicket.value.version,
-                    api: relationsApi,
-                    canManage:
-                      authorityReady &&
-                      hasAllTicketPermissionsAtOneScope(
-                        authority.hasPermission,
-                        ["alert.read", "alert.update"],
-                      ),
-                    onReloadLatest: reloadLatestTicketBoundary,
-                    sessionId: session.id,
-                  }
-                : undefined
-            }
-            authorityEpoch={JSON.stringify([
-              session.id,
-              authority.pairKey,
-              authority.revision,
-              authority.authority?.evaluatedAt ?? null,
-            ])}
-            canUnlink={
-              operatorTicket !== null &&
-              authorityReady &&
-              hasAnyTicketPermission(
-                authority.hasPermission,
-                "alert.escalate",
-              ) &&
-              hasAnyTicketPermission(authority.hasPermission, "case.update")
-            }
-            csrfToken={session.csrfToken}
-            kind={kind}
-            onChanged={() => ticketQuery.refetch()}
-            tenantId={tenantId}
-            resourceId={resourceId}
-          />
-        ) : null}
-        {tab === "activity" ? (
-          <ActivityPanel
-            kind={kind}
-            tenantId={tenantId}
-            resourceId={resourceId}
-          />
-        ) : null}
-        {tab === "audit" && canReadAudit ? (
-          <TicketAuditPanel
-            api={auditApi}
-            kind={kind}
-            resourceId={resourceId}
-            tenantId={tenantId}
-          />
-        ) : null}
-        {tab === "comments" ? (
-          <TicketCommentPanel
-            kind={kind}
-            projection={value.projection}
-            tenantId={tenantId}
-            resourceId={resourceId}
-          />
-        ) : null}
-        {tab === "contacts" && canReadCaseContacts && operatorTicket ? (
-          <CaseContactPanel
-            api={contactApi}
-            authorityEpoch={JSON.stringify([
-              session.id,
-              authority.pairKey,
-              authority.revision,
-              authority.authority?.evaluatedAt ?? null,
-            ])}
-            canEdit={canEditCaseContacts}
-            canRead={canReadCaseContacts}
-            caseEtag={operatorTicket.etag}
-            caseId={resourceId}
-            caseVersion={operatorTicket.value.version}
-            csrfToken={session.csrfToken}
-            onReloadLatest={reloadLatestTicketBoundary}
-            sessionId={session.id}
-            tenantId={tenantId}
-          />
-        ) : null}
-        {tab === "dfir" && canUseDfir && kind === "case" ? (
-          <CaseDfirPanel
-            api={caseDfirApi}
-            caseId={resourceId}
-            csrfToken={session.csrfToken}
-            hasPermission={hasDfirPermission}
-            tenantId={tenantId}
-          />
-        ) : null}
-        {tab === "dfir" && canUseDfir && kind === "alert" ? (
-          <AlertDfirPanel
-            alertId={resourceId}
-            api={alertDfirApi}
-            csrfToken={session.csrfToken}
-            hasPermission={hasDfirPermission}
-            tenantId={tenantId}
-          />
-        ) : null}
+        <ActiveTicketPanel model={model} />
       </section>
     </div>
+  );
+}
+
+function TicketDetailHeader({
+  kind,
+  value,
+}: {
+  kind: TicketKind;
+  value: TicketProjection;
+}): React.JSX.Element {
+  return (
+    <section
+      className="ticket-detail-hero"
+      aria-labelledby="ticket-detail-title"
+    >
+      <div className="ticket-detail-hero__identity">
+        <p className="section-label">
+          {kindLabel(kind)} / {ticketNumber(kind, value)}
+        </p>
+        <h1 id="ticket-detail-title">{value.title}</h1>
+        <div className="ticket-detail-hero__signals">
+          <span className={severityTone(value.severity)}>
+            {humanizeKey(value.severity)} severity
+          </span>
+          <span className={priorityTone(value.priority)}>
+            {humanizeKey(value.priority)} priority
+          </span>
+          <Badge variant="outline">
+            {humanizeKey(value.workflow.stateKey)}
+          </Badge>
+          <Badge variant={value.customerVisible ? "secondary" : "outline"}>
+            {value.customerVisible ? "Customer visible" : "Internal"}
+          </Badge>
+        </div>
+      </div>
+      <div className="ticket-detail-hero__version">
+        <span>Snapshot</span>
+        <strong>v{value.version}</strong>
+        <small>
+          Workflow {value.workflow.version} · {value.projection} projection
+        </small>
+      </div>
+    </section>
+  );
+}
+
+function TicketDetailOperations({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element | null {
+  const {
+    kind,
+    operatorTicket,
+    commit,
+    ticketQuery,
+    queryClient,
+    queryKey,
+    tenantId,
+    navigate,
+  } = model;
+  if (!operatorTicket) return null;
+  return (
+    <TicketOperations
+      kind={kind}
+      ticket={operatorTicket}
+      onCommitted={commit}
+      onConflict={() => ticketQuery.refetch()}
+      onDeleted={() => {
+        queryClient.removeQueries({ exact: true, queryKey });
+        void queryClient.invalidateQueries({
+          queryKey: ["tickets", "alert", tenantId],
+        });
+        void navigate("/alerts", { replace: true });
+      }}
+      onEscalated={(caseId) => void navigate(`/cases/${caseId}`)}
+    />
+  );
+}
+
+function TicketDetailSla({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element {
+  const { authority, kind, session, resourceId, tenantId } = model;
+  return (
+    <TicketSlaPanel
+      api={slaAdminApi}
+      canOverride={hasAnyTicketPermission(
+        authority.hasPermission,
+        kind === "alert" ? "alert.sla.override" : "case.sla.override",
+      )}
+      canRead={hasAnyTicketPermission(
+        authority.hasPermission,
+        kind === "alert" ? "alert.read" : "case.read",
+      )}
+      csrfToken={session.csrfToken}
+      expectedAudience="operator"
+      kind={kind}
+      objectId={resourceId}
+      tenantId={tenantId}
+    />
+  );
+}
+
+function ActiveTicketPanel({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element | null {
+  const { tab, kind, tenantId, resourceId, canReadAudit, auditApi, ticket } =
+    model;
+  switch (tab) {
+    case "overview":
+      return <TicketOverviewPanel model={model} />;
+    case "linked":
+      return <TicketLinkedPanel model={model} />;
+    case "activity":
+      return (
+        <ActivityPanel
+          kind={kind}
+          tenantId={tenantId}
+          resourceId={resourceId}
+        />
+      );
+    case "audit":
+      return canReadAudit ? (
+        <TicketAuditPanel
+          api={auditApi}
+          kind={kind}
+          resourceId={resourceId}
+          tenantId={tenantId}
+        />
+      ) : null;
+    case "comments":
+      return (
+        <TicketCommentPanel
+          kind={kind}
+          projection={ticket.value.projection}
+          tenantId={tenantId}
+          resourceId={resourceId}
+        />
+      );
+    case "contacts":
+      return <TicketContactsPanel model={model} />;
+    case "dfir":
+      return <TicketDfirPanel model={model} />;
+    default:
+      return null;
+  }
+}
+
+function TicketOverviewPanel({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element {
+  const {
+    operatorTicket,
+    customFieldApi,
+    canManageCustomFields,
+    canReadCustomFields,
+    session,
+    resourceId,
+    kind,
+    tenantId,
+    metadataApi,
+    canEditMetadata,
+    reloadLatestTicket,
+    watcherApi,
+    authority,
+    canReadWatchers,
+    reloadLatestTicketBoundary,
+    ticket: { value },
+  } = model;
+  return (
+    <Overview
+      customFields={
+        operatorTicket ? (
+          <TicketCustomFieldsPanel
+            api={customFieldApi}
+            canManage={canManageCustomFields}
+            canRead={canReadCustomFields}
+            csrfToken={session.csrfToken}
+            objectId={resourceId}
+            objectType={kind}
+            tenantId={tenantId}
+          />
+        ) : null
+      }
+      kind={kind}
+      metadata={
+        operatorTicket ? (
+          <TicketMetadataPanel
+            api={metadataApi}
+            canEdit={canEditMetadata}
+            csrfToken={session.csrfToken}
+            kind={kind}
+            onReloadLatest={reloadLatestTicket}
+            sessionId={session.id}
+            tenantId={tenantId}
+            ticket={operatorTicket}
+          />
+        ) : null
+      }
+      ticket={value}
+      watchers={
+        operatorTicket ? (
+          <TicketWatcherPanel
+            api={watcherApi}
+            authorityEpoch={JSON.stringify([
+              authority.pairKey,
+              authority.revision,
+              authority.authority?.evaluatedAt ?? null,
+            ])}
+            canEdit={canEditMetadata}
+            canRead={canReadWatchers}
+            csrfToken={session.csrfToken}
+            kind={kind}
+            onReloadLatest={reloadLatestTicketBoundary}
+            resourceId={resourceId}
+            sessionId={session.id}
+            tenantId={tenantId}
+            ticketEtag={operatorTicket.etag}
+            ticketVersion={operatorTicket.value.version}
+          />
+        ) : null
+      }
+    />
+  );
+}
+
+function TicketLinkedPanel({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element {
+  const {
+    kind,
+    operatorTicket,
+    relationsApi,
+    authorityReady,
+    authority,
+    reloadLatestTicketBoundary,
+    session,
+    ticketQuery,
+    tenantId,
+    resourceId,
+  } = model;
+  return (
+    <LinkedPanel
+      alertRelation={
+        kind === "alert" && operatorTicket !== null
+          ? {
+              alertEtag: operatorTicket.etag,
+              alertVersion: operatorTicket.value.version,
+              api: relationsApi,
+              canManage:
+                authorityReady &&
+                hasAllTicketPermissionsAtOneScope(authority.hasPermission, [
+                  "alert.read",
+                  "alert.update",
+                ]),
+              onReloadLatest: reloadLatestTicketBoundary,
+              sessionId: session.id,
+            }
+          : undefined
+      }
+      authorityEpoch={JSON.stringify([
+        session.id,
+        authority.pairKey,
+        authority.revision,
+        authority.authority?.evaluatedAt ?? null,
+      ])}
+      canUnlink={
+        operatorTicket !== null &&
+        authorityReady &&
+        hasAnyTicketPermission(authority.hasPermission, "alert.escalate") &&
+        hasAnyTicketPermission(authority.hasPermission, "case.update")
+      }
+      csrfToken={session.csrfToken}
+      kind={kind}
+      onChanged={() => ticketQuery.refetch()}
+      tenantId={tenantId}
+      resourceId={resourceId}
+    />
+  );
+}
+
+function TicketContactsPanel({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element | null {
+  const {
+    canReadCaseContacts,
+    operatorTicket,
+    contactApi,
+    session,
+    authority,
+    canEditCaseContacts,
+    resourceId,
+    reloadLatestTicketBoundary,
+    tenantId,
+  } = model;
+  if (!canReadCaseContacts || !operatorTicket) return null;
+  return (
+    <CaseContactPanel
+      api={contactApi}
+      authorityEpoch={JSON.stringify([
+        session.id,
+        authority.pairKey,
+        authority.revision,
+        authority.authority?.evaluatedAt ?? null,
+      ])}
+      canEdit={canEditCaseContacts}
+      canRead={canReadCaseContacts}
+      caseEtag={operatorTicket.etag}
+      caseId={resourceId}
+      caseVersion={operatorTicket.value.version}
+      csrfToken={session.csrfToken}
+      onReloadLatest={reloadLatestTicketBoundary}
+      sessionId={session.id}
+      tenantId={tenantId}
+    />
+  );
+}
+
+function TicketDfirPanel({
+  model,
+}: {
+  model: TicketDetailModel;
+}): React.JSX.Element | null {
+  const {
+    canUseDfir,
+    kind,
+    caseDfirApi,
+    resourceId,
+    session,
+    hasDfirPermission,
+    tenantId,
+    alertDfirApi,
+  } = model;
+  if (!canUseDfir) return null;
+  return kind === "case" ? (
+    <CaseDfirPanel
+      api={caseDfirApi}
+      caseId={resourceId}
+      csrfToken={session.csrfToken}
+      hasPermission={hasDfirPermission}
+      tenantId={tenantId}
+    />
+  ) : (
+    <AlertDfirPanel
+      alertId={resourceId}
+      api={alertDfirApi}
+      csrfToken={session.csrfToken}
+      hasPermission={hasDfirPermission}
+      tenantId={tenantId}
+    />
   );
 }
 
@@ -606,6 +797,72 @@ function Overview({
   ticket: TicketProjection;
   watchers?: ReactNode;
 }): React.JSX.Element {
+  return (
+    <div
+      id="ticket-panel-overview"
+      role="tabpanel"
+      aria-labelledby="ticket-tab-overview"
+      className="ticket-overview"
+    >
+      {metadata}
+
+      {watchers}
+
+      <TicketNarrative kind={kind} ticket={ticket} />
+      <TicketFacts kind={kind} ticket={ticket} />
+
+      <section className="ticket-tag-section">
+        <div>
+          <Tag aria-hidden="true" />
+          <h3>Tags</h3>
+        </div>
+        {ticket.tags.length > 0 ? (
+          <ul>
+            {ticket.tags.map((tag) => (
+              <li key={tag}>{tag}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="ticket-muted-copy">No tags in this projection.</p>
+        )}
+      </section>
+
+      {customFields}
+
+      <TicketSourcePayload kind={kind} ticket={ticket} />
+    </div>
+  );
+}
+
+function TicketNarrative({
+  kind,
+  ticket,
+}: {
+  kind: TicketKind;
+  ticket: TicketProjection;
+}): React.JSX.Element {
+  return (
+    <article className="ticket-narrative">
+      <p className="section-label">Operational narrative</p>
+      {ticket.description ? (
+        <SafeMarkdown markdown={ticket.description} />
+      ) : (
+        <p className="ticket-muted-copy">No description was recorded.</p>
+      )}
+      {kind === "case" && "summary" in ticket && ticket.summary ? (
+        <blockquote>{ticket.summary}</blockquote>
+      ) : null}
+    </article>
+  );
+}
+
+function TicketFacts({
+  kind,
+  ticket,
+}: {
+  kind: TicketKind;
+  ticket: TicketProjection;
+}): React.JSX.Element {
   const operator = ticket.projection === "operator" ? ticket : null;
   const facts: Array<[string, ReactNode]> = [
     ["Workflow", `${ticket.workflow.workflowId} · v${ticket.workflow.version}`],
@@ -632,69 +889,40 @@ function Overview({
   }
 
   return (
-    <div
-      id="ticket-panel-overview"
-      role="tabpanel"
-      aria-labelledby="ticket-tab-overview"
-      className="ticket-overview"
-    >
-      {metadata}
-
-      {watchers}
-
-      <article className="ticket-narrative">
-        <p className="section-label">Operational narrative</p>
-        {ticket.description ? (
-          <SafeMarkdown markdown={ticket.description} />
-        ) : (
-          <p className="ticket-muted-copy">No description was recorded.</p>
-        )}
-        {kind === "case" && "summary" in ticket && ticket.summary ? (
-          <blockquote>{ticket.summary}</blockquote>
-        ) : null}
-      </article>
-
-      <dl className="ticket-fact-grid">
-        {facts.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <section className="ticket-tag-section">
-        <div>
-          <Tag aria-hidden="true" />
-          <h3>Tags</h3>
+    <dl className="ticket-fact-grid">
+      {facts.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
         </div>
-        {ticket.tags.length > 0 ? (
-          <ul>
-            {ticket.tags.map((tag) => (
-              <li key={tag}>{tag}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="ticket-muted-copy">No tags in this projection.</p>
-        )}
-      </section>
-
-      {customFields}
-
-      {kind === "alert" &&
-      operator &&
-      "rawPayload" in operator &&
-      operator.rawPayload ? (
-        <details className="ticket-raw-payload">
-          <summary>View redacted source payload</summary>
-          <pre>{JSON.stringify(operator.rawPayload, null, 2)}</pre>
-        </details>
-      ) : null}
-    </div>
+      ))}
+    </dl>
   );
 }
 
-function TicketCustomFieldsPanel({
+function TicketSourcePayload({
+  kind,
+  ticket,
+}: {
+  kind: TicketKind;
+  ticket: TicketProjection;
+}): React.JSX.Element | null {
+  if (
+    kind !== "alert" ||
+    ticket.projection !== "operator" ||
+    !("rawPayload" in ticket) ||
+    !ticket.rawPayload
+  )
+    return null;
+  return (
+    <details className="ticket-raw-payload">
+      <summary>View redacted source payload</summary>
+      <pre>{JSON.stringify(ticket.rawPayload, null, 2)}</pre>
+    </details>
+  );
+}
+
+function useTicketCustomFields({
   api,
   canManage,
   canRead,
@@ -710,7 +938,7 @@ function TicketCustomFieldsPanel({
   objectId: string;
   objectType: TicketKind;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const queryClient = useQueryClient();
   const queryKey = [
     "ticket-custom-fields",
@@ -834,12 +1062,17 @@ function TicketCustomFieldsPanel({
         tenantId,
         values: validated.values,
       });
-      if (authorizationEpoch.current !== authorizationToken) {
+      if (
+        authorizationEpoch.current !== authorizationToken ||
+        controller.signal.aborted ||
+        saveRequest.current !== controller
+      ) {
         return;
       }
       queryClient.setQueryData(queryKey, next);
       setDrafts({});
       setErrors({});
+      // eslint-disable-next-line react-doctor/no-unowned-async-error-clear -- The preceding epoch, abort, and request-identity checks prove this response still owns the editor.
       setProblem(null);
       saveAttempt.current = null;
       setEditing(false);
@@ -865,12 +1098,36 @@ function TicketCustomFieldsPanel({
       if (authorizationEpoch.current === authorizationToken) {
         if (saveRequest.current === controller) {
           saveRequest.current = null;
+          // eslint-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This guarded finally runs for both outcomes; only the owning request may clear pending state.
           setSaving(false);
         }
       }
     }
   };
 
+  return {
+    canManage,
+    canRead,
+    query,
+    editing,
+    drafts,
+    setDrafts,
+    errors,
+    problem,
+    saving,
+    editorIsCurrent,
+    startEditing,
+    cancelEditing,
+    reloadLatest,
+    save,
+  };
+}
+
+function TicketCustomFieldsPanel(
+  props: Parameters<typeof useTicketCustomFields>[0],
+): React.JSX.Element {
+  const model = useTicketCustomFields(props);
+  const { canRead, query } = model;
   if (!canRead) {
     return (
       <CustomFieldSection>
@@ -908,7 +1165,22 @@ function TicketCustomFieldsPanel({
     );
   }
 
-  const projection = query.data;
+  return <TicketCustomFieldsContent model={model} projection={query.data} />;
+}
+
+type TicketCustomFieldsModel = ReturnType<typeof useTicketCustomFields>;
+type CustomFieldProjection = NonNullable<
+  TicketCustomFieldsModel["query"]["data"]
+>;
+
+function TicketCustomFieldsContent({
+  model,
+  projection,
+}: {
+  model: TicketCustomFieldsModel;
+  projection: CustomFieldProjection;
+}): React.JSX.Element {
+  const { canManage, editorIsCurrent, editing, startEditing } = model;
   const hasEditableField = projection.definitions.some((definition) =>
     canEditDefinition(definition, "operator", "update"),
   );
@@ -928,48 +1200,7 @@ function TicketCustomFieldsPanel({
           No custom fields apply to this detail view.
         </p>
       ) : editing && canManage && editorIsCurrent ? (
-        <form className="ticket-custom-fields__editor" onSubmit={save}>
-          <DynamicFieldForm
-            audience="operator"
-            baselineDrafts={projection.drafts}
-            definitions={projection.definitions}
-            disabled={saving}
-            drafts={drafts}
-            errors={errors}
-            onChange={(key: string, draft: CustomFieldDraft) =>
-              setDrafts((current) => ({ ...current, [key]: draft }))
-            }
-            phase="update"
-          />
-          {problem ? (
-            <p className="ticket-custom-fields__problem" role="alert">
-              {problem}
-            </p>
-          ) : null}
-          <div className="ticket-custom-fields__actions">
-            {problem ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                onClick={() => void reloadLatest()}
-              >
-                <RefreshCw aria-hidden="true" /> Reload latest fields
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={saving}
-              onClick={cancelEditing}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={saving || !canManage}>
-              {saving ? "Saving…" : "Save custom fields"}
-            </Button>
-          </div>
-        </form>
+        <TicketCustomFieldsEditor model={model} projection={projection} />
       ) : (
         <DynamicFieldForm
           audience="operator"
@@ -981,6 +1212,70 @@ function TicketCustomFieldsPanel({
         />
       )}
     </CustomFieldSection>
+  );
+}
+
+function TicketCustomFieldsEditor({
+  model,
+  projection,
+}: {
+  model: TicketCustomFieldsModel;
+  projection: CustomFieldProjection;
+}): React.JSX.Element {
+  const {
+    save,
+    saving,
+    drafts,
+    errors,
+    setDrafts,
+    problem,
+    reloadLatest,
+    cancelEditing,
+    canManage,
+  } = model;
+  return (
+    <form className="ticket-custom-fields__editor" onSubmit={save}>
+      <DynamicFieldForm
+        audience="operator"
+        baselineDrafts={projection.drafts}
+        definitions={projection.definitions}
+        disabled={saving}
+        drafts={drafts}
+        errors={errors}
+        onChange={(key: string, draft: CustomFieldDraft) =>
+          setDrafts((current) => ({ ...current, [key]: draft }))
+        }
+        phase="update"
+      />
+      {problem ? (
+        <p className="ticket-custom-fields__problem" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      <div className="ticket-custom-fields__actions">
+        {problem ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => void reloadLatest()}
+          >
+            <RefreshCw aria-hidden="true" /> Reload latest fields
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={saving}
+          onClick={cancelEditing}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={saving || !canManage}>
+          {saving ? "Saving…" : "Save custom fields"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -1509,6 +1804,7 @@ function AlertCaseUnlinkControl({
         request.current === controller
       ) {
         request.current = null;
+        // eslint-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This guarded finally runs for both outcomes; only the owning request may clear pending state.
         setSaving(false);
       }
     }
@@ -1624,17 +1920,9 @@ function TicketInlineSkeleton(): React.JSX.Element {
 
 function NoTenantDetail({ kind }: { kind: TicketKind }): React.JSX.Element {
   return (
-    <div className="content content--narrow">
-      <section className="page-heading">
-        <div>
-          <p className="section-label">Tenant context required</p>
-          <h1>Select a tenant first.</h1>
-          <p>
-            {kindLabel(kind)} detail is always resolved inside an active tenant.
-          </p>
-        </div>
-      </section>
-    </div>
+    <TenantRequiredPage>
+      {kindLabel(kind)} detail is always resolved inside an active tenant.
+    </TenantRequiredPage>
   );
 }
 
@@ -1681,4 +1969,64 @@ function moveTicketTabFocus(event: KeyboardEvent<HTMLButtonElement>): void {
           buttons.length;
   event.preventDefault();
   buttons[next]?.focus();
+}
+
+function ticketDetailCapabilities(
+  authority: ReturnType<typeof useTenantAuthority>,
+  kind: TicketKind,
+  operatorProjection: boolean,
+) {
+  const hasDfirPermission = (
+    permission: DfirPermission | DfirReadPermission,
+  ): boolean =>
+    authority.hasPermission(permission, "assigned") ||
+    authority.hasPermission(permission, "operator_team") ||
+    authority.hasPermission(permission, "tenant");
+  const canUseDfir =
+    operatorProjection &&
+    (kind === "alert" ? alertDfirReadPermissions : dfirReadPermissions).every(
+      hasDfirPermission,
+    );
+  const authorityReady = authority.status === "ready";
+  const canReadCustomFields =
+    authorityReady &&
+    hasAnyTicketPermission(authority.hasPermission, "custom_field.read");
+  const canManageCustomFields =
+    authorityReady &&
+    hasAnyTicketPermission(authority.hasPermission, "custom_field.manage");
+  const canEditMetadata =
+    authorityReady &&
+    hasAnyTicketPermission(
+      authority.hasPermission,
+      kind === "alert" ? "alert.update" : "case.update",
+    );
+  const canReadWatchers =
+    authorityReady &&
+    hasAnyTicketPermission(
+      authority.hasPermission,
+      kind === "alert" ? "alert.read" : "case.read",
+    );
+  const canReadAudit =
+    authorityReady && authority.hasPermission(tenantAuditPermission, "tenant");
+  const canReadCaseContacts =
+    kind === "case" &&
+    operatorProjection &&
+    authorityReady &&
+    hasAnyTicketPermission(authority.hasPermission, "case.read") &&
+    authority.hasPermission("contact.read", "tenant");
+  const canEditCaseContacts =
+    canReadCaseContacts &&
+    hasAnyTicketPermission(authority.hasPermission, "case.update");
+  return {
+    hasDfirPermission,
+    canUseDfir,
+    authorityReady,
+    canReadCustomFields,
+    canManageCustomFields,
+    canEditMetadata,
+    canReadWatchers,
+    canReadAudit,
+    canReadCaseContacts,
+    canEditCaseContacts,
+  };
 }

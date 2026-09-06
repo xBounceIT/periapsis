@@ -1,4 +1,3 @@
-import type { RouteObject } from "react-router";
 import {
   Alert,
   AlertDescription,
@@ -10,15 +9,15 @@ import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
 import { hasPermission } from "../lib/phase-two-types";
 import {
-  notificationAdminApi,
   platformNotificationPermission,
-  platformSmtpRouteDescriptor,
   tenantNotificationPermission,
-  tenantNotificationRouteDescriptor,
-  PlatformSmtpWorkspace,
-  TenantNotificationWorkspace,
+} from "../notifications/model";
+import {
+  notificationAdminApi,
   type NotificationAdminApi,
-} from "../notifications";
+} from "../notifications/notification-api";
+import { TenantNotificationWorkspace } from "../notifications/notification-workspace";
+import { PlatformSmtpWorkspace } from "../notifications/smtp-panel";
 
 interface NotificationPageProps {
   api?: NotificationAdminApi;
@@ -89,17 +88,6 @@ export function PlatformNotificationSmtpPage({
   );
 }
 
-export const notificationAdministrationRoutes = [
-  {
-    path: childRoutePath(tenantNotificationRouteDescriptor.path),
-    Component: TenantNotificationAdministrationPage,
-  },
-  {
-    path: childRoutePath(platformSmtpRouteDescriptor.path),
-    Component: PlatformNotificationSmtpPage,
-  },
-] satisfies RouteObject[];
-
 function NotificationAuthorityLoading({
   boundary,
 }: {
@@ -152,11 +140,4 @@ function NotificationRouteDenied({
       </Alert>
     </div>
   );
-}
-
-function childRoutePath(absolutePath: string): string {
-  if (!absolutePath.startsWith("/") || absolutePath.length < 2) {
-    throw new TypeError("Notification route descriptors must be absolute.");
-  }
-  return absolutePath.slice(1);
 }

@@ -329,21 +329,19 @@ function compactId(value: string): string {
 }
 
 const styleRulesSchema: z.ZodType<SlaColumnStyleRule[]> = z.array(
-  z
-    .object({
-      styleKey: z.string(),
-      state: z
-        .enum([
-          "pending",
-          "on_track",
-          "at_risk",
-          "paused",
-          "breached",
-          "completed",
-        ])
-        .optional(),
-      minimumPercentage: z.number().finite().optional(),
-      maximumRemainingMicros: z.number().finite().optional(),
-    })
-    .strict(),
+  z.strictObject({
+    styleKey: z.string(),
+    state: z
+      .enum([
+        "pending",
+        "on_track",
+        "at_risk",
+        "paused",
+        "breached",
+        "completed",
+      ])
+      .optional(),
+    minimumPercentage: z.number().finite().optional(),
+    maximumRemainingMicros: z.number().finite().optional(),
+  }),
 );

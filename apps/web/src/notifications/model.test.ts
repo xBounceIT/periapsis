@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { assertStructurallyRedacted } from "./notification-api";
 import {
   bindMutationAttempt,
   bindOpaqueMutationAttempt,
@@ -12,7 +11,8 @@ import {
   type MutationAttemptReference,
   type OpaqueMutationAttemptReference,
 } from "./model";
-import { isolateTemplatePreview } from "./templates-panel";
+import { assertStructurallyRedacted } from "./notification-api";
+import { isolateTemplatePreview } from "./templates-panel-model";
 
 describe("notification administration model", () => {
   it("binds retry keys to ordinary payloads and keeps opaque secret retries stable", () => {

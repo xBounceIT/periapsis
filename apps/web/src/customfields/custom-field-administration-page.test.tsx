@@ -16,10 +16,8 @@ import type {
   TenantPermissionKeyView,
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
-import {
-  TenantCustomFieldAdministrationPage,
-  customFieldAdministrationRoutes,
-} from "./custom-field-administration-page";
+import { TenantCustomFieldAdministrationPage } from "./custom-field-administration-page";
+import { customFieldAdministrationRoutes } from "./custom-field-administration-page-routes";
 import type { CustomFieldAdministrationApi } from "./custom-field-api";
 import type { CustomFieldDefinitionView } from "./model";
 

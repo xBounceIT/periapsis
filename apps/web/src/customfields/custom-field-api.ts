@@ -376,91 +376,74 @@ export async function listAllCustomFieldDefinitions(
   );
 }
 
-const optionSchema = z
-  .object({
-    id: z.string().regex(uuidV7Pattern),
-    key: z.string().regex(keyPattern),
-    label: z.string().min(1).max(256),
-    position: z.number().int().min(0).max(65_535),
-    archived: z.boolean(),
-  })
-  .strict();
+const optionSchema = z.strictObject({
+  id: z.string().regex(uuidV7Pattern),
+  key: z.string().regex(keyPattern),
+  label: z.string().min(1).max(256),
+  position: z.number().int().min(0).max(65_535),
+  archived: z.boolean(),
+});
 
-const constraintsSchema = z
-  .object({
-    minimumLength: z.number().int().min(0).max(65_536).optional(),
-    maximumLength: z.number().int().min(0).max(65_536).optional(),
-    minimum: z.string().max(128).optional(),
-    maximum: z.string().max(128).optional(),
-    pattern: z.string().max(512).optional(),
-  })
-  .strict();
+const constraintsSchema = z.strictObject({
+  minimumLength: z.number().int().min(0).max(65_536).optional(),
+  maximumLength: z.number().int().min(0).max(65_536).optional(),
+  minimum: z.string().max(128).optional(),
+  maximum: z.string().max(128).optional(),
+  pattern: z.string().max(512).optional(),
+});
 
-const definitionSpecSchema = z
-  .object({
-    objectType: z.enum(["alert", "case"]),
-    key: z.string().regex(keyPattern),
-    label: z.string().min(1).max(256),
-    description: z.string().max(8192),
-    dataType: z.enum(customFieldDataTypes),
-    required: z.boolean(),
-    nullable: z.boolean(),
-    defaultValue: z.custom<CustomFieldValue>(isCustomFieldValue).optional(),
-    constraints: constraintsSchema.optional(),
-    options: z.array(optionSchema).max(512).optional(),
-    visibility: z
-      .object({ customer: z.boolean(), operator: z.boolean() })
-      .strict(),
-    editPolicy: z
-      .object({
-        customerCreate: z.boolean(),
-        customerUpdate: z.boolean(),
-        operatorCreate: z.boolean(),
-        operatorUpdate: z.boolean(),
-      })
-      .strict(),
-    placement: z
-      .object({
-        showInCreate: z.boolean(),
-        showInDetail: z.boolean(),
-        showInList: z.boolean(),
-        showInExport: z.boolean(),
-      })
-      .strict(),
-    requiredOnTransitions: z.array(z.string().regex(keyPattern)).max(128),
-    searchable: z.boolean(),
-    filterable: z.boolean(),
-    sortable: z.boolean(),
-    allowStructuredJson: z.boolean(),
-  })
-  .strict();
+const definitionSpecSchema = z.strictObject({
+  objectType: z.enum(["alert", "case"]),
+  key: z.string().regex(keyPattern),
+  label: z.string().min(1).max(256),
+  description: z.string().max(8192),
+  dataType: z.enum(customFieldDataTypes),
+  required: z.boolean(),
+  nullable: z.boolean(),
+  defaultValue: z.custom<CustomFieldValue>(isCustomFieldValue).optional(),
+  constraints: constraintsSchema.optional(),
+  options: z.array(optionSchema).max(512).optional(),
+  visibility: z.strictObject({ customer: z.boolean(), operator: z.boolean() }),
+  editPolicy: z.strictObject({
+    customerCreate: z.boolean(),
+    customerUpdate: z.boolean(),
+    operatorCreate: z.boolean(),
+    operatorUpdate: z.boolean(),
+  }),
+  placement: z.strictObject({
+    showInCreate: z.boolean(),
+    showInDetail: z.boolean(),
+    showInList: z.boolean(),
+    showInExport: z.boolean(),
+  }),
+  requiredOnTransitions: z.array(z.string().regex(keyPattern)).max(128),
+  searchable: z.boolean(),
+  filterable: z.boolean(),
+  sortable: z.boolean(),
+  allowStructuredJson: z.boolean(),
+});
 
-const definitionSchema = z
-  .object({
-    id: z.string().regex(uuidV7Pattern),
-    tenantId: z.string().regex(uuidV7Pattern),
-    schemaVersion: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-    archived: z.boolean(),
-    definition: definitionSpecSchema,
-  })
-  .strict();
+const definitionSchema = z.strictObject({
+  id: z.string().regex(uuidV7Pattern),
+  tenantId: z.string().regex(uuidV7Pattern),
+  schemaVersion: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  archived: z.boolean(),
+  definition: definitionSpecSchema,
+});
 
-const definitionPageSchema = z
-  .object({
-    items: z.array(definitionSchema).max(200),
-    nextCursor: z.string().regex(cursorPattern).optional(),
-  })
-  .strict();
+const definitionPageSchema = z.strictObject({
+  items: z.array(definitionSchema).max(200),
+  nextCursor: z.string().regex(cursorPattern).optional(),
+});
 
 const projectedValueSchema = z
-  .object({
+  .strictObject({
     key: z.string().regex(keyPattern),
     definitionId: z.string().regex(uuidV7Pattern),
     schemaVersion: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
     presence: z.enum(["missing", "null", "present"]),
     value: z.custom<CustomFieldValue>(isCustomFieldValue).optional(),
   })
-  .strict()
   .superRefine((value, context) => {
     const valid =
       (value.presence === "missing" && value.value === undefined) ||
@@ -473,22 +456,18 @@ const projectedValueSchema = z
     }
   });
 
-const objectProjectionSchema = z
-  .object({
-    objectType: z.enum(["alert", "case"]),
-    objectId: z.string().regex(uuidV7Pattern),
-    definitions: z.array(definitionSchema).max(100),
-    values: z.array(projectedValueSchema).max(100),
-    version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  })
-  .strict();
+const objectProjectionSchema = z.strictObject({
+  objectType: z.enum(["alert", "case"]),
+  objectId: z.string().regex(uuidV7Pattern),
+  definitions: z.array(definitionSchema).max(100),
+  values: z.array(projectedValueSchema).max(100),
+  version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+});
 
-const objectValuesResultSchema = z
-  .object({
-    values: z.array(projectedValueSchema).max(100),
-    version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  })
-  .strict();
+const objectValuesResultSchema = z.strictObject({
+  values: z.array(projectedValueSchema).max(100),
+  version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+});
 
 function projectVersioned(
   result: GeneratedResult,

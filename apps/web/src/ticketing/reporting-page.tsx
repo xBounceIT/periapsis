@@ -1,6 +1,4 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
 import type {
-  SavedTicketView,
   TenantPermissionKey,
   TicketExportJobRequest,
 } from "@periapsis/contracts";
@@ -13,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@periapsis/ui/components/ui/card";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   Clock3,
   FileSpreadsheet,
@@ -22,13 +21,13 @@ import {
   ShieldX,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { mergeReportSavedViewPages } from "./reporting-page-model";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
 import {
   describeTicketingError,
   TicketingApiError,
-  type SavedTicketViewPageView,
   type TicketKind,
 } from "../lib/ticketing-api";
 import {
@@ -46,23 +45,12 @@ import {
 // oxlint-disable-next-line import/no-unassigned-import -- Vite extracts this page-owned stylesheet.
 import "./reporting-page.css";
 
-interface SavedViewInventory {
-  invalid: boolean;
-  items: SavedTicketView[];
-}
-
-interface SavedViewInventoryBoundary {
-  kind: TicketKind;
-  ownerMembershipId: string;
-  tenantId: string;
-}
-
 const allTicketsSource = {
   source: "inline",
   spec: inlineSavedViewSpec({}, defaultTicketTableColumns),
 } as const satisfies TicketExportJobRequest["source"];
 
-export function ReportingPage(): React.JSX.Element {
+function useReportingPageState() {
   const api = useTicketingApi();
   const { clearSession, session } = useSession();
   const authority = useTenantAuthority();
@@ -96,7 +84,6 @@ export function ReportingPage(): React.JSX.Element {
     authority.hasPermission,
     [readPermission, commentReadPermission, privateCommentPermission],
   );
-
   const viewsQuery = useInfiniteQuery({
     enabled: canLoad,
     initialPageParam: undefined as string | undefined,
@@ -166,11 +153,9 @@ export function ReportingPage(): React.JSX.Element {
       ? viewsQuery.error
       : undefined;
   const handledAccessFailure = useRef<string | undefined>(undefined);
-
   useEffect(() => {
     setSelectedViewId(undefined);
   }, [authority.pairKey, authority.revision, selectedKind, tenantId]);
-
   useEffect(() => {
     if (viewsQuery.isSuccess) handledAccessFailure.current = undefined;
     if (!accessError) return;
@@ -180,7 +165,57 @@ export function ReportingPage(): React.JSX.Element {
     if (accessError.status === 401) clearSession(session.id);
     else authority.reload();
   }, [accessError, authority, clearSession, session.id, viewsQuery.isSuccess]);
+  return {
+    api,
+    clearSession,
+    session,
+    authority,
+    tenantId,
+    requestedKind,
+    setRequestedKind,
+    selectedViewId,
+    setSelectedViewId,
+    readAccess,
+    selectedKind,
+    canLoad,
+    readPermission,
+    commentReadPermission,
+    privateCommentPermission,
+    allowPublicComments,
+    allowPrivateComments,
+    viewsQuery,
+    inventory,
+    selectedView,
+    selectedViewUnavailable,
+    source,
+    sourceKey,
+    accessError,
+    handledAccessFailure,
+  };
+}
 
+export function ReportingPage(): React.JSX.Element {
+  const state = useReportingPageState();
+  const {
+    clearSession,
+    session,
+    authority,
+    tenantId,
+    setRequestedKind,
+    selectedViewId,
+    setSelectedViewId,
+    readAccess,
+    selectedKind,
+    allowPublicComments,
+    allowPrivateComments,
+    viewsQuery,
+    inventory,
+    selectedView,
+    selectedViewUnavailable,
+    source,
+    sourceKey,
+    accessError,
+  } = state;
   if (!tenantId) {
     return (
       <ReportingBoundary
@@ -249,120 +284,24 @@ export function ReportingPage(): React.JSX.Element {
         </Card>
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle aria-level={2} role="heading">
-            Report source
-          </CardTitle>
-          <CardDescription>
-            Only resource kinds exposed by the current live authority are
-            selectable. Saved sources stay pinned to their exact revision and
-            specification digest.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="reporting-source-grid">
-          <label htmlFor="report-kind">
-            <span>Ticket type</span>
-            <select
-              id="report-kind"
-              value={selectedKind}
-              onChange={(event) => {
-                const kind = event.target.value;
-                if ((kind === "alert" || kind === "case") && readAccess[kind]) {
-                  setRequestedKind(kind);
-                }
-              }}
-            >
-              {readAccess.alert ? <option value="alert">Alerts</option> : null}
-              {readAccess.case ? <option value="case">Cases</option> : null}
-            </select>
-          </label>
-          <label htmlFor="report-source">
-            <span>Saved-view source</span>
-            <select
-              id="report-source"
-              disabled={viewsQuery.isPending}
-              value={selectedViewId ?? ""}
-              onChange={(event) =>
-                setSelectedViewId(event.target.value || undefined)
-              }
-            >
-              <option value="">
-                All authorized {kindLabelPlural(selectedKind)}
-              </option>
-              {selectedViewUnavailable ? (
-                <option value={selectedViewId} disabled>
-                  Selected saved view is unavailable
-                </option>
-              ) : null}
-              {!inventory.invalid
-                ? inventory.items.map((view) => (
-                    <option key={view.id} value={view.id}>
-                      {view.name}
-                    </option>
-                  ))
-                : null}
-            </select>
-          </label>
-          <div className="reporting-source-actions">
-            {viewsQuery.hasNextPage ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={viewsQuery.isFetchingNextPage}
-                onClick={() => void viewsQuery.fetchNextPage()}
-              >
-                {viewsQuery.isFetchingNextPage ? (
-                  <LoaderCircle className="is-spinning" aria-hidden="true" />
-                ) : null}
-                Load more saved views
-              </Button>
-            ) : null}
-            {viewsQuery.isError && !accessError ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => void viewsQuery.refetch()}
-              >
-                <RefreshCw aria-hidden="true" /> Retry saved views
-              </Button>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
+      <TicketReportOptions
+        accessError={accessError}
+        inventory={inventory}
+        readAccess={readAccess}
+        selectedKind={selectedKind}
+        selectedViewId={selectedViewId}
+        selectedViewUnavailable={selectedViewUnavailable}
+        setRequestedKind={setRequestedKind}
+        setSelectedViewId={setSelectedViewId}
+        viewsQuery={viewsQuery}
+      />
 
-      {viewsQuery.isPending ? (
-        <p className="reporting-status" role="status">
-          <LoaderCircle className="is-spinning" aria-hidden="true" /> Loading
-          saved report sources…
-        </p>
-      ) : inventory.invalid ? (
-        <p className="reporting-status reporting-status--error" role="alert">
-          Saved-view inventory was rejected because its page sequence was not
-          canonical. Only the inline all-{selectedKind} source remains usable.
-        </p>
-      ) : viewsQuery.isError ? (
-        <p className="reporting-status reporting-status--error" role="alert">
-          {describeTicketingError(
-            viewsQuery.error,
-            "Saved report sources are unavailable. The bounded inline source remains usable.",
-          )}
-        </p>
-      ) : selectedView ? (
-        <p className="reporting-status">
-          {kindLabel(selectedKind)} source pinned to saved view revision{" "}
-          {selectedView.revision}.
-        </p>
-      ) : (
-        <p className="reporting-status">
-          The inline source includes all{" "}
-          {kindLabelPlural(selectedKind).toLowerCase()}
-          currently visible to the resolved server-side scope.
-        </p>
-      )}
-
+      <TicketReportStatus
+        inventory={inventory}
+        selectedKind={selectedKind}
+        selectedView={selectedView}
+        viewsQuery={viewsQuery}
+      />
       {!accessError && !selectedViewUnavailable ? (
         <TicketExportControls
           key={`${authority.pairKey}:${authority.revision}:${selectedKind}:${sourceKey}`}
@@ -378,30 +317,6 @@ export function ReportingPage(): React.JSX.Element {
       ) : null}
     </div>
   );
-}
-
-export function mergeReportSavedViewPages(
-  pages: readonly SavedTicketViewPageView[],
-  boundary: SavedViewInventoryBoundary,
-): SavedViewInventory {
-  const items: SavedTicketView[] = [];
-  let previousId: string | undefined;
-  for (const page of pages) {
-    for (const item of page.items) {
-      if (
-        item.status !== "active" ||
-        item.kind !== boundary.kind ||
-        item.ownerMembershipId !== boundary.ownerMembershipId ||
-        item.tenantId !== boundary.tenantId ||
-        (previousId !== undefined && previousId >= item.id)
-      ) {
-        return { invalid: true, items: [] };
-      }
-      items.push(item);
-      previousId = item.id;
-    }
-  }
-  return { invalid: false, items };
 }
 
 function ReportingBoundary({
@@ -444,5 +359,169 @@ function ReportingSkeleton(): React.JSX.Element {
         <span key={index} />
       ))}
     </div>
+  );
+}
+
+interface TicketReportOptionsProps {
+  accessError: ReturnType<typeof useReportingPageState>["accessError"];
+  inventory: ReturnType<typeof useReportingPageState>["inventory"];
+  readAccess: ReturnType<typeof useReportingPageState>["readAccess"];
+  selectedKind: ReturnType<typeof useReportingPageState>["selectedKind"];
+  selectedViewId: ReturnType<typeof useReportingPageState>["selectedViewId"];
+  selectedViewUnavailable: ReturnType<
+    typeof useReportingPageState
+  >["selectedViewUnavailable"];
+  setRequestedKind: ReturnType<
+    typeof useReportingPageState
+  >["setRequestedKind"];
+  setSelectedViewId: ReturnType<
+    typeof useReportingPageState
+  >["setSelectedViewId"];
+  viewsQuery: ReturnType<typeof useReportingPageState>["viewsQuery"];
+}
+
+function TicketReportOptions({
+  accessError,
+  inventory,
+  readAccess,
+  selectedKind,
+  selectedViewId,
+  selectedViewUnavailable,
+  setRequestedKind,
+  setSelectedViewId,
+  viewsQuery,
+}: TicketReportOptionsProps): React.JSX.Element {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle aria-level={2} role="heading">
+          Report source
+        </CardTitle>
+        <CardDescription>
+          Only resource kinds exposed by the current live authority are
+          selectable. Saved sources stay pinned to their exact revision and
+          specification digest.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="reporting-source-grid">
+        <label htmlFor="report-kind">
+          <span>Ticket type</span>
+          <select
+            id="report-kind"
+            value={selectedKind}
+            onChange={(event) => {
+              const kind = event.target.value;
+              if ((kind === "alert" || kind === "case") && readAccess[kind]) {
+                setRequestedKind(kind);
+              }
+            }}
+          >
+            {readAccess.alert ? <option value="alert">Alerts</option> : null}
+            {readAccess.case ? <option value="case">Cases</option> : null}
+          </select>
+        </label>
+        <label htmlFor="report-source">
+          <span>Saved-view source</span>
+          <select
+            id="report-source"
+            disabled={viewsQuery.isPending}
+            value={selectedViewId ?? ""}
+            onChange={(event) =>
+              setSelectedViewId(event.target.value || undefined)
+            }
+          >
+            <option value="">
+              All authorized {kindLabelPlural(selectedKind)}
+            </option>
+            {selectedViewUnavailable ? (
+              <option value={selectedViewId} disabled>
+                Selected saved view is unavailable
+              </option>
+            ) : null}
+            {!inventory.invalid
+              ? inventory.items.map((view) => (
+                  <option key={view.id} value={view.id}>
+                    {view.name}
+                  </option>
+                ))
+              : null}
+          </select>
+        </label>
+        <div className="reporting-source-actions">
+          {viewsQuery.hasNextPage ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={viewsQuery.isFetchingNextPage}
+              onClick={() => void viewsQuery.fetchNextPage()}
+            >
+              {viewsQuery.isFetchingNextPage ? (
+                <LoaderCircle className="is-spinning" aria-hidden="true" />
+              ) : null}
+              Load more saved views
+            </Button>
+          ) : null}
+          {viewsQuery.isError && !accessError ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => void viewsQuery.refetch()}
+            >
+              <RefreshCw aria-hidden="true" /> Retry saved views
+            </Button>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface TicketReportStatusProps {
+  inventory: ReturnType<typeof useReportingPageState>["inventory"];
+  selectedKind: ReturnType<typeof useReportingPageState>["selectedKind"];
+  selectedView: ReturnType<typeof useReportingPageState>["selectedView"];
+  viewsQuery: ReturnType<typeof useReportingPageState>["viewsQuery"];
+}
+
+function TicketReportStatus({
+  inventory,
+  selectedKind,
+  selectedView,
+  viewsQuery,
+}: TicketReportStatusProps): React.JSX.Element {
+  return (
+    <>
+      {viewsQuery.isPending ? (
+        <p className="reporting-status" role="status">
+          <LoaderCircle className="is-spinning" aria-hidden="true" /> Loading
+          saved report sources…
+        </p>
+      ) : inventory.invalid ? (
+        <p className="reporting-status reporting-status--error" role="alert">
+          Saved-view inventory was rejected because its page sequence was not
+          canonical. Only the inline all-{selectedKind} source remains usable.
+        </p>
+      ) : viewsQuery.isError ? (
+        <p className="reporting-status reporting-status--error" role="alert">
+          {describeTicketingError(
+            viewsQuery.error,
+            "Saved report sources are unavailable. The bounded inline source remains usable.",
+          )}
+        </p>
+      ) : selectedView ? (
+        <p className="reporting-status">
+          {kindLabel(selectedKind)} source pinned to saved view revision{" "}
+          {selectedView.revision}.
+        </p>
+      ) : (
+        <p className="reporting-status">
+          The inline source includes all{" "}
+          {kindLabelPlural(selectedKind).toLowerCase()}
+          currently visible to the resolved server-side scope.
+        </p>
+      )}
+    </>
   );
 }

@@ -357,13 +357,16 @@ function definitionOptions(
     position,
     archived: false,
   }));
-  const archived = current
-    .filter((option) => !seen.has(option.key))
-    .map((option, index) => ({
-      ...option,
-      position: live.length + index,
-      archived: true,
-    }));
+  const archived = [];
+  for (const option of current) {
+    if (!seen.has(option.key)) {
+      archived.push({
+        ...option,
+        position: live.length + archived.length,
+        archived: true,
+      });
+    }
+  }
   return [...live, ...archived];
 }
 

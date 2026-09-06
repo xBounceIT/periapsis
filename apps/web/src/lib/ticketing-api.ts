@@ -3402,8 +3402,9 @@ function hasExactObjectKeys(
   allowed: readonly string[],
 ): boolean {
   const keys = Object.keys(value);
+  const allowedKeys = new Set(allowed);
   return (
-    keys.every((key) => allowed.includes(key)) &&
+    keys.every((key) => allowedKeys.has(key)) &&
     allowed.every(
       (key) => key === "details" || key === "nextCursor" || key in value,
     )

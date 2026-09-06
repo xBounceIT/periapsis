@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AlertRelation } from "@periapsis/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -12,18 +12,16 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TicketingApi } from "../lib/ticketing-api";
+import type { AlertRelationApi } from "./alert-relation-api";
+import { AlertRelationPanel } from "./alert-relation-panel";
+import { flattenAlertRelationPages } from "./alert-relation-panel-model";
+import { TicketingApiProvider } from "./ticketing-context";
 import {
   alertId,
   createTicketingApi,
   operatorAlert,
   tenantId,
 } from "./ticketing-test-fixtures";
-import type { AlertRelationApi } from "./alert-relation-api";
-import {
-  AlertRelationPanel,
-  flattenAlertRelationPages,
-} from "./alert-relation-panel";
-import { TicketingApiProvider } from "./ticketing-context";
 
 const relatedAlertId = "0198c97d-cf4f-7000-8000-000000000021";
 const secondRelatedAlertId = "0198c97d-cf4f-7000-8000-000000000022";

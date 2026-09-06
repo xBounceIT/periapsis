@@ -449,8 +449,9 @@ function hasExactKeys(
   required: readonly string[] = allowed,
 ): boolean {
   const keys = Object.keys(value);
+  const allowedKeys = new Set(allowed);
   return (
-    keys.every((key) => allowed.includes(key)) &&
+    keys.every((key) => allowedKeys.has(key)) &&
     required.every((key) => Object.hasOwn(value, key))
   );
 }

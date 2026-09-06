@@ -93,6 +93,7 @@ export function useCursorInventory<T>(
         paginationController.current === controller
       ) {
         paginationController.current = null;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This finally runs on success and failure; its request-ownership guard prevents an older request clearing a newer loading flag.
         setLoadingMore(false);
       }
     }

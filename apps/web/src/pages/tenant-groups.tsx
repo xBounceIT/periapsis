@@ -14,15 +14,24 @@ import {
   TableBody,
   TableCaption,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
 import { ArrowDown, Eye, Network, Plus, RefreshCw } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { TableColumnHeaders } from "../components/table-column-headers";
+import { TenantRequiredPage } from "../components/tenant-required-page";
+import { mergeTenantGroups, tryMergeTenantGroups } from "./tenant-groups-model";
+import { selectPairState, selectPairValue } from "./workspace-state";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -30,7 +39,6 @@ import { FocusedError } from "../components/focused-error";
 import { FormField } from "../components/form-field";
 import { ServerDenied } from "../components/server-denied";
 import { idempotencyKeyForPayload } from "../lib/payload-idempotency";
-import { hasControlCharacters } from "../lib/text-validation";
 import {
   describePhaseTwoError,
   PhaseTwoApiError,
@@ -39,7 +47,17 @@ import {
   type TenantSecurityGroupView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { hasControlCharacters } from "../lib/text-validation";
 import { TenantGroupDetailDialog } from "./tenant-group-detail";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZoneName: "short",
+  year: "numeric",
+});
 
 type GroupListState =
   | { kind: "authority_error"; message: string }
@@ -118,31 +136,47 @@ const groupFormSchema = z.object({
 type GroupFormValues = z.infer<typeof groupFormSchema>;
 
 export function TenantGroupsPage(): React.JSX.Element {
+  const model = useTenantGroupsPageModel();
+  if (model.kind === "content") return model.content;
+  return <TenantGroupsPageView model={model.data} />;
+}
+
+function useTenantGroupsPageModel() {
   const { api, session } = useSession();
   const authority = useTenantAuthority();
   const tenantId = session.activeTenantId;
   const requestPair = JSON.stringify([session.id, tenantId ?? null]);
   const requestPairRef = useRef(requestPair);
-  requestPairRef.current = requestPair;
+  useLayoutEffect(() => {
+    requestPairRef.current = requestPair;
+  });
   const canRead = authority.hasPermission("group.read");
   const canManage = authority.hasPermission("group.manage");
   const authorityReady =
     Boolean(tenantId) && authority.status === "ready" && canRead;
   const authorityReadyRef = useRef(authorityReady);
-  authorityReadyRef.current = authorityReady;
-  const initialListState: GroupListState = deriveInitialListState(
-    tenantId,
-    authority.status,
-    authority.message,
-    canRead,
+  useLayoutEffect(() => {
+    authorityReadyRef.current = authorityReady;
+  });
+  const initialListState: GroupListState = useMemo(
+    () =>
+      deriveInitialListState(
+        tenantId,
+        authority.status,
+        authority.message,
+        canRead,
+      ),
+    [tenantId, authority.status, authority.message, canRead],
   );
   const [listSnapshot, setListSnapshot] = useState<
     PairSnapshot<GroupListState>
   >(() => ({ pairKey: requestPair, state: initialListState }));
-  const listState =
-    authorityReady && listSnapshot.pairKey === requestPair
-      ? listSnapshot.state
-      : initialListState;
+  const listState = selectPairState(
+    listSnapshot,
+    requestPair,
+    initialListState,
+    authorityReady,
+  );
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [createGeneration, setCreateGeneration] = useState<number | null>(null);
@@ -150,10 +184,9 @@ export function TenantGroupsPage(): React.JSX.Element {
   const [paginationSnapshot, setPaginationSnapshot] = useState<
     PairSnapshot<PaginationState>
   >(() => ({ pairKey: requestPair, state: { loading: false } }));
-  const paginationState =
-    paginationSnapshot.pairKey === requestPair
-      ? paginationSnapshot.state
-      : { loading: false };
+  const paginationState = selectPairState(paginationSnapshot, requestPair, {
+    loading: false,
+  });
   const paginationGenerationRef = useRef(0);
   const paginationRequestRef = useRef<PaginationRequest | null>(null);
   const paginationCursorHistoryRef = useRef<Set<string>>(new Set());
@@ -164,10 +197,11 @@ export function TenantGroupsPage(): React.JSX.Element {
   const [detailSnapshot, setDetailSnapshot] = useState<
     PairSnapshot<TenantGroupDetailState> & { groupId: string }
   >(() => ({ groupId: "", pairKey: requestPair, state: { kind: "loading" } }));
-  const selected =
-    authorityReady && selection?.pairKey === requestPair ? selection : null;
+  const selected = selectPairValue(selection, requestPair, authorityReady);
   const selectedRef = useRef<GroupSelection | null>(selected);
-  selectedRef.current = selected;
+  useLayoutEffect(() => {
+    selectedRef.current = selected;
+  });
   const selectedGroupId = selected?.groupId ?? null;
   const detailState =
     selectedGroupId &&
@@ -204,6 +238,7 @@ export function TenantGroupsPage(): React.JSX.Element {
     setListSnapshot({ pairKey: requestPair, state: initialListState });
     setNotice(null);
   }, [
+    initialListState,
     authority.message,
     authority.status,
     authorityReady,
@@ -592,244 +627,71 @@ export function TenantGroupsPage(): React.JSX.Element {
   }
 
   if (listState.kind === "forbidden") {
-    return <ServerDenied resource="the tenant security-group inventory" />;
+    return {
+      kind: "content" as const,
+      content: <ServerDenied resource="the tenant security-group inventory" />,
+    };
   }
 
   if (listState.kind === "inactive") {
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading">
-          <div>
-            <p className="section-label">Tenant authorization</p>
-            <h1>Select a tenant to inspect security groups.</h1>
-            <p>Group administration always requires an explicit tenant path.</p>
-          </div>
-        </section>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <TenantRequiredPage
+          label="Tenant authorization"
+          title="Select a tenant to inspect security groups."
+        >
+          Group administration always requires an explicit tenant path.
+        </TenantRequiredPage>
+      ),
+    };
   }
 
-  return (
-    <div className="content tenant-admin-page tenant-group-page">
-      <section className="page-heading" aria-labelledby="groups-page-title">
-        <div>
-          <p className="section-label">Access paths / Phase 2B.2a</p>
-          <h1 id="groups-page-title">Security groups</h1>
-          <p>
-            Compose direct tenant membership edges with role edges while
-            retaining the independent source and lifetime of every path. Groups
-            cannot contain other groups.
-          </p>
-        </div>
-        <Badge variant="outline">
-          <Network aria-hidden="true" /> Direct-only topology
-        </Badge>
-      </section>
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      authority,
+      authorityReadyRef,
+      canManage,
+      closeCreate,
+      closeGroup,
+      createGeneration,
+      createGenerationRef,
+      createOpen,
+      detailState,
+      listState,
+      loadDetail,
+      loadMore,
+      mergeGroupIntoInventory,
+      notice,
+      openCreate,
+      openGroup,
+      paginationState,
+      requestPair,
+      requestPairRef,
+      selected,
+      selectedGroupId,
+      selectedRef,
+      selection,
+      session,
+      setDetailSnapshot,
+      setLoadAttempt,
+      setNotice,
+      tenantId,
+    },
+  };
+}
 
-      {notice ? (
-        <p className="group-action-notice" role="status">
-          {notice}
-        </p>
-      ) : null}
-      {paginationState.error ? (
-        <FocusedError
-          title="More groups could not be loaded"
-          message={paginationState.error}
-        />
-      ) : null}
-      {listState.kind === "authority_error" ? (
-        <FocusedError
-          title="Live authority unavailable"
-          message={listState.message}
-        />
-      ) : null}
-      {listState.kind === "loading" ? <GroupListSkeleton /> : null}
-      {listState.kind === "error" ? (
-        <div className="tenant-admin-error">
-          <FocusedError message={listState.message} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-          >
-            <RefreshCw aria-hidden="true" /> Retry group inventory
-          </Button>
-        </div>
-      ) : null}
-      {listState.kind === "ready" ? (
-        <section
-          className="authority-inventory"
-          aria-labelledby="group-inventory-title"
-        >
-          <div className="section-heading group-inventory-heading">
-            <div>
-              <p className="section-label">Server inventory</p>
-              <h2 id="group-inventory-title">Tenant-owned groups</h2>
-            </div>
-            {canManage ? (
-              <Button type="button" onClick={openCreate}>
-                <Plus aria-hidden="true" /> Create group
-              </Button>
-            ) : null}
-          </div>
-          {listState.items.length === 0 ? (
-            <div className="tenant-empty group-empty-inline">
-              <Network aria-hidden="true" />
-              <h2>No security groups returned</h2>
-              <p>
-                {canManage
-                  ? "Create a tenant-local group to begin composing access paths."
-                  : "The server returned no groups for this tenant."}
-              </p>
-            </div>
-          ) : (
-            <Table className="authority-table group-table">
-              <TableCaption className="sr-only">
-                Security groups in the active tenant
-              </TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Group</TableHead>
-                  <TableHead>Topology</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {listState.items.map((group) => (
-                  <TableRow key={group.id}>
-                    <TableCell>
-                      <span className="role-name-cell">
-                        <strong>{group.name}</strong>
-                        <small>{group.key}</small>
-                      </span>
-                    </TableCell>
-                    <TableCell>Direct members only</TableCell>
-                    <TableCell>
-                      <Badge variant={group.archived ? "outline" : "secondary"}>
-                        {group.archived ? "Archived" : "Active"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{formatTimestamp(group.updatedAt)}</TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Open ${group.name} (${group.key})`}
-                        onClick={() => openGroup(group.id)}
-                      >
-                        <Eye aria-hidden="true" /> Open
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          {listState.nextCursor ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={paginationState.loading}
-              onClick={() => void loadMore()}
-            >
-              <ArrowDown aria-hidden="true" />
-              {paginationState.loading ? "Loading groups…" : "Load more groups"}
-            </Button>
-          ) : null}
-        </section>
-      ) : null}
-
-      {tenantId && createOpen && canManage ? (
-        <CreateGroupDialog
-          api={api}
-          csrfToken={session.csrfToken}
-          onCreated={(group) => {
-            if (
-              requestPairRef.current !== requestPair ||
-              !authorityReadyRef.current ||
-              createGenerationRef.current !== createGeneration
-            ) {
-              return;
-            }
-            mergeGroupIntoInventory(group.value);
-            setNotice(
-              "Security group created, or the server confirmed the matching retry.",
-            );
-            closeCreate();
-          }}
-          onOpenChange={(open) => {
-            if (!open) {
-              closeCreate();
-            }
-          }}
-          tenantId={tenantId}
-        />
-      ) : null}
-
-      {tenantId && selected && selectedGroupId ? (
-        <TenantGroupDetailDialog
-          api={api}
-          authority={authority.authority}
-          canManage={canManage}
-          csrfToken={session.csrfToken}
-          detailState={detailState}
-          groupId={selectedGroupId}
-          key={`${requestPair}:${selectedGroupId}:${selected.generation}`}
-          onArchived={() => {
-            const current = selectedRef.current;
-            if (
-              requestPairRef.current !== requestPair ||
-              !authorityReadyRef.current ||
-              current?.pairKey !== selected.pairKey ||
-              current.groupId !== selected.groupId ||
-              current.generation !== selected.generation
-            ) {
-              return;
-            }
-            closeGroup();
-            setNotice("Security group archived at the current server version.");
-            setLoadAttempt((attempt) => attempt + 1);
-            authority.reload();
-          }}
-          onChanged={(group) => {
-            const current = selectedRef.current;
-            if (
-              requestPairRef.current !== requestPair ||
-              !authorityReadyRef.current ||
-              current?.pairKey !== selected.pairKey ||
-              current.groupId !== selected.groupId ||
-              current.generation !== selected.generation ||
-              group.value.id !== selected.groupId
-            ) {
-              return;
-            }
-            mergeGroupIntoInventory(group.value);
-            setDetailSnapshot({
-              groupId: group.value.id,
-              pairKey: requestPair,
-              state: { group, kind: "ready" },
-            });
-          }}
-          onOpenChange={(open) => {
-            if (!open) {
-              closeGroup();
-            }
-          }}
-          onReload={() => {
-            const current = selection;
-            if (authorityReadyRef.current && current?.pairKey === requestPair) {
-              void loadDetail(current.groupId, current.generation);
-            }
-          }}
-          pairKey={requestPair}
-          tenantId={tenantId}
-        />
-      ) : null}
-    </div>
-  );
+function TenantGroupsPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantGroupsPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <GroupWorkspace model={model} />;
 }
 
 function CreateGroupDialog({
@@ -996,67 +858,6 @@ function assertTenantGroups(
   }
 }
 
-export function mergeTenantGroups(
-  current: readonly TenantSecurityGroupView[],
-  incoming: readonly TenantSecurityGroupView[],
-): readonly TenantSecurityGroupView[] {
-  const merged = tryMergeTenantGroups(current, incoming);
-  if (!merged.ok) {
-    throw new Error(
-      "The security-group inventory returned conflicting representations at the same version.",
-    );
-  }
-  return merged.items;
-}
-
-function tryMergeTenantGroups(
-  current: readonly TenantSecurityGroupView[],
-  incoming: readonly TenantSecurityGroupView[],
-): { items: readonly TenantSecurityGroupView[]; ok: true } | { ok: false } {
-  const groups = new Map<string, TenantSecurityGroupView>();
-  for (const group of [...current, ...incoming]) {
-    if (!validInventoryVersion(group.version)) {
-      return { ok: false };
-    }
-    const accepted = groups.get(group.id);
-    if (!accepted || group.version > accepted.version) {
-      groups.set(group.id, group);
-      continue;
-    }
-    if (group.version < accepted.version) {
-      continue;
-    }
-    if (!sameGroupRepresentation(accepted, group)) {
-      return { ok: false };
-    }
-  }
-  return { items: [...groups.values()], ok: true };
-}
-
-function validInventoryVersion(version: number): boolean {
-  return (
-    Number.isSafeInteger(version) && version > 0 && version <= 2_147_483_647
-  );
-}
-
-function sameGroupRepresentation(
-  left: TenantSecurityGroupView,
-  right: TenantSecurityGroupView,
-): boolean {
-  return (
-    left.id === right.id &&
-    left.tenantId === right.tenantId &&
-    left.key === right.key &&
-    left.name === right.name &&
-    left.description === right.description &&
-    left.archived === right.archived &&
-    left.archivedAt === right.archivedAt &&
-    left.version === right.version &&
-    left.createdAt === right.createdAt &&
-    left.updatedAt === right.updatedAt
-  );
-}
-
 function isCurrentDetailRequest(
   request: DetailRequest | null,
   pairKey: string,
@@ -1114,12 +915,296 @@ function formatTimestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
     ? "Unavailable"
-    : new Intl.DateTimeFormat(undefined, {
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZoneName: "short",
-        year: "numeric",
-      }).format(date);
+    : dateTimeFormatter.format(date);
+}
+
+function GroupWorkspace({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantGroupsPageView>["model"];
+}): React.ReactNode {
+  const { listState, notice, paginationState, setLoadAttempt } = model;
+  return (
+    <div className="content tenant-admin-page tenant-group-page">
+      <section className="page-heading" aria-labelledby="groups-page-title">
+        <div>
+          <p className="section-label">Access paths / Phase 2B.2a</p>
+          <h1 id="groups-page-title">Security groups</h1>
+          <p>
+            Compose direct tenant membership edges with role edges while
+            retaining the independent source and lifetime of every path. Groups
+            cannot contain other groups.
+          </p>
+        </div>
+        <Badge variant="outline">
+          <Network aria-hidden="true" /> Direct-only topology
+        </Badge>
+      </section>
+
+      {notice ? (
+        <p className="group-action-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {paginationState.error ? (
+        <FocusedError
+          title="More groups could not be loaded"
+          message={paginationState.error}
+        />
+      ) : null}
+      {listState.kind === "authority_error" ? (
+        <FocusedError
+          title="Live authority unavailable"
+          message={listState.message}
+        />
+      ) : null}
+      {listState.kind === "loading" ? <GroupListSkeleton /> : null}
+      {listState.kind === "error" ? (
+        <div className="tenant-admin-error">
+          <FocusedError message={listState.message} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            <RefreshCw aria-hidden="true" /> Retry group inventory
+          </Button>
+        </div>
+      ) : null}
+      {<GroupInventory model={model} />}
+
+      {<GroupCreateAction model={model} />}
+
+      {<GroupDetailAction model={model} />}
+    </div>
+  );
+}
+
+function GroupInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    listState,
+    loadMore,
+    openCreate,
+    openGroup,
+    paginationState,
+  } = model;
+  return listState.kind === "ready" ? (
+    <section
+      className="authority-inventory"
+      aria-labelledby="group-inventory-title"
+    >
+      <div className="section-heading group-inventory-heading">
+        <div>
+          <p className="section-label">Server inventory</p>
+          <h2 id="group-inventory-title">Tenant-owned groups</h2>
+        </div>
+        {canManage ? (
+          <Button type="button" onClick={openCreate}>
+            <Plus aria-hidden="true" /> Create group
+          </Button>
+        ) : null}
+      </div>
+      {listState.items.length === 0 ? (
+        <div className="tenant-empty group-empty-inline">
+          <Network aria-hidden="true" />
+          <h2>No security groups returned</h2>
+          <p>
+            {canManage
+              ? "Create a tenant-local group to begin composing access paths."
+              : "The server returned no groups for this tenant."}
+          </p>
+        </div>
+      ) : (
+        <Table className="authority-table group-table">
+          <TableCaption className="sr-only">
+            Security groups in the active tenant
+          </TableCaption>
+          <TableColumnHeaders
+            columns={["Group", "Topology", "State", "Updated", "Actions"]}
+          />
+          <TableBody>
+            {listState.items.map((group) => (
+              <TableRow key={group.id}>
+                <TableCell>
+                  <span className="role-name-cell">
+                    <strong>{group.name}</strong>
+                    <small>{group.key}</small>
+                  </span>
+                </TableCell>
+                <TableCell>Direct members only</TableCell>
+                <TableCell>
+                  <Badge variant={group.archived ? "outline" : "secondary"}>
+                    {group.archived ? "Archived" : "Active"}
+                  </Badge>
+                </TableCell>
+                <TableCell>{formatTimestamp(group.updatedAt)}</TableCell>
+                <TableCell>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Open ${group.name} (${group.key})`}
+                    onClick={() => openGroup(group.id)}
+                  >
+                    <Eye aria-hidden="true" /> Open
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {listState.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={paginationState.loading}
+          onClick={() => void loadMore()}
+        >
+          <ArrowDown aria-hidden="true" />
+          {paginationState.loading ? "Loading groups…" : "Load more groups"}
+        </Button>
+      ) : null}
+    </section>
+  ) : null;
+}
+
+function GroupCreateAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    authorityReadyRef,
+    canManage,
+    closeCreate,
+    createGeneration,
+    createGenerationRef,
+    createOpen,
+    mergeGroupIntoInventory,
+    requestPair,
+    requestPairRef,
+    session,
+    setNotice,
+    tenantId,
+  } = model;
+  return tenantId && createOpen && canManage ? (
+    <CreateGroupDialog
+      api={api}
+      csrfToken={session.csrfToken}
+      onCreated={(group) => {
+        if (
+          requestPairRef.current !== requestPair ||
+          !authorityReadyRef.current ||
+          createGenerationRef.current !== createGeneration
+        ) {
+          return;
+        }
+        mergeGroupIntoInventory(group.value);
+        setNotice(
+          "Security group created, or the server confirmed the matching retry.",
+        );
+        closeCreate();
+      }}
+      onOpenChange={(open) => {
+        if (!open) {
+          closeCreate();
+        }
+      }}
+      tenantId={tenantId}
+    />
+  ) : null;
+}
+
+function GroupDetailAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    authority,
+    authorityReadyRef,
+    canManage,
+    closeGroup,
+    detailState,
+    loadDetail,
+    mergeGroupIntoInventory,
+    requestPair,
+    requestPairRef,
+    selected,
+    selectedGroupId,
+    selectedRef,
+    selection,
+    session,
+    setDetailSnapshot,
+    setLoadAttempt,
+    setNotice,
+    tenantId,
+  } = model;
+  return tenantId && selected && selectedGroupId ? (
+    <TenantGroupDetailDialog
+      api={api}
+      authority={authority.authority}
+      canManage={canManage}
+      csrfToken={session.csrfToken}
+      detailState={detailState}
+      groupId={selectedGroupId}
+      key={`${requestPair}:${selectedGroupId}:${selected.generation}`}
+      onArchived={() => {
+        const current = selectedRef.current;
+        if (
+          requestPairRef.current !== requestPair ||
+          !authorityReadyRef.current ||
+          current?.pairKey !== selected.pairKey ||
+          current.groupId !== selected.groupId ||
+          current.generation !== selected.generation
+        ) {
+          return;
+        }
+        closeGroup();
+        setNotice("Security group archived at the current server version.");
+        setLoadAttempt((attempt) => attempt + 1);
+        authority.reload();
+      }}
+      onChanged={(group) => {
+        const current = selectedRef.current;
+        if (
+          requestPairRef.current !== requestPair ||
+          !authorityReadyRef.current ||
+          current?.pairKey !== selected.pairKey ||
+          current.groupId !== selected.groupId ||
+          current.generation !== selected.generation ||
+          group.value.id !== selected.groupId
+        ) {
+          return;
+        }
+        mergeGroupIntoInventory(group.value);
+        setDetailSnapshot({
+          groupId: group.value.id,
+          pairKey: requestPair,
+          state: { group, kind: "ready" },
+        });
+      }}
+      onOpenChange={(open) => {
+        if (!open) {
+          closeGroup();
+        }
+      }}
+      onReload={() => {
+        const current = selection;
+        if (authorityReadyRef.current && current?.pairKey === requestPair) {
+          void loadDetail(current.groupId, current.generation);
+        }
+      }}
+      pairKey={requestPair}
+      tenantId={tenantId}
+    />
+  ) : null;
 }

@@ -217,179 +217,147 @@ const permissionSchema = z.enum([
 ]);
 const conditionValueSchema: z.ZodType<WorkflowConditionValue> =
   z.discriminatedUnion("type", [
-    z.object({ type: z.literal("text"), value: z.string() }).strict(),
-    z.object({ type: z.literal("number"), value: z.number() }).strict(),
-    z.object({ type: z.literal("boolean"), value: z.boolean() }).strict(),
-    z.object({ type: z.literal("instant"), value: z.string() }).strict(),
+    z.strictObject({ type: z.literal("text"), value: z.string() }),
+    z.strictObject({ type: z.literal("number"), value: z.number() }),
+    z.strictObject({ type: z.literal("boolean"), value: z.boolean() }),
+    z.strictObject({ type: z.literal("instant"), value: z.string() }),
   ]);
 const conditionSchema: z.ZodType<WorkflowCondition> = z.lazy(() =>
   z.discriminatedUnion("kind", [
-    z
-      .object({
-        kind: z.literal("predicate"),
-        field: z.string(),
-        operator: z.enum([
-          "equal",
-          "not_equal",
-          "in",
-          "not_in",
-          "less_than",
-          "less_than_or_equal",
-          "greater_than",
-          "greater_than_or_equal",
-          "exists",
-          "not_exists",
-        ]),
-        values: z.array(conditionValueSchema).max(32),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("all"),
-        children: z.array(conditionSchema).min(2).max(32),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("any"),
-        children: z.array(conditionSchema).min(2).max(32),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("not"),
-        children: z.tuple([conditionSchema]),
-      })
-      .strict(),
+    z.strictObject({
+      kind: z.literal("predicate"),
+      field: z.string(),
+      operator: z.enum([
+        "equal",
+        "not_equal",
+        "in",
+        "not_in",
+        "less_than",
+        "less_than_or_equal",
+        "greater_than",
+        "greater_than_or_equal",
+        "exists",
+        "not_exists",
+      ]),
+      values: z.array(conditionValueSchema).max(32),
+    }),
+    z.strictObject({
+      kind: z.literal("all"),
+      children: z.array(conditionSchema).min(2).max(32),
+    }),
+    z.strictObject({
+      kind: z.literal("any"),
+      children: z.array(conditionSchema).min(2).max(32),
+    }),
+    z.strictObject({
+      kind: z.literal("not"),
+      children: z.tuple([conditionSchema]),
+    }),
   ]),
 );
-const stateSchema = z
-  .object({
-    key: z.string().regex(keyPattern),
-    initial: z.boolean(),
-    terminal: z.boolean(),
-    visibility: z.enum(["internal", "customer"]),
-    actions: z
-      .array(
-        z
-          .object({
-            action: actionSchema,
-            effects: z.array(effectSchema).min(2).max(4),
-          })
-          .strict(),
-      )
-      .max(7),
-  })
-  .strict();
-const transitionSchema = z
-  .object({
-    key: z.string().regex(keyPattern),
-    from: z.string().regex(keyPattern),
-    to: z.string().regex(keyPattern),
-    requiredComment: z.boolean(),
-    reopen: z.boolean(),
-    requiredRoles: z.array(z.string().regex(keyPattern)).max(64),
-    requiredPermissions: z.array(permissionSchema).max(64),
-    requiredCustomFields: z.array(z.string().regex(keyPattern)).max(64),
-    condition: conditionSchema.optional(),
-    effects: z.array(effectSchema).min(2).max(4),
-  })
-  .strict();
-const designSchema = z
-  .object({
-    states: z.array(stateSchema).min(2).max(64),
-    transitions: z.array(transitionSchema).min(1).max(256),
-  })
-  .strict();
-const definitionSchema = z
-  .object({
-    id: z.string().regex(uuidV7Pattern),
-    kind: z.enum(["alert", "case"]),
-    version: z.number().int().min(1).max(maximumResourceVersion),
-    initialState: z.string().regex(keyPattern),
-    states: z.array(stateSchema).min(2).max(64),
-    transitions: z.array(transitionSchema).min(1).max(256),
-  })
-  .strict();
-const managedWorkflowSchema = z
-  .object({
-    id: z.string().regex(uuidV7Pattern),
-    tenantId: z.string().regex(uuidV7Pattern),
-    kind: z.enum(["alert", "case"]),
-    key: z.string().min(3).max(64),
-    displayName: z.string().min(1).max(120),
-    description: z.string().max(1000),
-    isDefault: z.boolean(),
-    status: z.enum(["active", "archived"]),
-    revision: z.number().int().min(1).max(maximumResourceVersion),
-    currentVersion: z.number().int().min(1).max(maximumResourceVersion),
-    current: definitionSchema,
-    createdAt: z.string(),
-    updatedAt: z.string(),
-    archivedAt: z.string().optional(),
-  })
-  .strict();
-const versionRecordSchema = z
-  .object({
-    tenantId: z.string().regex(uuidV7Pattern),
-    workflowId: z.string().regex(uuidV7Pattern),
-    definition: definitionSchema,
-    publishedByMembershipId: z.string().regex(uuidV7Pattern).optional(),
-    publisherDisplayName: z.string().max(200),
-    publishedAt: z.string(),
-  })
-  .strict();
-const simulationRequestSchema = z
-  .object({
-    version: z.number().int().min(0).max(maximumResourceVersion),
-    state: z.string().regex(keyPattern),
-    commentPresent: z.boolean(),
-    roles: z.array(z.string().regex(keyPattern)).max(64),
-    permissions: z.array(permissionSchema).max(64),
-    providedCustomFields: z.array(z.string().regex(keyPattern)).max(64),
-    facts: z
-      .array(
-        z
-          .object({
-            field: z.string().regex(conditionFieldPattern),
-            value: conditionValueSchema.optional(),
-          })
-          .strict(),
-      )
-      .max(256),
-  })
-  .strict();
-const transitionSimulationSchema = z
-  .object({
-    key: z.string().regex(keyPattern),
-    from: z.string().regex(keyPattern),
-    to: z.string().regex(keyPattern),
-    reopen: z.boolean(),
-    eligible: z.boolean(),
-    gates: z
-      .object({
-        commentSatisfied: z.boolean(),
-        roleSatisfied: z.boolean(),
-        permissionsSatisfied: z.boolean(),
-        customFieldsSatisfied: z.boolean(),
-        conditionSatisfied: z.boolean(),
-      })
-      .strict(),
-    missingRoles: z.array(z.string().regex(keyPattern)).max(64),
-    missingPermissions: z.array(permissionSchema).max(64),
-    missingCustomFields: z.array(z.string().regex(keyPattern)).max(64),
-    effects: z.array(effectSchema).min(2).max(4),
-  })
-  .strict();
-const simulationResultSchema = z
-  .object({
-    workflowId: z.string().regex(uuidV7Pattern),
-    kind: z.enum(["alert", "case"]),
-    version: z.number().int().min(1).max(maximumResourceVersion),
-    explanatory: z.literal(true),
-    transitions: z.array(transitionSimulationSchema).max(256),
-  })
-  .strict();
+const stateSchema = z.strictObject({
+  key: z.string().regex(keyPattern),
+  initial: z.boolean(),
+  terminal: z.boolean(),
+  visibility: z.enum(["internal", "customer"]),
+  actions: z
+    .array(
+      z.strictObject({
+        action: actionSchema,
+        effects: z.array(effectSchema).min(2).max(4),
+      }),
+    )
+    .max(7),
+});
+const transitionSchema = z.strictObject({
+  key: z.string().regex(keyPattern),
+  from: z.string().regex(keyPattern),
+  to: z.string().regex(keyPattern),
+  requiredComment: z.boolean(),
+  reopen: z.boolean(),
+  requiredRoles: z.array(z.string().regex(keyPattern)).max(64),
+  requiredPermissions: z.array(permissionSchema).max(64),
+  requiredCustomFields: z.array(z.string().regex(keyPattern)).max(64),
+  condition: conditionSchema.optional(),
+  effects: z.array(effectSchema).min(2).max(4),
+});
+const designSchema = z.strictObject({
+  states: z.array(stateSchema).min(2).max(64),
+  transitions: z.array(transitionSchema).min(1).max(256),
+});
+const definitionSchema = z.strictObject({
+  id: z.string().regex(uuidV7Pattern),
+  kind: z.enum(["alert", "case"]),
+  version: z.number().int().min(1).max(maximumResourceVersion),
+  initialState: z.string().regex(keyPattern),
+  states: z.array(stateSchema).min(2).max(64),
+  transitions: z.array(transitionSchema).min(1).max(256),
+});
+const managedWorkflowSchema = z.strictObject({
+  id: z.string().regex(uuidV7Pattern),
+  tenantId: z.string().regex(uuidV7Pattern),
+  kind: z.enum(["alert", "case"]),
+  key: z.string().min(3).max(64),
+  displayName: z.string().min(1).max(120),
+  description: z.string().max(1000),
+  isDefault: z.boolean(),
+  status: z.enum(["active", "archived"]),
+  revision: z.number().int().min(1).max(maximumResourceVersion),
+  currentVersion: z.number().int().min(1).max(maximumResourceVersion),
+  current: definitionSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  archivedAt: z.string().optional(),
+});
+const versionRecordSchema = z.strictObject({
+  tenantId: z.string().regex(uuidV7Pattern),
+  workflowId: z.string().regex(uuidV7Pattern),
+  definition: definitionSchema,
+  publishedByMembershipId: z.string().regex(uuidV7Pattern).optional(),
+  publisherDisplayName: z.string().max(200),
+  publishedAt: z.string(),
+});
+const simulationRequestSchema = z.strictObject({
+  version: z.number().int().min(0).max(maximumResourceVersion),
+  state: z.string().regex(keyPattern),
+  commentPresent: z.boolean(),
+  roles: z.array(z.string().regex(keyPattern)).max(64),
+  permissions: z.array(permissionSchema).max(64),
+  providedCustomFields: z.array(z.string().regex(keyPattern)).max(64),
+  facts: z
+    .array(
+      z.strictObject({
+        field: z.string().regex(conditionFieldPattern),
+        value: conditionValueSchema.optional(),
+      }),
+    )
+    .max(256),
+});
+const transitionSimulationSchema = z.strictObject({
+  key: z.string().regex(keyPattern),
+  from: z.string().regex(keyPattern),
+  to: z.string().regex(keyPattern),
+  reopen: z.boolean(),
+  eligible: z.boolean(),
+  gates: z.strictObject({
+    commentSatisfied: z.boolean(),
+    roleSatisfied: z.boolean(),
+    permissionsSatisfied: z.boolean(),
+    customFieldsSatisfied: z.boolean(),
+    conditionSatisfied: z.boolean(),
+  }),
+  missingRoles: z.array(z.string().regex(keyPattern)).max(64),
+  missingPermissions: z.array(permissionSchema).max(64),
+  missingCustomFields: z.array(z.string().regex(keyPattern)).max(64),
+  effects: z.array(effectSchema).min(2).max(4),
+});
+const simulationResultSchema = z.strictObject({
+  workflowId: z.string().regex(uuidV7Pattern),
+  kind: z.enum(["alert", "case"]),
+  version: z.number().int().min(1).max(maximumResourceVersion),
+  explanatory: z.literal(true),
+  transitions: z.array(transitionSimulationSchema).max(256),
+});
 
 export const workflowAdministrationApi: WorkflowAdministrationApi = {
   async list({
@@ -953,8 +921,7 @@ async function projectMutationResult<T>(
   const raw = unwrap(result);
   assertBoundedProjection(raw);
   const envelope = z
-    .object({ workflow: managedWorkflowSchema, replayed: z.boolean() })
-    .strict()
+    .strictObject({ workflow: managedWorkflowSchema, replayed: z.boolean() })
     .safeParse(raw);
   if (!envelope.success) throw projectionMismatch();
   const value = projectManagedWorkflow(
@@ -982,11 +949,10 @@ function projectWorkflowPage(
 ): WorkflowPage {
   assertBoundedProjection(value);
   const parsed = z
-    .object({
+    .strictObject({
       items: z.array(managedWorkflowSchema).max(100),
       nextCursor: z.string().regex(cursorPattern).optional(),
     })
-    .strict()
     .safeParse(value);
   if (!parsed.success) throw projectionMismatch();
   if (
@@ -1091,7 +1057,7 @@ function projectVersionPage(
 ): WorkflowVersionPage {
   assertBoundedProjection(value);
   const parsed = z
-    .object({
+    .strictObject({
       items: z.array(versionRecordSchema).max(100),
       nextVersion: z
         .number()
@@ -1100,7 +1066,6 @@ function projectVersionPage(
         .max(maximumResourceVersion)
         .optional(),
     })
-    .strict()
     .safeParse(value);
   if (!parsed.success) throw projectionMismatch();
   if (parsed.data.items.length > expected.limit) throw projectionMismatch();
@@ -1188,6 +1153,9 @@ function projectSimulationResult(
   ) {
     throw projectionMismatch();
   }
+  const requestedRoles = new Set(request.roles);
+  const requestedPermissions = new Set(request.permissions);
+  const requestedFields = new Set(request.providedCustomFields);
   let previous = "";
   for (const transition of result.transitions) {
     const permissionPrefix = `${result.kind}.`;
@@ -1211,13 +1179,11 @@ function projectSimulationResult(
         (permission) => !permission.startsWith(permissionPrefix),
       ) ||
       !isCanonicalEffectPlan(transition.effects) ||
-      transition.missingRoles.some((role) => request.roles.includes(role)) ||
+      transition.missingRoles.some((role) => requestedRoles.has(role)) ||
       transition.missingPermissions.some((permission) =>
-        request.permissions.includes(permission),
+        requestedPermissions.has(permission),
       ) ||
-      transition.missingCustomFields.some((field) =>
-        request.providedCustomFields.includes(field),
-      )
+      transition.missingCustomFields.some((field) => requestedFields.has(field))
     ) {
       throw projectionMismatch();
     }

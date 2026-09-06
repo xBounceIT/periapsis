@@ -29,8 +29,15 @@ import {
   ShieldX,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { RouteObject } from "react-router";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -49,7 +56,6 @@ import {
   buildCustomFieldImportRequest,
   customFieldImportDefaultRetentionSeconds,
   customFieldImportExample,
-  customFieldImportRouteDescriptor,
   humanizeCustomFieldImportKey,
   isCustomFieldImportTerminal,
   parseCustomFieldImportRows,
@@ -84,9 +90,17 @@ const retentionOptions = [
   { label: "30 days", value: 2_592_000 },
 ] as const;
 
-export function TenantCustomFieldImportPage({
+export function TenantCustomFieldImportPage(
+  props: CustomFieldImportPageProps = {},
+): React.JSX.Element {
+  const model = useTenantCustomFieldImportPageModel(props);
+  if (model.kind === "content") return model.content;
+  return <TenantCustomFieldImportPageView model={model.data} />;
+}
+
+function useTenantCustomFieldImportPageModel({
   api = customFieldImportApi,
-}: CustomFieldImportPageProps = {}): React.JSX.Element {
+}: CustomFieldImportPageProps = {}) {
   const { clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const queryClient = useQueryClient();
@@ -123,9 +137,11 @@ export function TenantCustomFieldImportPage({
   const [settledIdentity, setSettledIdentity] = useState(identityKey);
   const stateIsCurrent = settledIdentity === identityKey;
   const identity = useRef({ key: identityKey, token: {} });
-  if (identity.current.key !== identityKey) {
-    identity.current = { key: identityKey, token: {} };
-  }
+  useLayoutEffect(() => {
+    if (identity.current.key !== identityKey) {
+      identity.current = { key: identityKey, token: {} };
+    }
+  }, [identityKey]);
 
   useEffect(() => {
     if (!ready) return;
@@ -166,46 +182,28 @@ export function TenantCustomFieldImportPage({
     [],
   );
 
-  const jobQuery = useQuery({
-    enabled: Boolean(jobSeed) && selectedPermission && stateIsCurrent,
-    gcTime: 0,
-    queryKey: ["custom-field-import-job", tenantId, objectType, jobSeed?.id],
-    queryFn: ({ signal }) =>
-      api.get({
-        jobId: jobSeed!.id,
-        objectType,
-        signal,
-        tenantId,
-      }),
-    refetchInterval: (query) =>
-      isCustomFieldImportTerminal(query.state.data?.state ?? "pending")
-        ? false
-        : 2_000,
+  const { job, jobQuery, resultsQuery, results } = useImportJobQueries({
+    api,
+    jobSeed,
+    selectedPermission,
+    stateIsCurrent,
+    tenantId,
+    objectType,
   });
-  const job = stateIsCurrent ? (jobQuery.data ?? jobSeed) : undefined;
-  const terminal = job ? isCustomFieldImportTerminal(job.state) : false;
-  const resultsQuery = useInfiniteQuery({
-    enabled:
-      Boolean(job) && selectedPermission && Boolean(job?.progress.processed),
-    gcTime: 0,
-    queryKey: ["custom-field-import-results", tenantId, objectType, job?.id],
-    initialPageParam: undefined as number | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      api.listResults({
-        ...(pageParam === undefined ? {} : { after: pageParam }),
-        jobId: job!.id,
-        objectType,
-        pageSize: 100,
-        signal,
-        tenantId,
-      }),
-    getNextPageParam: (lastPage) => lastPage.nextAfter,
-    refetchInterval: terminal ? false : 2_000,
-  });
-  const results = useMemo(
-    () => resultsQuery.data?.pages.flatMap((page) => page.items) ?? [],
-    [resultsQuery.data],
+  const handleAccessError = useCallback(
+    (error: unknown): void => {
+      if (!(error instanceof CustomFieldImportApiError)) return;
+      if (error.status === 401) clearSession(session.id);
+      else if (error.status === 403) authority.reload();
+      else if (error.status === 404 || error.code === "projection_mismatch") {
+        setProblem(error);
+        // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change -- A 404 or rejected projection invalidates the current server job; this is error recovery, not derived prop state.
+        setJobSeed(undefined);
+      }
+    },
+    [authority, clearSession, session.id],
   );
+
   const backgroundError = jobQuery.error ?? resultsQuery.error;
 
   useEffect(() => {
@@ -218,7 +216,7 @@ export function TenantCustomFieldImportPage({
     }
     handledBackgroundError.current = backgroundError;
     handleAccessError(backgroundError);
-  }, [backgroundError, stateIsCurrent]);
+  }, [backgroundError, handleAccessError, stateIsCurrent]);
 
   useEffect(() => {
     if (
@@ -241,19 +239,10 @@ export function TenantCustomFieldImportPage({
   }, [job, queryClient, tenantId]);
 
   if (!stateIsCurrent || (tenantId && authority.status === "loading")) {
-    return <ImportBoundary loading />;
+    return { kind: "content" as const, content: <ImportBoundary loading /> };
   }
-  if (!canImportAlert && !canImportCase) return <ImportBoundary />;
-
-  function handleAccessError(error: unknown): void {
-    if (!(error instanceof CustomFieldImportApiError)) return;
-    if (error.status === 401) clearSession(session.id);
-    else if (error.status === 403) authority.reload();
-    else if (error.status === 404 || error.code === "projection_mismatch") {
-      setProblem(error);
-      setJobSeed(undefined);
-    }
-  }
+  if (!canImportAlert && !canImportCase)
+    return { kind: "content" as const, content: <ImportBoundary /> };
 
   function review(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -331,6 +320,7 @@ export function TenantCustomFieldImportPage({
     } finally {
       if (ownsMutation(boundary)) {
         mutation.current = undefined;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This finally runs on success and failure; its request-ownership guard prevents an older request clearing a newer loading flag.
         setPending(false);
       }
     }
@@ -383,11 +373,83 @@ export function TenantCustomFieldImportPage({
     } finally {
       if (ownsMutation(boundary)) {
         mutation.current = undefined;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This finally runs on success and failure; its request-ownership guard prevents an older request clearing a newer loading flag.
         setPending(false);
       }
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      backgroundError,
+      canImportAlert,
+      canImportCase,
+      cancel,
+      draftSummary,
+      job,
+      jobQuery,
+      mode,
+      objectType,
+      pending,
+      problem,
+      results,
+      resultsQuery,
+      retentionSeconds,
+      review,
+      reviewed,
+      selectedPermission,
+      session,
+      setDraftSummary,
+      setMode,
+      setObjectType,
+      setProblem,
+      setRetentionSeconds,
+      setReviewed,
+      setSource,
+      source,
+      submit,
+    },
+  };
+}
+
+function TenantCustomFieldImportPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantCustomFieldImportPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    backgroundError,
+    canImportAlert,
+    canImportCase,
+    cancel,
+    draftSummary,
+    job,
+    jobQuery,
+    mode,
+    objectType,
+    pending,
+    problem,
+    results,
+    resultsQuery,
+    retentionSeconds,
+    review,
+    reviewed,
+    selectedPermission,
+    session,
+    setDraftSummary,
+    setMode,
+    setObjectType,
+    setProblem,
+    setRetentionSeconds,
+    setReviewed,
+    setSource,
+    source,
+    submit,
+  } = model;
   return (
     <div className="content content--wide custom-field-import">
       <header className="custom-field-import__hero">
@@ -503,72 +565,16 @@ export function TenantCustomFieldImportPage({
           </label>
         </section>
 
-        <section
-          className="custom-field-import__editor"
-          aria-labelledby="import-editor-title"
-        >
-          <header>
-            <div>
-              <p className="section-label">04 · Rows</p>
-              <h2 id="import-editor-title">JSON change set</h2>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSource(customFieldImportExample);
-                setDraftSummary(undefined);
-                setProblem(undefined);
-              }}
-            >
-              Reset example
-            </Button>
-          </header>
-          <p>
-            Omit <code>value</code> to leave a field unchanged. Use explicit{" "}
-            <code>null</code> to clear it;
-            <code> ""</code> remains an intentional empty string.
-          </p>
-          <label>
-            <span className="sr-only">Import rows JSON</span>
-            <Textarea
-              aria-describedby="import-editor-help"
-              className="custom-field-import__textarea"
-              spellCheck={false}
-              value={source}
-              onChange={(event) => {
-                setSource(event.currentTarget.value);
-                setDraftSummary(undefined);
-                setReviewed(undefined);
-                setProblem(undefined);
-              }}
-            />
-          </label>
-          <div
-            id="import-editor-help"
-            className="custom-field-import__editor-foot"
-          >
-            <span>
-              {new TextEncoder().encode(source).length.toLocaleString("en-US")}{" "}
-              bytes
-            </span>
-            <span>Maximum 10,000 rows · 100,000 field cells · 32 MiB</span>
-          </div>
-          <Button
-            type="submit"
-            disabled={
-              pending ||
-              !selectedPermission ||
-              Boolean(job && !isCustomFieldImportTerminal(job.state))
-            }
-          >
-            <ShieldCheck aria-hidden="true" />{" "}
-            {job && !isCustomFieldImportTerminal(job.state)
-              ? "Current import is active"
-              : "Review pinned import"}
-          </Button>
-        </section>
+        <ImportDocumentFields
+          job={job}
+          pending={pending}
+          selectedPermission={selectedPermission}
+          setDraftSummary={setDraftSummary}
+          setProblem={setProblem}
+          setReviewed={setReviewed}
+          setSource={setSource}
+          source={source}
+        />
       </form>
 
       {draftSummary ? <DraftSummary summary={draftSummary} /> : null}
@@ -599,65 +605,13 @@ export function TenantCustomFieldImportPage({
         />
       ) : null}
 
-      <Dialog
-        open={reviewed !== undefined}
-        onOpenChange={(open) => {
-          if (!open && !pending) setReviewed(undefined);
-        }}
-      >
-        <DialogContent className="custom-field-import__review">
-          <DialogHeader>
-            <p className="section-label">Immutable request receipt</p>
-            <DialogTitle>
-              {reviewed?.request.mode === "commit" ? "Commit" : "Validate"}{" "}
-              {reviewed ? reviewedImportLabel(reviewed) : "0 rows"}?
-            </DialogTitle>
-            <DialogDescription>
-              The worker rechecks current authority and each expected version.
-              Rows never expand after this review.
-            </DialogDescription>
-          </DialogHeader>
-          {reviewed ? (
-            <DraftSummary summary={reviewed.summary} compact />
-          ) : null}
-          <div className="custom-field-import__presence-key">
-            <span>
-              <i data-kind="missing" /> {reviewed?.summary.missingValues ?? 0}{" "}
-              unchanged
-            </span>
-            <span>
-              <i data-kind="null" /> {reviewed?.summary.nullValues ?? 0}{" "}
-              explicit null
-            </span>
-            <span>
-              <i data-kind="empty" /> {reviewed?.summary.emptyValues ?? 0} empty
-              string
-            </span>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending}
-              onClick={() => setReviewed(undefined)}
-            >
-              Keep editing
-            </Button>
-            <Button
-              type="button"
-              disabled={pending || session.csrfToken.trim() === ""}
-              onClick={() => void submit()}
-            >
-              {pending ? (
-                <LoaderCircle className="is-spinning" aria-hidden="true" />
-              ) : (
-                <Layers3 aria-hidden="true" />
-              )}
-              Queue {reviewed?.request.mode === "commit" ? "commit" : "dry run"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportReviewDialog
+        pending={pending}
+        reviewed={reviewed}
+        session={session}
+        setReviewed={setReviewed}
+        submit={submit}
+      />
     </div>
   );
 }
@@ -982,9 +936,227 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-export const customFieldImportRoutes = [
-  {
-    path: customFieldImportRouteDescriptor.path.slice(1),
-    Component: TenantCustomFieldImportPage,
-  },
-] satisfies RouteObject[];
+interface ImportReviewDialogProps {
+  pending: boolean;
+  reviewed: ReviewedImport | undefined;
+  session: ReturnType<typeof useSession>["session"];
+  setReviewed: React.Dispatch<React.SetStateAction<ReviewedImport | undefined>>;
+  submit: () => Promise<void>;
+}
+
+function ImportReviewDialog({
+  pending,
+  reviewed,
+  session,
+  setReviewed,
+  submit,
+}: ImportReviewDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open={reviewed !== undefined}
+      onOpenChange={(open) => {
+        if (!open && !pending) setReviewed(undefined);
+      }}
+    >
+      <DialogContent className="custom-field-import__review">
+        <DialogHeader>
+          <p className="section-label">Immutable request receipt</p>
+          <DialogTitle>
+            {reviewed?.request.mode === "commit" ? "Commit" : "Validate"}{" "}
+            {reviewed ? reviewedImportLabel(reviewed) : "0 rows"}?
+          </DialogTitle>
+          <DialogDescription>
+            The worker rechecks current authority and each expected version.
+            Rows never expand after this review.
+          </DialogDescription>
+        </DialogHeader>
+        {reviewed ? <DraftSummary summary={reviewed.summary} compact /> : null}
+        <div className="custom-field-import__presence-key">
+          <span>
+            <i data-kind="missing" /> {reviewed?.summary.missingValues ?? 0}{" "}
+            unchanged
+          </span>
+          <span>
+            <i data-kind="null" /> {reviewed?.summary.nullValues ?? 0} explicit
+            null
+          </span>
+          <span>
+            <i data-kind="empty" /> {reviewed?.summary.emptyValues ?? 0} empty
+            string
+          </span>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => setReviewed(undefined)}
+          >
+            Keep editing
+          </Button>
+          <Button
+            type="button"
+            disabled={pending || session.csrfToken.trim() === ""}
+            onClick={() => void submit()}
+          >
+            {pending ? (
+              <LoaderCircle className="is-spinning" aria-hidden="true" />
+            ) : (
+              <Layers3 aria-hidden="true" />
+            )}
+            Queue {reviewed?.request.mode === "commit" ? "commit" : "dry run"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ImportDocumentFieldsProps {
+  job: CustomFieldImportJobView | undefined;
+  pending: boolean;
+  selectedPermission: boolean;
+  setDraftSummary: React.Dispatch<
+    React.SetStateAction<CustomFieldImportDraftSummary | undefined>
+  >;
+  setProblem: React.Dispatch<unknown>;
+  setReviewed: React.Dispatch<React.SetStateAction<ReviewedImport | undefined>>;
+  setSource: React.Dispatch<React.SetStateAction<string>>;
+  source: string;
+}
+
+function ImportDocumentFields({
+  job,
+  pending,
+  selectedPermission,
+  setDraftSummary,
+  setProblem,
+  setReviewed,
+  setSource,
+  source,
+}: ImportDocumentFieldsProps): React.JSX.Element {
+  return (
+    <section
+      className="custom-field-import__editor"
+      aria-labelledby="import-editor-title"
+    >
+      <header>
+        <div>
+          <p className="section-label">04 · Rows</p>
+          <h2 id="import-editor-title">JSON change set</h2>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setSource(customFieldImportExample);
+            setDraftSummary(undefined);
+            setProblem(undefined);
+          }}
+        >
+          Reset example
+        </Button>
+      </header>
+      <p>
+        Omit <code>value</code> to leave a field unchanged. Use explicit{" "}
+        <code>null</code> to clear it;
+        <code> ""</code> remains an intentional empty string.
+      </p>
+      <label>
+        <span className="sr-only">Import rows JSON</span>
+        <Textarea
+          aria-describedby="import-editor-help"
+          className="custom-field-import__textarea"
+          spellCheck={false}
+          value={source}
+          onChange={(event) => {
+            setSource(event.currentTarget.value);
+            setDraftSummary(undefined);
+            setReviewed(undefined);
+            setProblem(undefined);
+          }}
+        />
+      </label>
+      <div id="import-editor-help" className="custom-field-import__editor-foot">
+        <span>
+          {new TextEncoder().encode(source).length.toLocaleString("en-US")}{" "}
+          bytes
+        </span>
+        <span>Maximum 10,000 rows · 100,000 field cells · 32 MiB</span>
+      </div>
+      <Button
+        type="submit"
+        disabled={
+          pending ||
+          !selectedPermission ||
+          Boolean(job && !isCustomFieldImportTerminal(job.state))
+        }
+      >
+        <ShieldCheck aria-hidden="true" />{" "}
+        {job && !isCustomFieldImportTerminal(job.state)
+          ? "Current import is active"
+          : "Review pinned import"}
+      </Button>
+    </section>
+  );
+}
+
+function useImportJobQueries({
+  api,
+  jobSeed,
+  selectedPermission,
+  stateIsCurrent,
+  tenantId,
+  objectType,
+}: {
+  api: CustomFieldImportApi;
+  jobSeed: CustomFieldImportJobView | undefined;
+  selectedPermission: boolean;
+  stateIsCurrent: boolean;
+  tenantId: string;
+  objectType: CustomFieldObjectType;
+}) {
+  const jobQuery = useQuery({
+    enabled: Boolean(jobSeed) && selectedPermission && stateIsCurrent,
+    gcTime: 0,
+    queryKey: ["custom-field-import-job", tenantId, objectType, jobSeed?.id],
+    queryFn: ({ signal }) =>
+      api.get({
+        jobId: jobSeed!.id,
+        objectType,
+        signal,
+        tenantId,
+      }),
+    refetchInterval: (query) =>
+      isCustomFieldImportTerminal(query.state.data?.state ?? "pending")
+        ? false
+        : 2_000,
+  });
+  const job = stateIsCurrent ? (jobQuery.data ?? jobSeed) : undefined;
+  const terminal = job ? isCustomFieldImportTerminal(job.state) : false;
+  const resultsQuery = useInfiniteQuery({
+    enabled:
+      Boolean(job) && selectedPermission && Boolean(job?.progress.processed),
+    gcTime: 0,
+    queryKey: ["custom-field-import-results", tenantId, objectType, job?.id],
+    initialPageParam: undefined as number | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      api.listResults({
+        ...(pageParam === undefined ? {} : { after: pageParam }),
+        jobId: job!.id,
+        objectType,
+        pageSize: 100,
+        signal,
+        tenantId,
+      }),
+    getNextPageParam: (lastPage) => lastPage.nextAfter,
+    refetchInterval: terminal ? false : 2_000,
+  });
+  const results = useMemo(
+    () => resultsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [resultsQuery.data],
+  );
+
+  return { job, jobQuery, resultsQuery, results, terminal };
+}

@@ -1,16 +1,10 @@
-import type { RouteObject } from "react-router";
-
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
+import { workflowManagePermission, workflowReadPermission } from "./model";
 import {
   workflowAdministrationApi,
   type WorkflowAdministrationApi,
 } from "./workflow-api";
-import {
-  workflowAdministrationRouteDescriptor,
-  workflowManagePermission,
-  workflowReadPermission,
-} from "./model";
 import { WorkflowWorkspace } from "./workflow-workspace";
 
 interface WorkflowAdministrationPageProps {
@@ -55,18 +49,4 @@ export function TenantWorkflowAdministrationPage({
       />
     </div>
   );
-}
-
-export const workflowAdministrationRoutes = [
-  {
-    path: childRoutePath(workflowAdministrationRouteDescriptor.path),
-    Component: TenantWorkflowAdministrationPage,
-  },
-] satisfies RouteObject[];
-
-function childRoutePath(absolutePath: string): string {
-  if (!absolutePath.startsWith("/") || absolutePath.length < 2) {
-    throw new TypeError("Workflow route descriptors must be absolute.");
-  }
-  return absolutePath.slice(1);
 }

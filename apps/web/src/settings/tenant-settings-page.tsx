@@ -1,4 +1,3 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
@@ -15,6 +14,11 @@ import {
 } from "@periapsis/ui/components/ui/card";
 import { Input } from "@periapsis/ui/components/ui/input";
 import {
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import {
   CheckCircle2,
   Globe2,
   Palette,
@@ -24,12 +28,14 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
-  useState,
   type CSSProperties,
   type FormEvent,
 } from "react";
+import { reduceWorkspaceState } from "../pages/workspace-state";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -77,9 +83,17 @@ interface TenantPreviewStyle extends CSSProperties {
   "--tenant-preview-primary": string;
 }
 
-export function TenantSettingsPage({
+export function TenantSettingsPage(
+  props: TenantSettingsPageProps = {},
+): React.JSX.Element {
+  const model = useTenantSettingsPageModel(props);
+  if (model.kind === "content") return model.content;
+  return <TenantSettingsPageView model={model.data} />;
+}
+
+function useTenantSettingsPageModel({
   api = tenantSettingsApi,
-}: TenantSettingsPageProps = {}): React.JSX.Element {
+}: TenantSettingsPageProps = {}) {
   const { clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const queryClient = useQueryClient();
@@ -94,15 +108,50 @@ export function TenantSettingsPage({
   );
   const pairKey = session.id + ":" + (tenantId ?? "inactive");
   const pairKeyRef = useRef(pairKey);
-  pairKeyRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairKeyRef.current = pairKey;
+  }, [pairKey]);
   const loadedPairRef = useRef<string | null>(null);
-  const [draft, setDraft] = useState<TenantSettingsDraft>(emptyDraft);
-  const [fieldErrors, setFieldErrors] = useState<TenantSettingsFieldErrors>({});
-  const [reason, setReason] = useState("");
-  const [reasonError, setReasonError] = useState<string | null>(null);
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<TenantSettingsPageState>,
+    undefined,
+    (): TenantSettingsPageState => ({
+      draft: emptyDraft,
+      fieldErrors: {},
+      reason: "",
+      reasonError: null,
+      mutationError: null,
+      notice: null,
+      isSaving: false,
+    }),
+  );
+  const {
+    draft,
+    fieldErrors,
+    reason,
+    reasonError,
+    mutationError,
+    notice,
+    isSaving,
+  } = workspaceState;
+  const { setReason, setReasonError, setMutationError, setIsSaving } = useMemo(
+    () => ({
+      setReason: (
+        value: React.SetStateAction<TenantSettingsPageState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setReasonError: (
+        value: React.SetStateAction<TenantSettingsPageState["reasonError"]>,
+      ) => updateWorkspaceState({ reasonError: value }),
+      setMutationError: (
+        value: React.SetStateAction<TenantSettingsPageState["mutationError"]>,
+      ) => updateWorkspaceState({ mutationError: value }),
+      setIsSaving: (
+        value: React.SetStateAction<TenantSettingsPageState["isSaving"]>,
+      ) => updateWorkspaceState({ isSaving: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const queryKey = tenantSettingsQueryKey(session.id, tenantId ?? "inactive");
   const settingsQuery = useQuery({
     queryKey,
@@ -116,12 +165,14 @@ export function TenantSettingsPage({
     if (!settingsQuery.data) return;
     const changedTenant = loadedPairRef.current !== pairKey;
     loadedPairRef.current = pairKey;
-    setDraft(tenantSettingsDraftFrom(settingsQuery.data.value));
-    setFieldErrors({});
-    setReason("");
-    setReasonError(null);
+    updateWorkspaceState({
+      draft: tenantSettingsDraftFrom(settingsQuery.data.value),
+      fieldErrors: {},
+      reason: "",
+      reasonError: null,
+    });
     if (changedTenant) setMutationError(null);
-  }, [pairKey, settingsQuery.data]);
+  }, [setMutationError, pairKey, settingsQuery.data]);
 
   const previewStyle = useMemo<TenantPreviewStyle>(
     () => ({
@@ -135,10 +186,12 @@ export function TenantSettingsPage({
   );
 
   function change(field: keyof TenantSettingsDraft, value: string): void {
-    setDraft((current) => ({ ...current, [field]: value }));
-    setFieldErrors((current) => ({ ...current, [field]: undefined }));
-    setMutationError(null);
-    setNotice(null);
+    updateWorkspaceState({
+      draft: (current) => ({ ...current, [field]: value }),
+      fieldErrors: (current) => ({ ...current, [field]: undefined }),
+      mutationError: null,
+      notice: null,
+    });
   }
 
   async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -147,21 +200,24 @@ export function TenantSettingsPage({
     if (!tenantId || !current || !canManage || isSaving) return;
     const normalized = normalizeTenantSettingsDraft(draft);
     if (!tenantSettingsDraftDiffers(current.value, normalized)) {
-      setMutationError(null);
-      setNotice(
-        "No tenant identity values changed; no audit event was created.",
-      );
+      updateWorkspaceState({
+        mutationError: null,
+        notice:
+          "No tenant identity values changed; no audit event was created.",
+      });
       return;
     }
     const errors = tenantSettingsDraftErrors(normalized);
     const nextReasonError = tenantSettingsReasonIsValid(reason)
       ? null
       : "Use 1–500 visible ASCII characters, without commas or surrounding spaces.";
-    setDraft(normalized);
-    setFieldErrors(errors);
-    setReasonError(nextReasonError);
-    setMutationError(null);
-    setNotice(null);
+    updateWorkspaceState({
+      draft: normalized,
+      fieldErrors: errors,
+      reasonError: nextReasonError,
+      mutationError: null,
+      notice: null,
+    });
     if (Object.keys(errors).length > 0 || nextReasonError) return;
 
     const expectedPair = pairKey;
@@ -176,23 +232,24 @@ export function TenantSettingsPage({
       );
       if (pairKeyRef.current !== expectedPair) return;
       queryClient.setQueryData<VersionedTenantSettings>(queryKey, updated);
-      setDraft(tenantSettingsDraftFrom(updated.value));
-      setReason("");
-      setNotice(
-        "Tenant identity updated. The server committed the new version and its audit event together.",
-      );
+      updateWorkspaceState({
+        draft: tenantSettingsDraftFrom(updated.value),
+        reason: "",
+        notice:
+          "Tenant identity updated. The server committed the new version and its audit event together.",
+      });
       announceTenantSettingsChanged(tenantId);
     } catch (caught) {
       if (pairKeyRef.current !== expectedPair) return;
       if (caught instanceof PhaseTwoApiError && caught.status === 412) {
         const refreshed = await settingsQuery.refetch();
         if (pairKeyRef.current !== expectedPair) return;
-        setNotice(null);
-        setMutationError(
-          refreshed.data
+        updateWorkspaceState({
+          notice: null,
+          mutationError: refreshed.data
             ? "Someone changed these settings first. The latest version is loaded; review it before saving again."
             : "Someone changed these settings first, and the latest version could not be reloaded.",
-        );
+        });
         if (refreshed.data) announceTenantSettingsChanged(tenantId);
         return;
       }
@@ -208,61 +265,53 @@ export function TenantSettingsPage({
         ),
       );
     } finally {
+      // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
       if (pairKeyRef.current === expectedPair) setIsSaving(false);
     }
   }
 
-  if (!tenantId || authority.status === "inactive") {
-    return (
-      <div className="content tenant-settings-page">
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Select a tenant to open its identity envelope.
-            </CardTitle>
-            <CardDescription>
-              Branding and regional settings always belong to one explicit
-              active tenant.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-  if (authority.status === "forbidden" || !canRead) {
-    return <ServerDenied resource="tenant branding and regional settings" />;
-  }
-  if (authority.status === "error") {
-    return (
-      <TenantSettingsLoadError
-        message={authority.message ?? "Tenant authority could not be resolved."}
-        onRetry={authority.reload}
-      />
-    );
-  }
-  if (authority.status !== "ready" || settingsQuery.isLoading) {
-    return <TenantSettingsSkeleton />;
-  }
-  if (
-    settingsQuery.error instanceof PhaseTwoApiError &&
-    settingsQuery.error.status === 403
-  ) {
-    return <ServerDenied resource="tenant branding and regional settings" />;
-  }
-  if (!settingsQuery.data) {
-    return (
-      <TenantSettingsLoadError
-        message={describePhaseTwoError(
-          settingsQuery.error,
-          "Tenant settings could not be loaded.",
-        )}
-        onRetry={() => void settingsQuery.refetch()}
-      />
-    );
-  }
-
-  const settings = settingsQuery.data.value;
+  const boundary = resolveTenantSettingsBoundary({
+    tenantId,
+    authority,
+    canRead,
+    settingsQuery,
+  });
+  if (boundary.kind === "content") return boundary;
+  const settings = boundary.settings;
   const hasChanges = tenantSettingsDraftDiffers(settings, draft);
+  return {
+    kind: "ready" as const,
+    data: {
+      canManage,
+      change,
+      draft,
+      fieldErrors,
+      hasChanges,
+      isSaving,
+      mutationError,
+      notice,
+      previewStyle,
+      reason,
+      reasonError,
+      save,
+      setMutationError,
+      setReason,
+      setReasonError,
+      settings,
+      settingsEtag: boundary.versioned.etag,
+    },
+  };
+}
+
+function TenantSettingsPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantSettingsPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { canManage, mutationError, notice } = model;
   return (
     <div className="content tenant-settings-page">
       <section
@@ -297,237 +346,7 @@ export function TenantSettingsPage({
         />
       ) : null}
 
-      <div className="tenant-settings-layout">
-        <aside
-          className="tenant-brand-preview"
-          style={previewStyle}
-          aria-label="Tenant identity preview"
-        >
-          <div className="tenant-brand-preview__orbit" aria-hidden="true">
-            <span />
-          </div>
-          <p className="tenant-brand-preview__label">Live shell preview</p>
-          <div className="tenant-brand-preview__identity">
-            <span className="tenant-brand-preview__mark" aria-hidden="true">
-              {draft.brandMark || "—"}
-            </span>
-            <div>
-              <strong>{draft.brandName || "Unnamed tenant"}</strong>
-              <small>Incident operations</small>
-            </div>
-          </div>
-          <dl>
-            <div>
-              <dt>
-                <Globe2 aria-hidden="true" /> Regional clock
-              </dt>
-              <dd>{draft.timezone || "Timezone pending"}</dd>
-            </div>
-            <div>
-              <dt>Interface locale</dt>
-              <dd>{draft.locale || "Locale pending"}</dd>
-            </div>
-            <div>
-              <dt>Committed version</dt>
-              <dd>v{settings.version}</dd>
-            </div>
-          </dl>
-        </aside>
-
-        <Card className="tenant-settings-card">
-          <CardHeader>
-            <div className="tenant-settings-card__title">
-              <span aria-hidden="true">
-                <Palette />
-              </span>
-              <div>
-                <CardTitle>Safe tenant presentation</CardTitle>
-                <CardDescription>
-                  Text and color values only. Server authorization and RLS are
-                  re-evaluated independently of this form.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form className="tenant-settings-form" onSubmit={save} noValidate>
-              <fieldset disabled={isSaving}>
-                <legend className="sr-only">Tenant identity values</legend>
-                <div className="tenant-settings-form__grid">
-                  <FormField
-                    htmlFor="tenant-brand-name"
-                    label="Brand name"
-                    {...(fieldErrors.brandName
-                      ? { error: fieldErrors.brandName }
-                      : {})}
-                    hint="Displayed as plain text in the authenticated shell."
-                  >
-                    <Input
-                      id="tenant-brand-name"
-                      value={draft.brandName}
-                      maxLength={80}
-                      readOnly={!canManage}
-                      aria-invalid={Boolean(fieldErrors.brandName)}
-                      aria-describedby={
-                        fieldErrors.brandName
-                          ? "tenant-brand-name-error"
-                          : "tenant-brand-name-hint"
-                      }
-                      onChange={(event) =>
-                        change("brandName", event.currentTarget.value)
-                      }
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor="tenant-brand-mark"
-                    label="Text mark"
-                    {...(fieldErrors.brandMark
-                      ? { error: fieldErrors.brandMark }
-                      : {})}
-                    hint="One to four uppercase letters or digits; no image URL."
-                  >
-                    <Input
-                      id="tenant-brand-mark"
-                      value={draft.brandMark}
-                      maxLength={4}
-                      readOnly={!canManage}
-                      className="tenant-settings-form__mark-input"
-                      aria-invalid={Boolean(fieldErrors.brandMark)}
-                      aria-describedby={
-                        fieldErrors.brandMark
-                          ? "tenant-brand-mark-error"
-                          : "tenant-brand-mark-hint"
-                      }
-                      onChange={(event) =>
-                        change(
-                          "brandMark",
-                          event.currentTarget.value.toUpperCase(),
-                        )
-                      }
-                    />
-                  </FormField>
-                  <ColorField
-                    id="tenant-primary-color"
-                    label="Primary color"
-                    value={draft.primaryColor}
-                    error={fieldErrors.primaryColor}
-                    readOnly={!canManage}
-                    onChange={(value) => change("primaryColor", value)}
-                  />
-                  <ColorField
-                    id="tenant-accent-color"
-                    label="Accent color"
-                    value={draft.accentColor}
-                    error={fieldErrors.accentColor}
-                    readOnly={!canManage}
-                    onChange={(value) => change("accentColor", value)}
-                  />
-                  <FormField
-                    htmlFor="tenant-timezone"
-                    label="Timezone"
-                    {...(fieldErrors.timezone
-                      ? { error: fieldErrors.timezone }
-                      : {})}
-                    hint="Canonical IANA name; the server performs the final lookup."
-                  >
-                    <Input
-                      id="tenant-timezone"
-                      list="tenant-timezone-suggestions"
-                      value={draft.timezone}
-                      maxLength={64}
-                      readOnly={!canManage}
-                      aria-invalid={Boolean(fieldErrors.timezone)}
-                      aria-describedby={
-                        fieldErrors.timezone
-                          ? "tenant-timezone-error"
-                          : "tenant-timezone-hint"
-                      }
-                      onChange={(event) =>
-                        change("timezone", event.currentTarget.value)
-                      }
-                    />
-                    <datalist id="tenant-timezone-suggestions">
-                      <option value="UTC" />
-                      <option value="Europe/Rome" />
-                      <option value="Europe/London" />
-                      <option value="America/New_York" />
-                      <option value="Asia/Singapore" />
-                    </datalist>
-                  </FormField>
-                  <FormField
-                    htmlFor="tenant-locale"
-                    label="Locale"
-                    {...(fieldErrors.locale
-                      ? { error: fieldErrors.locale }
-                      : {})}
-                    hint="A BCP 47 tag, for example en-US or it-IT."
-                  >
-                    <Input
-                      id="tenant-locale"
-                      value={draft.locale}
-                      maxLength={35}
-                      readOnly={!canManage}
-                      aria-invalid={Boolean(fieldErrors.locale)}
-                      aria-describedby={
-                        fieldErrors.locale
-                          ? "tenant-locale-error"
-                          : "tenant-locale-hint"
-                      }
-                      onChange={(event) =>
-                        change("locale", event.currentTarget.value)
-                      }
-                    />
-                  </FormField>
-                </div>
-
-                {canManage ? (
-                  <div className="tenant-settings-form__commit">
-                    <FormField
-                      htmlFor="tenant-settings-reason"
-                      label="Audit reason"
-                      {...(reasonError ? { error: reasonError } : {})}
-                      hint="Non-secret operational reason; recorded in tenant audit and never reflected."
-                    >
-                      <Input
-                        id="tenant-settings-reason"
-                        value={reason}
-                        maxLength={500}
-                        autoComplete="off"
-                        aria-invalid={Boolean(reasonError)}
-                        aria-describedby={
-                          reasonError
-                            ? "tenant-settings-reason-error"
-                            : "tenant-settings-reason-hint"
-                        }
-                        onChange={(event) => {
-                          setReason(event.currentTarget.value);
-                          setReasonError(null);
-                          setMutationError(null);
-                        }}
-                      />
-                    </FormField>
-                    <div className="tenant-settings-form__actions">
-                      <p>
-                        <ShieldCheck aria-hidden="true" /> Strong precondition{" "}
-                        {settingsQuery.data.etag}
-                      </p>
-                      <Button type="submit" disabled={isSaving || !hasChanges}>
-                        <Save aria-hidden="true" />
-                        {isSaving ? "Committing…" : "Save identity"}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="tenant-settings-form__readonly">
-                    Manage permission is required to change these values. The
-                    fields remain visible for operational context.
-                  </p>
-                )}
-              </fieldset>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+      <TenantSettingsEditor model={model} />
     </div>
   );
 }
@@ -621,4 +440,383 @@ function TenantSettingsLoadError({
 
 function colorOrFallback(value: string, fallback: string): string {
   return /^#[0-9a-f]{6}$/u.test(value) ? value : fallback;
+}
+
+function TenantSettingsEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantSettingsPageView>["model"];
+}): React.ReactNode {
+  const { canManage, change, draft, fieldErrors, isSaving, save } = model;
+  return (
+    <div className="tenant-settings-layout">
+      <TenantBrandPreview model={model} />
+
+      <Card className="tenant-settings-card">
+        <CardHeader>
+          <div className="tenant-settings-card__title">
+            <span aria-hidden="true">
+              <Palette />
+            </span>
+            <div>
+              <CardTitle>Safe tenant presentation</CardTitle>
+              <CardDescription>
+                Text and color values only. Server authorization and RLS are
+                re-evaluated independently of this form.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <form className="tenant-settings-form" onSubmit={save} noValidate>
+            <fieldset disabled={isSaving}>
+              <legend className="sr-only">Tenant identity values</legend>
+              <div className="tenant-settings-form__grid">
+                <FormField
+                  htmlFor="tenant-brand-name"
+                  label="Brand name"
+                  {...(fieldErrors.brandName
+                    ? { error: fieldErrors.brandName }
+                    : {})}
+                  hint="Displayed as plain text in the authenticated shell."
+                >
+                  <Input
+                    id="tenant-brand-name"
+                    value={draft.brandName}
+                    maxLength={80}
+                    readOnly={!canManage}
+                    aria-invalid={Boolean(fieldErrors.brandName)}
+                    aria-describedby={
+                      fieldErrors.brandName
+                        ? "tenant-brand-name-error"
+                        : "tenant-brand-name-hint"
+                    }
+                    onChange={(event) =>
+                      change("brandName", event.currentTarget.value)
+                    }
+                  />
+                </FormField>
+                <TenantTextMarkField model={model} />
+                <ColorField
+                  id="tenant-primary-color"
+                  label="Primary color"
+                  value={draft.primaryColor}
+                  error={fieldErrors.primaryColor}
+                  readOnly={!canManage}
+                  onChange={(value) => change("primaryColor", value)}
+                />
+                <ColorField
+                  id="tenant-accent-color"
+                  label="Accent color"
+                  value={draft.accentColor}
+                  error={fieldErrors.accentColor}
+                  readOnly={!canManage}
+                  onChange={(value) => change("accentColor", value)}
+                />
+                <TenantTimezoneField model={model} />
+                <FormField
+                  htmlFor="tenant-locale"
+                  label="Locale"
+                  {...(fieldErrors.locale ? { error: fieldErrors.locale } : {})}
+                  hint="A BCP 47 tag, for example en-US or it-IT."
+                >
+                  <Input
+                    id="tenant-locale"
+                    value={draft.locale}
+                    maxLength={35}
+                    readOnly={!canManage}
+                    aria-invalid={Boolean(fieldErrors.locale)}
+                    aria-describedby={
+                      fieldErrors.locale
+                        ? "tenant-locale-error"
+                        : "tenant-locale-hint"
+                    }
+                    onChange={(event) =>
+                      change("locale", event.currentTarget.value)
+                    }
+                  />
+                </FormField>
+              </div>
+
+              {<TenantSettingsCommitActions model={model} />}
+            </fieldset>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface TenantSettingsPageState {
+  draft: TenantSettingsDraft;
+  fieldErrors: TenantSettingsFieldErrors;
+  reason: string;
+  reasonError: string | null;
+  mutationError: string | null;
+  notice: string | null;
+  isSaving: boolean;
+}
+
+function TenantBrandPreview({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantSettingsEditor>["model"];
+}): React.ReactNode {
+  const { draft, previewStyle, settings } = model;
+  return (
+    <aside
+      className="tenant-brand-preview"
+      style={previewStyle}
+      aria-label="Tenant identity preview"
+    >
+      <div className="tenant-brand-preview__orbit" aria-hidden="true">
+        <span />
+      </div>
+      <p className="tenant-brand-preview__label">Live shell preview</p>
+      <div className="tenant-brand-preview__identity">
+        <span className="tenant-brand-preview__mark" aria-hidden="true">
+          {draft.brandMark || "—"}
+        </span>
+        <div>
+          <strong>{draft.brandName || "Unnamed tenant"}</strong>
+          <small>Incident operations</small>
+        </div>
+      </div>
+      <dl>
+        <div>
+          <dt>
+            <Globe2 aria-hidden="true" /> Regional clock
+          </dt>
+          <dd>{draft.timezone || "Timezone pending"}</dd>
+        </div>
+        <div>
+          <dt>Interface locale</dt>
+          <dd>{draft.locale || "Locale pending"}</dd>
+        </div>
+        <div>
+          <dt>Committed version</dt>
+          <dd>v{settings.version}</dd>
+        </div>
+      </dl>
+    </aside>
+  );
+}
+
+function TenantTextMarkField({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantSettingsEditor>["model"];
+}): React.ReactNode {
+  const { canManage, change, draft, fieldErrors } = model;
+  return (
+    <FormField
+      htmlFor="tenant-brand-mark"
+      label="Text mark"
+      {...(fieldErrors.brandMark ? { error: fieldErrors.brandMark } : {})}
+      hint="One to four uppercase letters or digits; no image URL."
+    >
+      <Input
+        id="tenant-brand-mark"
+        value={draft.brandMark}
+        maxLength={4}
+        readOnly={!canManage}
+        className="tenant-settings-form__mark-input"
+        aria-invalid={Boolean(fieldErrors.brandMark)}
+        aria-describedby={
+          fieldErrors.brandMark
+            ? "tenant-brand-mark-error"
+            : "tenant-brand-mark-hint"
+        }
+        onChange={(event) =>
+          change("brandMark", event.currentTarget.value.toUpperCase())
+        }
+      />
+    </FormField>
+  );
+}
+
+function TenantTimezoneField({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantSettingsEditor>["model"];
+}): React.ReactNode {
+  const { canManage, change, draft, fieldErrors } = model;
+  return (
+    <FormField
+      htmlFor="tenant-timezone"
+      label="Timezone"
+      {...(fieldErrors.timezone ? { error: fieldErrors.timezone } : {})}
+      hint="Canonical IANA name; the server performs the final lookup."
+    >
+      <Input
+        id="tenant-timezone"
+        list="tenant-timezone-suggestions"
+        value={draft.timezone}
+        maxLength={64}
+        readOnly={!canManage}
+        aria-invalid={Boolean(fieldErrors.timezone)}
+        aria-describedby={
+          fieldErrors.timezone
+            ? "tenant-timezone-error"
+            : "tenant-timezone-hint"
+        }
+        onChange={(event) => change("timezone", event.currentTarget.value)}
+      />
+      <datalist id="tenant-timezone-suggestions">
+        <option value="UTC" />
+        <option value="Europe/Rome" />
+        <option value="Europe/London" />
+        <option value="America/New_York" />
+        <option value="Asia/Singapore" />
+      </datalist>
+    </FormField>
+  );
+}
+
+function TenantSettingsCommitActions({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantSettingsEditor>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    hasChanges,
+    isSaving,
+    reason,
+    reasonError,
+    setMutationError,
+    setReason,
+    setReasonError,
+    settingsEtag,
+  } = model;
+  return canManage ? (
+    <div className="tenant-settings-form__commit">
+      <FormField
+        htmlFor="tenant-settings-reason"
+        label="Audit reason"
+        {...(reasonError ? { error: reasonError } : {})}
+        hint="Non-secret operational reason; recorded in tenant audit and never reflected."
+      >
+        <Input
+          id="tenant-settings-reason"
+          value={reason}
+          maxLength={500}
+          autoComplete="off"
+          aria-invalid={Boolean(reasonError)}
+          aria-describedby={
+            reasonError
+              ? "tenant-settings-reason-error"
+              : "tenant-settings-reason-hint"
+          }
+          onChange={(event) => {
+            setReason(event.currentTarget.value);
+            setReasonError(null);
+            setMutationError(null);
+          }}
+        />
+      </FormField>
+      <div className="tenant-settings-form__actions">
+        <p>
+          <ShieldCheck aria-hidden="true" /> Strong precondition {settingsEtag}
+        </p>
+        <Button type="submit" disabled={isSaving || !hasChanges}>
+          <Save aria-hidden="true" />
+          {isSaving ? "Committing…" : "Save identity"}
+        </Button>
+      </div>
+    </div>
+  ) : (
+    <p className="tenant-settings-form__readonly">
+      Manage permission is required to change these values. The fields remain
+      visible for operational context.
+    </p>
+  );
+}
+
+function resolveTenantSettingsBoundary({
+  tenantId,
+  authority,
+  canRead,
+  settingsQuery,
+}: {
+  tenantId: string | null | undefined;
+  authority: ReturnType<typeof useTenantAuthority>;
+  canRead: boolean;
+  settingsQuery: UseQueryResult<VersionedTenantSettings>;
+}) {
+  if (!tenantId || authority.status === "inactive") {
+    return {
+      kind: "content" as const,
+      content: (
+        <div className="content tenant-settings-page">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Select a tenant to open its identity envelope.
+              </CardTitle>
+              <CardDescription>
+                Branding and regional settings always belong to one explicit
+                active tenant.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      ),
+    };
+  }
+  if (authority.status === "forbidden" || !canRead) {
+    return {
+      kind: "content" as const,
+      content: (
+        <ServerDenied resource="tenant branding and regional settings" />
+      ),
+    };
+  }
+  if (authority.status === "error") {
+    return {
+      kind: "content" as const,
+      content: (
+        <TenantSettingsLoadError
+          message={
+            authority.message ?? "Tenant authority could not be resolved."
+          }
+          onRetry={authority.reload}
+        />
+      ),
+    };
+  }
+  if (authority.status !== "ready" || settingsQuery.isLoading) {
+    return { kind: "content" as const, content: <TenantSettingsSkeleton /> };
+  }
+  if (
+    settingsQuery.error instanceof PhaseTwoApiError &&
+    settingsQuery.error.status === 403
+  ) {
+    return {
+      kind: "content" as const,
+      content: (
+        <ServerDenied resource="tenant branding and regional settings" />
+      ),
+    };
+  }
+  if (!settingsQuery.data) {
+    return {
+      kind: "content" as const,
+      content: (
+        <TenantSettingsLoadError
+          message={describePhaseTwoError(
+            settingsQuery.error,
+            "Tenant settings could not be loaded.",
+          )}
+          onRetry={() => void settingsQuery.refetch()}
+        />
+      ),
+    };
+  }
+
+  return {
+    kind: "ready" as const,
+    settings: settingsQuery.data.value,
+    versioned: settingsQuery.data,
+  };
 }

@@ -11,7 +11,7 @@ import type {
   DfirVisibility,
 } from "@periapsis/contracts";
 
-import { formatTenantInstant } from "../lib/tenant-date-time-context";
+import { formatTenantInstant } from "../lib/tenant-date-time";
 
 export type DfirPanel =
   | "iocs"
@@ -220,7 +220,7 @@ export function formatEvidenceBytes(value: number): string {
     amount /= 1_024;
     unit = units[index]!;
   }
-  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(amount)} ${unit}`;
+  return `${evidenceBytesFormatter.format(amount)} ${unit}`;
 }
 
 export function compactDigest(value: string): string {
@@ -228,3 +228,7 @@ export function compactDigest(value: string): string {
     ? `${value.slice(0, 12)}…${value.slice(-12)}`
     : "Invalid digest";
 }
+
+const evidenceBytesFormatter = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 1,
+});

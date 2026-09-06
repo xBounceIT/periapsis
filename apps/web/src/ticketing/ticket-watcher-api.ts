@@ -94,20 +94,17 @@ const displayNameSchema = z.string().superRefine((value, context) => {
     context.addIssue({ code: "custom", message: "Invalid display name" });
   }
 });
-const watcherSchema = z
-  .object({
-    userId: z.string().regex(watcherUuidV7Pattern),
-    displayName: displayNameSchema,
-    addedAt: canonicalInstantSchema,
-  })
-  .strict();
+const watcherSchema = z.strictObject({
+  userId: z.string().regex(watcherUuidV7Pattern),
+  displayName: displayNameSchema,
+  addedAt: canonicalInstantSchema,
+});
 const watcherPageSchema = z
-  .object({
+  .strictObject({
     items: z.array(watcherSchema).max(1000),
     version: resourceVersionSchema,
     updatedAt: canonicalInstantSchema,
   })
-  .strict()
   .superRefine((page, context) => {
     const seen = new Set<string>();
     for (const [index, watcher] of page.items.entries()) {

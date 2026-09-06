@@ -1,5 +1,3 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
-import type { ActivityProjection } from "@periapsis/contracts";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -9,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@periapsis/ui/components/ui/card";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   Activity,
   BellRing,
@@ -19,16 +18,16 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
+import {
+  mergeActivityPages,
+  type OperatorActivity,
+} from "./global-activity-page-model";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
 import { FocusedError } from "../components/focused-error";
 import { TenantInstant } from "../lib/tenant-date-time-context";
-import {
-  describeTicketingError,
-  type CursorPage,
-  type TicketKind,
-} from "../lib/ticketing-api";
+import { describeTicketingError, type TicketKind } from "../lib/ticketing-api";
 import { useTicketingApi } from "./ticketing-context";
 import {
   hasAllTicketPermissionsAtOneScope,
@@ -37,14 +36,7 @@ import {
   kindLabelPlural,
 } from "./ticketing-model";
 
-type OperatorActivity = Extract<ActivityProjection, { projection: "operator" }>;
-
-interface FeedProjection {
-  invalid: boolean;
-  items: OperatorActivity[];
-}
-
-export function GlobalActivityPage(): React.JSX.Element {
+function useGlobalActivityPageState() {
   const api = useTicketingApi();
   const { session } = useSession();
   const authority = useTenantAuthority();
@@ -81,7 +73,32 @@ export function GlobalActivityPage(): React.JSX.Element {
     getNextPageParam: (page) => page.nextCursor,
   });
   const projection = mergeActivityPages(feed.data?.pages ?? []);
+  return {
+    api,
+    session,
+    authority,
+    tenantId,
+    requestedKind,
+    setRequestedKind,
+    access,
+    selectedKind,
+    canLoad,
+    feed,
+    projection,
+  };
+}
 
+export function GlobalActivityPage(): React.JSX.Element {
+  const state = useGlobalActivityPageState();
+  const {
+    authority,
+    tenantId,
+    setRequestedKind,
+    access,
+    selectedKind,
+    feed,
+    projection,
+  } = state;
   if (!tenantId) {
     return (
       <ActivityBoundary
@@ -138,63 +155,11 @@ export function GlobalActivityPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <Card className="activity-feed-card">
-        <CardHeader>
-          <CardTitle>{kindLabelPlural(selectedKind)} activity</CardTitle>
-          <CardDescription>
-            Events from {kindLabelPlural(selectedKind).toLowerCase()} currently
-            visible through the same live read and activity scopes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {feed.isPending ? <ActivitySkeleton compact /> : null}
-          {feed.isError ? (
-            <FocusedError
-              title="Activity feed unavailable"
-              message={describeTicketingError(
-                feed.error,
-                "The current authorized activity page could not be loaded.",
-              )}
-            />
-          ) : null}
-          {projection.invalid ? (
-            <FocusedError
-              title="Activity feed rejected"
-              message="The server returned a duplicate or non-monotonic activity page. No ambiguous feed was rendered."
-            />
-          ) : null}
-          {!feed.isPending &&
-          !feed.isError &&
-          !projection.invalid &&
-          projection.items.length === 0 ? (
-            <div className="global-search-empty">
-              <strong>No visible activity yet</strong>
-              <p>
-                No {kindLabelPlural(selectedKind).toLowerCase()} events are
-                present in the current authorized projection.
-              </p>
-            </div>
-          ) : null}
-          {!projection.invalid && projection.items.length > 0 ? (
-            <ol className="ticket-activity-rail">
-              {projection.items.map((item, index) => (
-                <ActivityFeedItem activity={item} index={index} key={item.id} />
-              ))}
-            </ol>
-          ) : null}
-          {feed.hasNextPage && !projection.invalid ? (
-            <Button
-              disabled={feed.isFetchingNextPage}
-              onClick={() => void feed.fetchNextPage()}
-              type="button"
-              variant="outline"
-            >
-              <ChevronDown aria-hidden="true" />
-              {feed.isFetchingNextPage ? "Loading…" : "Load older activity"}
-            </Button>
-          ) : null}
-        </CardContent>
-      </Card>
+      <GlobalActivityFeed
+        feed={feed}
+        projection={projection}
+        selectedKind={selectedKind}
+      />
     </div>
   );
 }
@@ -284,24 +249,74 @@ function ActivitySkeleton({
   );
 }
 
-export function mergeActivityPages(
-  pages: readonly CursorPage<OperatorActivity>[],
-): FeedProjection {
-  const items: OperatorActivity[] = [];
-  const seen = new Set<string>();
-  let previousId: string | undefined;
-  for (const page of pages) {
-    for (const item of page.items) {
-      if (
-        seen.has(item.id) ||
-        (previousId !== undefined && previousId <= item.id)
-      ) {
-        return { invalid: true, items: [] };
-      }
-      seen.add(item.id);
-      previousId = item.id;
-      items.push(item);
-    }
-  }
-  return { invalid: false, items };
+interface GlobalActivityFeedProps {
+  feed: ReturnType<typeof useGlobalActivityPageState>["feed"];
+  projection: ReturnType<typeof mergeActivityPages>;
+  selectedKind: TicketKind;
+}
+
+function GlobalActivityFeed({
+  feed,
+  projection,
+  selectedKind,
+}: GlobalActivityFeedProps): React.JSX.Element {
+  return (
+    <Card className="activity-feed-card">
+      <CardHeader>
+        <CardTitle>{kindLabelPlural(selectedKind)} activity</CardTitle>
+        <CardDescription>
+          Events from {kindLabelPlural(selectedKind).toLowerCase()} currently
+          visible through the same live read and activity scopes.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {feed.isPending ? <ActivitySkeleton compact /> : null}
+        {feed.isError ? (
+          <FocusedError
+            title="Activity feed unavailable"
+            message={describeTicketingError(
+              feed.error,
+              "The current authorized activity page could not be loaded.",
+            )}
+          />
+        ) : null}
+        {projection.invalid ? (
+          <FocusedError
+            title="Activity feed rejected"
+            message="The server returned a duplicate or non-monotonic activity page. No ambiguous feed was rendered."
+          />
+        ) : null}
+        {!feed.isPending &&
+        !feed.isError &&
+        !projection.invalid &&
+        projection.items.length === 0 ? (
+          <div className="global-search-empty">
+            <strong>No visible activity yet</strong>
+            <p>
+              No {kindLabelPlural(selectedKind).toLowerCase()} events are
+              present in the current authorized projection.
+            </p>
+          </div>
+        ) : null}
+        {!projection.invalid && projection.items.length > 0 ? (
+          <ol className="ticket-activity-rail">
+            {projection.items.map((item, index) => (
+              <ActivityFeedItem activity={item} index={index} key={item.id} />
+            ))}
+          </ol>
+        ) : null}
+        {feed.hasNextPage && !projection.invalid ? (
+          <Button
+            disabled={feed.isFetchingNextPage}
+            onClick={() => void feed.fetchNextPage()}
+            type="button"
+            variant="outline"
+          >
+            <ChevronDown aria-hidden="true" />
+            {feed.isFetchingNextPage ? "Loading…" : "Load older activity"}
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }

@@ -1,14 +1,7 @@
 export {
-  notificationAdminApi,
-  NotificationApiError,
-  type NotificationAdminApi,
-  type NotificationMutationContext,
-  type Versioned,
-} from "./notification-api";
-export {
-  notificationInboxApi,
   NotificationInboxApiError,
   NotificationInboxProjectionError,
+  notificationInboxApi,
   type NotificationInboxApi,
 } from "./inbox-api";
 export { NotificationInboxProvider } from "./inbox-context";
@@ -20,6 +13,13 @@ export {
   tenantNotificationRouteDescriptor,
   type NotificationPanel,
 } from "./model";
+export {
+  NotificationApiError,
+  notificationAdminApi,
+  type NotificationAdminApi,
+  type NotificationMutationContext,
+  type Versioned,
+} from "./notification-api";
 export {
   TenantNotificationWorkspace,
   type TenantNotificationWorkspaceProps,

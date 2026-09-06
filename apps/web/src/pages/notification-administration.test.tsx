@@ -15,10 +15,10 @@ import {
 } from "../notifications/notification-test-fixtures";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
 import {
-  notificationAdministrationRoutes,
   PlatformNotificationSmtpPage,
   TenantNotificationAdministrationPage,
 } from "./notification-administration";
+import { notificationAdministrationRoutes } from "./notification-administration-routes";
 
 afterEach(cleanup);
 

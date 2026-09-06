@@ -1,4 +1,3 @@
-import { useQueries } from "@tanstack/react-query";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -9,9 +8,14 @@ import {
   CardTitle,
 } from "@periapsis/ui/components/ui/card";
 import { Input } from "@periapsis/ui/components/ui/input";
+import { useQueries } from "@tanstack/react-query";
 import { BellRing, BriefcaseBusiness, Search, ShieldX } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
+import {
+  canonicalSearch,
+  maximumSearchLength,
+} from "./global-search-page-model";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -32,7 +36,6 @@ import {
 } from "./ticketing-model";
 
 const searchParameter = "q";
-const maximumSearchLength = 200;
 
 interface SearchSurface {
   canRead: boolean;
@@ -345,9 +348,4 @@ function SearchResultSkeleton(): React.JSX.Element {
       ))}
     </div>
   );
-}
-
-export function canonicalSearch(value: string | null): string {
-  if (value === null) return "";
-  return Array.from(value.trim()).slice(0, maximumSearchLength).join("");
 }

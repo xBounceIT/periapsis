@@ -3,8 +3,8 @@ import type {
   TenantSettingsUpdateRequest,
 } from "@periapsis/contracts";
 
-import { isCanonicalUuidV7 } from "../lib/uuid-v7";
 import { parseRfc3339Instant } from "../lib/rfc3339-instant";
+import { isCanonicalUuidV7 } from "../lib/uuid-v7";
 
 export const tenantSettingsRouteDescriptor = {
   path: "/tenant/settings",
@@ -228,7 +228,7 @@ function isExactObject(
   const keys = Object.keys(value).toSorted();
   const sortedExpectedKeys = expectedKeys.toSorted();
   return (
-    keys.length === expectedKeys.length &&
+    keys.length === sortedExpectedKeys.length &&
     keys.every((key, index) => key === sortedExpectedKeys[index])
   );
 }

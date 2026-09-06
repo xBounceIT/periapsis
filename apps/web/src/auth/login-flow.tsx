@@ -1,3 +1,4 @@
+import { formatExpiry } from "./format-expiry";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
   Card,
@@ -50,16 +51,17 @@ interface LoginFlowProps {
   onAuthenticated: (session: SessionView) => void;
 }
 
-export function LoginFlow({
+function useLoginFlow({
   api,
   credentials,
   mfaApi = defaultMfaApi,
   onAuthenticated,
-}: LoginFlowProps): React.JSX.Element {
+}: LoginFlowProps) {
   const [challengeState, setChallengeState] = useState<ChallengeState | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  // eslint-disable-next-line react-doctor/rendering-usetransition-loading -- Tracks network authentication and locks duplicate submissions synchronously; this is not a deferred UI transition.
   const [isPending, setIsPending] = useState(false);
   const pendingRef = useRef(false);
   const id = useId();
@@ -186,6 +188,31 @@ export function LoginFlow({
     setError(null);
   }
 
+  return {
+    challengeState,
+    error,
+    isPending,
+    id,
+    submitCredentials,
+    submitMfa,
+    submitPasskey,
+    changeMethod,
+    restartLogin,
+  };
+}
+
+export function LoginFlow(props: LoginFlowProps): React.JSX.Element {
+  const {
+    challengeState,
+    error,
+    isPending,
+    id,
+    submitCredentials,
+    submitMfa,
+    submitPasskey,
+    changeMethod,
+    restartLogin,
+  } = useLoginFlow(props);
   if (!challengeState) {
     return (
       <AccessLayout
@@ -317,6 +344,33 @@ export function LoginFlow({
     );
   }
 
+  return (
+    <LocalLoginChallenge
+      controller={{
+        challengeState,
+        error,
+        isPending,
+        id,
+        submitCredentials,
+        submitMfa,
+        submitPasskey,
+        changeMethod,
+        restartLogin,
+      }}
+      challengeState={challengeState}
+    />
+  );
+}
+
+function LocalLoginChallenge({
+  controller,
+  challengeState,
+}: {
+  controller: ReturnType<typeof useLoginFlow>;
+  challengeState: ChallengeState;
+}): React.JSX.Element {
+  const { error, isPending, id, submitMfa, changeMethod, restartLogin } =
+    controller;
   const usesTotp = challengeState.method === "totp";
   return (
     <AccessLayout
@@ -411,16 +465,4 @@ export function LoginFlow({
       </Card>
     </AccessLayout>
   );
-}
-
-function formatExpiry(value: string): string {
-  const expiry = new Date(value);
-  if (Number.isNaN(expiry.valueOf())) {
-    return "soon";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(expiry);
 }

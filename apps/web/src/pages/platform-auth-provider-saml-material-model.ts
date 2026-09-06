@@ -104,13 +104,12 @@ function parseCertificateBundle(value: string): string[] | null {
 }
 
 function parsePrivateKeyPem(value: string): string | null {
-  const normalized = normalizePem(value);
-  const match =
-    /^-----BEGIN PRIVATE KEY-----\n([A-Za-z0-9+/=\n]+)\n-----END PRIVATE KEY-----$/u.exec(
-      normalized,
+  const envelope =
+    /^-----BEGIN ([A-Z ]+)-----\n([A-Za-z0-9+/=\n]+)\n-----END \1-----$/u.exec(
+      normalizePem(value),
     );
-  return match?.[1]
-    ? parseCanonicalBase64(match[1], maximumPrivateKeyDerBytes)
+  return envelope?.[1] === "PRIVATE KEY" && envelope[2] !== undefined
+    ? parseCanonicalBase64(envelope[2], maximumPrivateKeyDerBytes)
     : null;
 }
 

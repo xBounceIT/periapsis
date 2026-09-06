@@ -11,11 +11,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SessionContext } from "../auth/session-context";
 import { TenantAuthorityProvider } from "../auth/tenant-authority-context";
-import type {
-  SessionView,
-  TenantAuthorityView,
-  TenantPermissionKeyView,
-} from "../lib/phase-two-types";
 import {
   ContactApiError,
   type ContactPortalApi,
@@ -23,19 +18,26 @@ import {
 import {
   contactTenantId,
   createContactPortalApi,
+  portalAlertId,
   portalAttachmentFixture,
   portalAttachmentId,
-  portalAlertId,
   portalContactFixture,
   portalSafeCommentFixture,
 } from "../contacts/contact-test-fixtures";
+import type {
+  SessionView,
+  TenantAuthorityView,
+  TenantPermissionKeyView,
+} from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
 import {
   CustomerPortalPage,
   CustomerPortalWorkspace,
+} from "./customer-portal-page";
+import {
   formatNotificationWindows,
   parseNotificationWindows,
-} from "./customer-portal-page";
+} from "./customer-portal-page-model";
 
 afterEach(() => {
   cleanup();
@@ -630,13 +632,15 @@ function renderWorkspace(
           <MemoryRouter initialEntries={[route]}>
             <CustomerPortalWorkspace
               api={api}
-              canComment={canComment}
-              canManagePreferences={canManagePreferences}
-              canReadAttachments={canReadAttachments}
-              canReadAlerts
-              canReadCases={false}
               csrfToken="csrf-memory-only"
               tenantId={contactTenantId}
+              permissions={{
+                canComment: canComment,
+                canManagePreferences: canManagePreferences,
+                canReadAttachments: canReadAttachments,
+                canReadAlerts: true,
+                canReadCases: false,
+              }}
             />
           </MemoryRouter>
         </TenantAuthorityProvider>

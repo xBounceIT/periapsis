@@ -31,10 +31,15 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
+import { reduceWorkspaceState } from "./workspace-state";
+
 import {
   Controller,
   useForm,
@@ -50,12 +55,6 @@ import {
   idempotencyKeyForPayload,
   isPayloadBoundToIdempotencyKey,
 } from "../lib/payload-idempotency";
-import {
-  currentInstant,
-  hasInstantReached,
-  parseRfc3339Instant,
-} from "../lib/rfc3339-instant";
-import { hasControlCharacters } from "../lib/text-validation";
 import {
   describePhaseTwoError,
   PhaseTwoApiError,
@@ -74,7 +73,22 @@ import {
   type TenantUserSummaryView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import {
+  currentInstant,
+  hasInstantReached,
+  parseRfc3339Instant,
+} from "../lib/rfc3339-instant";
+import { hasControlCharacters } from "../lib/text-validation";
 import type { TenantGroupDetailState } from "./tenant-groups";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZoneName: "short",
+  year: "numeric",
+});
 
 type GroupTab = "members" | "overview" | "provenance" | "roles";
 
@@ -232,7 +246,25 @@ function updateGroupMetadataDraft<K extends keyof GroupMetadataValues>(
   return next;
 }
 
-export function TenantGroupDetailDialog({
+export function TenantGroupDetailDialog(props: {
+  api: PhaseTwoApi;
+  authority: TenantAuthorityView | undefined;
+  canManage: boolean;
+  csrfToken: string;
+  detailState: TenantGroupDetailState;
+  groupId: string;
+  onArchived: () => void;
+  onChanged: (group: VersionedView<TenantSecurityGroupView>) => void;
+  onOpenChange: (open: boolean) => void;
+  onReload: () => void;
+  pairKey: string;
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useTenantGroupDetailDialogModel(props);
+  return <TenantGroupDetailDialogView model={model.data} />;
+}
+
+function useTenantGroupDetailDialogModel({
   api,
   authority,
   canManage,
@@ -258,16 +290,49 @@ export function TenantGroupDetailDialog({
   onReload: () => void;
   pairKey: string;
   tenantId: string;
-}): React.JSX.Element {
-  const [tab, setTab] = useState<GroupTab>("overview");
-  const [edgeActionStates, setEdgeActionStates] = useState<
-    Readonly<Record<string, EdgeActionState>>
-  >({});
-  const [metadataDraft, setMetadataDraft] = useState<GroupMetadataDraft>({});
-  const [retainedReadyDetail, setRetainedReadyDetail] = useState<Extract<
-    TenantGroupDetailState,
-    { kind: "ready" }
-  > | null>(() => (detailState.kind === "ready" ? detailState : null));
+}) {
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<TenantGroupDetailDialogState>,
+    undefined,
+    (): TenantGroupDetailDialogState => ({
+      tab: "overview",
+      edgeActionStates: {},
+      metadataDraft: {},
+      retainedReadyDetail: (() =>
+        detailState.kind === "ready" ? detailState : null)(),
+    }),
+  );
+  const { tab, edgeActionStates, metadataDraft, retainedReadyDetail } =
+    workspaceState;
+  const {
+    setTab,
+    setEdgeActionStates,
+    setMetadataDraft,
+    setRetainedReadyDetail,
+  } = useMemo(
+    () => ({
+      setTab: (
+        value: React.SetStateAction<TenantGroupDetailDialogState["tab"]>,
+      ) => updateWorkspaceState({ tab: value }),
+      setEdgeActionStates: (
+        value: React.SetStateAction<
+          TenantGroupDetailDialogState["edgeActionStates"]
+        >,
+      ) => updateWorkspaceState({ edgeActionStates: value }),
+      setMetadataDraft: (
+        value: React.SetStateAction<
+          TenantGroupDetailDialogState["metadataDraft"]
+        >,
+      ) => updateWorkspaceState({ metadataDraft: value }),
+      setRetainedReadyDetail: (
+        value: React.SetStateAction<
+          TenantGroupDetailDialogState["retainedReadyDetail"]
+        >,
+      ) => updateWorkspaceState({ retainedReadyDetail: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const detailGenerationRef = useRef(0);
   const reloadFocusTargetRef = useRef<HTMLHeadingElement | null>(null);
   const restoreReloadFocusRef = useRef(false);
@@ -303,7 +368,7 @@ export function TenantGroupDetailDialog({
     } else if (detailState.kind === "forbidden") {
       setRetainedReadyDetail(null);
     }
-  }, [detailState]);
+  }, [setRetainedReadyDetail, detailState]);
 
   useEffect(() => {
     const generation = detailGenerationRef.current + 1;
@@ -455,177 +520,52 @@ export function TenantGroupDetailDialog({
     onReload();
   }
 
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="group-detail-dialog">
-        <DialogHeader>
-          <DialogTitle ref={reloadFocusTargetRef} tabIndex={-1}>
-            {group ? `Security group · ${group.name}` : "Security group"}
-          </DialogTitle>
-          <DialogDescription>
-            Group authority is the result of two independently owned edges.
-            Browser controls reflect live capabilities; the server remains the
-            authorization boundary.
-          </DialogDescription>
-        </DialogHeader>
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      canGrantRoles,
+      canManage,
+      canManageMemberships,
+      canReadRoles,
+      canReadUsers,
+      csrfToken,
+      detailState,
+      edgeActionStates,
+      getDetailGeneration,
+      group,
+      isDetailGenerationActive,
+      members,
+      metadataDraft,
+      moveTabFocus,
+      onArchived,
+      onChanged,
+      onOpenChange,
+      pairKey,
+      readyDetail,
+      reloadFocusTargetRef,
+      reloadFromDialogControl,
+      restoreReloadFocusRef,
+      roles,
+      setMetadataDraft,
+      setTab,
+      tab,
+      tabRefs,
+      tenantId,
+      updateEdgeActionState,
+    },
+  };
+}
 
-        {detailState.kind === "loading" ? <GroupDetailSkeleton /> : null}
-        {detailState.kind === "forbidden" ? (
-          <FocusedError
-            autoFocus={!restoreReloadFocusRef.current}
-            title="Group detail denied"
-            message="The server denied this security-group detail request."
-          />
-        ) : null}
-        {detailState.kind === "error" ? (
-          <div className="tenant-admin-error">
-            <FocusedError
-              autoFocus={!restoreReloadFocusRef.current}
-              message={detailState.message}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={reloadFromDialogControl}
-            >
-              <RefreshCw aria-hidden="true" /> Retry group detail
-            </Button>
-          </div>
-        ) : null}
-        {readyDetail && group ? (
-          <div
-            className="group-detail-ready"
-            hidden={detailState.kind !== "ready"}
-          >
-            <AccessPathRail
-              group={group}
-              membershipCount={readyCount(members.state)}
-              roleCount={readyCount(roles.state)}
-            />
-            <div
-              className="group-tabs"
-              role="tablist"
-              aria-label="Group detail"
-            >
-              {groupTabs.map((item, index) => (
-                <button
-                  aria-controls={`group-panel-${item.id}`}
-                  aria-selected={tab === item.id}
-                  data-index={index}
-                  id={`group-tab-${item.id}`}
-                  key={item.id}
-                  onClick={() => setTab(item.id)}
-                  onKeyDown={moveTabFocus}
-                  ref={(node) => {
-                    tabRefs.current[index] = node;
-                  }}
-                  role="tab"
-                  tabIndex={tab === item.id ? 0 : -1}
-                  type="button"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            <section
-              aria-labelledby="group-tab-overview"
-              hidden={tab !== "overview"}
-              id="group-panel-overview"
-              role="tabpanel"
-              tabIndex={0}
-            >
-              <GroupOverviewPanel
-                api={api}
-                canManage={canManage}
-                csrfToken={csrfToken}
-                draft={metadataDraft}
-                group={readyDetail.group}
-                onArchived={onArchived}
-                onChanged={onChanged}
-                onDraftChange={setMetadataDraft}
-                onReload={reloadFromDialogControl}
-                tenantId={tenantId}
-              />
-            </section>
-
-            <section
-              aria-labelledby="group-tab-members"
-              hidden={tab !== "members"}
-              id="group-panel-members"
-              role="tabpanel"
-              tabIndex={0}
-            >
-              <MembershipPanel
-                api={api}
-                canAdd={
-                  !group.archived &&
-                  canReadUsers &&
-                  canManageMemberships &&
-                  canGrantRoles
-                }
-                canRevoke={canManageMemberships && canGrantRoles}
-                csrfToken={csrfToken}
-                group={group}
-                getDetailGeneration={getDetailGeneration}
-                inventory={members}
-                isDetailGenerationActive={isDetailGenerationActive}
-                onAuthorityChanged={() => {
-                  members.reload();
-                }}
-                edgeActionStates={edgeActionStates}
-                onEdgeActionStateChange={updateEdgeActionState}
-                pairKey={pairKey}
-                tenantId={tenantId}
-              />
-            </section>
-
-            <section
-              aria-labelledby="group-tab-roles"
-              hidden={tab !== "roles"}
-              id="group-panel-roles"
-              role="tabpanel"
-              tabIndex={0}
-            >
-              <RoleEdgePanel
-                api={api}
-                canAdd={
-                  !group.archived && canManage && canReadRoles && canGrantRoles
-                }
-                canRevoke={canManage && canGrantRoles}
-                csrfToken={csrfToken}
-                group={group}
-                getDetailGeneration={getDetailGeneration}
-                inventory={roles}
-                isDetailGenerationActive={isDetailGenerationActive}
-                onAuthorityChanged={() => {
-                  roles.reload();
-                }}
-                edgeActionStates={edgeActionStates}
-                onEdgeActionStateChange={updateEdgeActionState}
-                pairKey={pairKey}
-                tenantId={tenantId}
-              />
-            </section>
-
-            <section
-              aria-labelledby="group-tab-provenance"
-              hidden={tab !== "provenance"}
-              id="group-panel-provenance"
-              role="tabpanel"
-              tabIndex={0}
-            >
-              <ProvenancePanel
-                group={group}
-                memberships={members.state}
-                roleGrants={roles.state}
-              />
-            </section>
-          </div>
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  );
+function TenantGroupDetailDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantGroupDetailDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <GroupDetailDialogContent model={model} />;
 }
 
 const groupTabs: readonly { id: GroupTab; label: string }[] = [
@@ -635,7 +575,23 @@ const groupTabs: readonly { id: GroupTab; label: string }[] = [
   { id: "provenance", label: "Provenance" },
 ];
 
-function GroupOverviewPanel({
+function GroupOverviewPanel(props: {
+  api: PhaseTwoApi;
+  canManage: boolean;
+  csrfToken: string;
+  draft: GroupMetadataDraft;
+  group: VersionedView<TenantSecurityGroupView>;
+  onArchived: () => void;
+  onChanged: (group: VersionedView<TenantSecurityGroupView>) => void;
+  onDraftChange: (update: GroupMetadataDraftUpdate) => void;
+  onReload: () => void;
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useGroupOverviewPanelModel(props);
+  return <GroupOverviewPanelView model={model.data} />;
+}
+
+function useGroupOverviewPanelModel({
   api,
   canManage,
   csrfToken,
@@ -657,15 +613,42 @@ function GroupOverviewPanel({
   onDraftChange: (update: GroupMetadataDraftUpdate) => void;
   onReload: () => void;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const id = useId();
-  const [formError, setFormError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [isArchiving, setIsArchiving] = useState(false);
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<GroupOverviewPanelState>,
+    undefined,
+    (): GroupOverviewPanelState => ({
+      formError: null,
+      isSaving: false,
+      archiveOpen: false,
+      isArchiving: false,
+    }),
+  );
+  const { formError, isSaving, archiveOpen, isArchiving } = workspaceState;
+  const { setFormError, setIsSaving, setArchiveOpen, setIsArchiving } = useMemo(
+    () => ({
+      setFormError: (
+        value: React.SetStateAction<GroupOverviewPanelState["formError"]>,
+      ) => updateWorkspaceState({ formError: value }),
+      setIsSaving: (
+        value: React.SetStateAction<GroupOverviewPanelState["isSaving"]>,
+      ) => updateWorkspaceState({ isSaving: value }),
+      setArchiveOpen: (
+        value: React.SetStateAction<GroupOverviewPanelState["archiveOpen"]>,
+      ) => updateWorkspaceState({ archiveOpen: value }),
+      setIsArchiving: (
+        value: React.SetStateAction<GroupOverviewPanelState["isArchiving"]>,
+      ) => updateWorkspaceState({ isArchiving: value }),
+    }),
+    [updateWorkspaceState],
+  );
+
   const draftRef = useRef(draft);
-  draftRef.current = draft;
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const { handleSubmit, register, reset } = useForm<GroupMetadataValues>({
     defaultValues: rebaseGroupMetadataDraft(group.value, draft),
   });
@@ -673,8 +656,7 @@ function GroupOverviewPanel({
   const descriptionField = register("description");
 
   useEffect(() => {
-    setFormError(null);
-    setArchiveOpen(false);
+    updateWorkspaceState({ formError: null, archiveOpen: false });
     reset(rebaseGroupMetadataDraft(group.value, draftRef.current));
   }, [group.etag, group.value, reset]);
 
@@ -702,8 +684,7 @@ function GroupOverviewPanel({
       return;
     }
     onDraftChange(input);
-    setFormError(null);
-    setIsSaving(true);
+    updateWorkspaceState({ formError: null, isSaving: true });
     try {
       const updated = await api.updateTenantSecurityGroup(
         csrfToken,
@@ -732,8 +713,7 @@ function GroupOverviewPanel({
   });
 
   async function archive(): Promise<void> {
-    setFormError(null);
-    setIsArchiving(true);
+    updateWorkspaceState({ formError: null, isArchiving: true });
     try {
       await api.archiveTenantSecurityGroup(
         csrfToken,
@@ -758,6 +738,36 @@ function GroupOverviewPanel({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      archive,
+      archiveOpen,
+      canManage,
+      descriptionField,
+      formError,
+      group,
+      id,
+      isArchiving,
+      isSaving,
+      nameField,
+      onDraftChange,
+      onReload,
+      setArchiveOpen,
+      submit,
+    },
+  };
+}
+
+function GroupOverviewPanelView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useGroupOverviewPanelModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const { formError, group, onReload } = model;
   return (
     <div className="group-overview-panel">
       <dl className="role-detail-grid group-detail-grid">
@@ -789,94 +799,8 @@ function GroupOverviewPanel({
           ) : null}
         </div>
       ) : null}
-      <form className="group-form" onSubmit={submit} noValidate>
-        <FormField htmlFor={`${id}-overview-name`} label="Group name">
-          <Input
-            id={`${id}-overview-name`}
-            maxLength={120}
-            disabled={!canManage || group.value.archived || isSaving}
-            {...nameField}
-            onChange={(event) => {
-              const name = event.currentTarget.value;
-              void nameField.onChange(event);
-              onDraftChange((current) =>
-                updateGroupMetadataDraft(
-                  current,
-                  "name",
-                  name,
-                  group.value.name,
-                ),
-              );
-            }}
-          />
-        </FormField>
-        <FormField
-          htmlFor={`${id}-overview-description`}
-          label="Description"
-          optional
-        >
-          <Textarea
-            id={`${id}-overview-description`}
-            maxLength={500}
-            disabled={!canManage || group.value.archived || isSaving}
-            {...descriptionField}
-            onChange={(event) => {
-              const description = event.currentTarget.value;
-              void descriptionField.onChange(event);
-              onDraftChange((current) =>
-                updateGroupMetadataDraft(
-                  current,
-                  "description",
-                  description,
-                  group.value.description ?? "",
-                ),
-              );
-            }}
-          />
-        </FormField>
-        {canManage && !group.value.archived ? (
-          <div className="group-overview-actions">
-            <Button type="submit" disabled={isSaving || isArchiving}>
-              {isSaving ? "Saving changes…" : "Save changes"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSaving || isArchiving}
-              onClick={() => setArchiveOpen(true)}
-            >
-              <Archive aria-hidden="true" /> Archive group
-            </Button>
-          </div>
-        ) : null}
-      </form>
-      {archiveOpen ? (
-        <div className="destructive-confirmation" role="group">
-          <p>
-            Archiving stops this group from contributing live authority. Every
-            source-owned edge remains available as provenance.
-          </p>
-          <div>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={isSaving || isArchiving}
-              onClick={() => void archive()}
-            >
-              <Archive aria-hidden="true" />
-              {isArchiving ? "Archiving…" : "Confirm archive"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={isArchiving}
-              onClick={() => setArchiveOpen(false)}
-            >
-              Keep group active
-            </Button>
-          </div>
-        </div>
-      ) : null}
+      <GroupOverviewPanelForm model={model} />
+      {<GroupArchiveConfirmation model={model} />}
     </div>
   );
 }
@@ -918,17 +842,13 @@ function MembershipPanel({
 
   return (
     <div className="group-edge-panel">
-      <div className="section-heading group-edge-heading">
-        <div>
-          <p className="section-label">Membership edge inventory</p>
-          <h3>Direct tenant members</h3>
-        </div>
-        {canAdd ? (
-          <Button type="button" onClick={() => setAdding(true)}>
-            <Plus aria-hidden="true" /> Add member edge
-          </Button>
-        ) : null}
-      </div>
+      <EdgeInventoryHeading
+        label="Membership edge inventory"
+        title="Direct tenant members"
+        actionLabel="Add member edge"
+        canAdd={canAdd}
+        onAdd={() => setAdding(true)}
+      />
       {!canAdd && !group.archived ? (
         <p className="capability-note">
           Adding a member requires group.membership.manage, user.read, and
@@ -1060,17 +980,13 @@ function RoleEdgePanel({
 
   return (
     <div className="group-edge-panel">
-      <div className="section-heading group-edge-heading">
-        <div>
-          <p className="section-label">Role edge inventory</p>
-          <h3>Tenant roles</h3>
-        </div>
-        {canAdd ? (
-          <Button type="button" onClick={() => setAdding(true)}>
-            <Plus aria-hidden="true" /> Add role edge
-          </Button>
-        ) : null}
-      </div>
+      <EdgeInventoryHeading
+        label="Role edge inventory"
+        title="Tenant roles"
+        actionLabel="Add role edge"
+        canAdd={canAdd}
+        onAdd={() => setAdding(true)}
+      />
       {!canAdd && !group.archived ? (
         <p className="capability-note">
           Adding a role requires group.manage, role.read, and role.grant. The
@@ -1297,6 +1213,7 @@ function AddMembershipForm({
       );
     } finally {
       if (mountedRef.current && isDetailGenerationActive(generation)) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setIsSaving(false);
       }
     }
@@ -1522,6 +1439,7 @@ function AddRoleEdgeForm({
       );
     } finally {
       if (mountedRef.current && isDetailGenerationActive(generation)) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setIsSaving(false);
       }
     }
@@ -1797,7 +1715,34 @@ function isManagedByAuthorizationApi(value: unknown): value is true {
   return value === true;
 }
 
-function AuthorizationEdgeCard({
+function AuthorizationEdgeCard(props: {
+  actionState: EdgeActionState;
+  canRevoke: boolean;
+  effectiveAuthorityBlockers: readonly EffectiveAuthorityBlocker[];
+  etag: string;
+  getDetailGeneration: () => number;
+  isDetailGenerationActive: (generation: number) => boolean;
+  kind: "Membership edge" | "Role edge";
+  managedByAuthorizationApi: boolean;
+  onActionStateChange: (update: EdgeActionStateUpdate) => void;
+  onCancel: () => void;
+  onRevoked: () => void;
+  onStale: (rejectedVersion: EdgeResourceVersion) => Promise<EdgeRefreshResult>;
+  provenance: AuthorizationEdgeProvenanceView;
+  revokeReason?: string | undefined;
+  revokedAt?: string | undefined;
+  revokedByUserId?: string | undefined;
+  revoke: (etag: string, input: { reason: string }) => Promise<void>;
+  state: AuthorizationEdgeStateView;
+  subtitle: string;
+  title: string;
+  version: number;
+}): React.JSX.Element {
+  const model = useAuthorizationEdgeCardModel(props);
+  return <AuthorizationEdgeCardView model={model.data} />;
+}
+
+function useAuthorizationEdgeCardModel({
   actionState,
   canRevoke,
   effectiveAuthorityBlockers,
@@ -1841,7 +1786,7 @@ function AuthorizationEdgeCard({
   subtitle: string;
   title: string;
   version: number;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const id = useId();
   const { isRefreshing, isSaving, refreshRequired, rejectedVersion } =
@@ -1986,142 +1931,44 @@ function AuthorizationEdgeCard({
     }
   }
 
-  return (
-    <article className="authorization-edge-card">
-      <header>
-        <div>
-          <p>
-            {kind} · {formatSourceKind(provenance.sourceKind)}
-          </p>
-          <strong>{title}</strong>
-          <small>{subtitle}</small>
-        </div>
-        <Badge variant={state === "active" ? "secondary" : "outline"}>
-          {formatStatus(state)}
-        </Badge>
-      </header>
-      <EdgeProvenanceDetails
-        provenance={provenance}
-        revokeReason={revokeReason}
-        revokedAt={revokedAt}
-        revokedByUserId={revokedByUserId}
-        state={state}
-      />
-      {state === "active" && authorityBlockers.length > 0 ? (
-        <div
-          className="capability-note"
-          aria-label={`Effective authority blockers for ${target}`}
-        >
-          <strong>
-            Edge lifecycle: Active. Effective authority: Does not contribute.
-          </strong>
-          <ul>
-            {authorityBlockers.map((blocker) => (
-              <li key={blocker.prerequisite}>
-                <strong>
-                  {blocker.prerequisite} prerequisite: {blocker.state}.
-                </strong>{" "}
-                {blocker.explanation}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {!canRevoke &&
-      state !== "revoked" &&
-      !isManagedByAuthorizationApi(managedByAuthorizationApi) ? (
-        <p className="source-owner-note">
-          Not managed by the authorization API (source:{" "}
-          {formatSourceKind(provenance.sourceKind)}); manual controls cannot
-          reconcile or revoke this edge.
-        </p>
-      ) : null}
-      {actionState.error ? (
-        <FocusedError title="Edge action failed" message={actionState.error} />
-      ) : null}
-      {refreshRequired ? (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isRefreshing || isSaving}
-          aria-label={`Retry loading current ${action}`}
-          onClick={() => void refreshStaleEdge()}
-        >
-          <RefreshCw aria-hidden="true" />
-          {isRefreshing
-            ? "Reloading current edge…"
-            : "Retry loading current edge"}
-        </Button>
-      ) : null}
-      {actionState.open ? (
-        <div
-          className="revoke-grant-form"
-          role="group"
-          aria-label={`Revoke ${action}`}
-        >
-          <strong id={`${id}-revoke-title`}>Revoke manual {action}</strong>
-          <FormField htmlFor={`${id}-revoke-reason`} label="Reason">
-            <Textarea
-              id={`${id}-revoke-reason`}
-              aria-label={`Reason for revoking ${action}`}
-              value={actionState.reason}
-              maxLength={500}
-              disabled={isSaving || isRefreshing}
-              onChange={(event) => {
-                const reason = event.currentTarget.value;
-                onActionStateChange((current) => ({
-                  ...current,
-                  error: null,
-                  reason,
-                }));
-              }}
-            />
-          </FormField>
-          {!canRevoke ? (
-            <p className="capability-note">
-              The refreshed edge is no longer eligible for manual revocation.
-              Its draft remains open for review.
-            </p>
-          ) : null}
-          <div>
-            {canRevoke ? (
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isSaving || isRefreshing || refreshRequired}
-                aria-label={`${isSaving ? "Revoking" : "Confirm revoke"} ${action}`}
-                onClick={() => void submitRevoke()}
-              >
-                <Trash2 aria-hidden="true" />
-                {isSaving ? "Revoking…" : "Confirm revoke"}
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={isSaving || isRefreshing}
-              aria-label={`Keep edge; cancel revoke ${action}`}
-              onClick={onCancel}
-            >
-              Keep edge
-            </Button>
-          </div>
-        </div>
-      ) : canRevoke ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label={`Revoke ${action}`}
-          onClick={() =>
-            onActionStateChange((current) => ({ ...current, open: true }))
-          }
-        >
-          <Trash2 aria-hidden="true" /> Revoke
-        </Button>
-      ) : null}
-    </article>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      action,
+      actionState,
+      authorityBlockers,
+      canRevoke,
+      id,
+      isRefreshing,
+      isSaving,
+      kind,
+      managedByAuthorizationApi,
+      onActionStateChange,
+      onCancel,
+      provenance,
+      refreshRequired,
+      refreshStaleEdge,
+      revokeReason,
+      revokedAt,
+      revokedByUserId,
+      state,
+      submitRevoke,
+      subtitle,
+      target,
+      title,
+    },
+  };
+}
+
+function AuthorizationEdgeCardView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useAuthorizationEdgeCardModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <AuthorizationEdgeCardContent model={model} />;
 }
 
 function ProvenancePanel({
@@ -2521,7 +2368,9 @@ function useEdgeInventory<T>({
   const [revision, setRevision] = useState(0);
   const requestKey = JSON.stringify([pairKey, revision]);
   const requestKeyRef = useRef(requestKey);
-  requestKeyRef.current = requestKey;
+  useLayoutEffect(() => {
+    requestKeyRef.current = requestKey;
+  }, [requestKey]);
   const [snapshot, setSnapshot] = useState<{
     requestKey: string;
     state: EdgeInventoryState<T>;
@@ -3098,14 +2947,7 @@ function formatTimestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
     ? "Unavailable"
-    : new Intl.DateTimeFormat(undefined, {
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZoneName: "short",
-        year: "numeric",
-      }).format(date);
+    : dateTimeFormatter.format(date);
 }
 
 function toLocalDateTime(value: string): string {
@@ -3135,6 +2977,625 @@ function EdgeListSkeleton(): React.JSX.Element {
     >
       <span />
       <span />
+    </div>
+  );
+}
+
+function GroupDetailDialogContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantGroupDetailDialogView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    canManage,
+    csrfToken,
+    detailState,
+    group,
+    members,
+    metadataDraft,
+    onArchived,
+    onChanged,
+    onOpenChange,
+    readyDetail,
+    reloadFocusTargetRef,
+    reloadFromDialogControl,
+    restoreReloadFocusRef,
+    roles,
+    setMetadataDraft,
+    tab,
+    tenantId,
+  } = model;
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="group-detail-dialog">
+        <DialogHeader>
+          <DialogTitle ref={reloadFocusTargetRef} tabIndex={-1}>
+            {group ? `Security group · ${group.name}` : "Security group"}
+          </DialogTitle>
+          <DialogDescription>
+            Group authority is the result of two independently owned edges.
+            Browser controls reflect live capabilities; the server remains the
+            authorization boundary.
+          </DialogDescription>
+        </DialogHeader>
+
+        {detailState.kind === "loading" ? <GroupDetailSkeleton /> : null}
+        {detailState.kind === "forbidden" ? (
+          <FocusedError
+            autoFocus={!restoreReloadFocusRef.current}
+            title="Group detail denied"
+            message="The server denied this security-group detail request."
+          />
+        ) : null}
+        {detailState.kind === "error" ? (
+          <div className="tenant-admin-error">
+            <FocusedError
+              autoFocus={!restoreReloadFocusRef.current}
+              message={detailState.message}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={reloadFromDialogControl}
+            >
+              <RefreshCw aria-hidden="true" /> Retry group detail
+            </Button>
+          </div>
+        ) : null}
+        {readyDetail && group ? (
+          <div
+            className="group-detail-ready"
+            hidden={detailState.kind !== "ready"}
+          >
+            <AccessPathRail
+              group={group}
+              membershipCount={readyCount(members.state)}
+              roleCount={readyCount(roles.state)}
+            />
+            <GroupDetailTabs model={model} />
+
+            <section
+              aria-labelledby="group-tab-overview"
+              hidden={tab !== "overview"}
+              id="group-panel-overview"
+              role="tabpanel"
+              tabIndex={0}
+            >
+              <GroupOverviewPanel
+                api={api}
+                canManage={canManage}
+                csrfToken={csrfToken}
+                draft={metadataDraft}
+                group={readyDetail.group}
+                onArchived={onArchived}
+                onChanged={onChanged}
+                onDraftChange={setMetadataDraft}
+                onReload={reloadFromDialogControl}
+                tenantId={tenantId}
+              />
+            </section>
+
+            <GroupMembershipTabPanel model={model} />
+
+            <GroupRoleTabPanel model={model} />
+
+            <section
+              aria-labelledby="group-tab-provenance"
+              hidden={tab !== "provenance"}
+              id="group-panel-provenance"
+              role="tabpanel"
+              tabIndex={0}
+            >
+              <ProvenancePanel
+                group={group}
+                memberships={members.state}
+                roleGrants={roles.state}
+              />
+            </section>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AuthorizationEdgeCardContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof AuthorizationEdgeCardView>["model"];
+}): React.ReactNode {
+  const {
+    action,
+    actionState,
+    authorityBlockers,
+    canRevoke,
+    isRefreshing,
+    isSaving,
+    kind,
+    managedByAuthorizationApi,
+    provenance,
+    refreshRequired,
+    refreshStaleEdge,
+    revokeReason,
+    revokedAt,
+    revokedByUserId,
+    state,
+    subtitle,
+    target,
+    title,
+  } = model;
+  return (
+    <article className="authorization-edge-card">
+      <header>
+        <div>
+          <p>
+            {kind} · {formatSourceKind(provenance.sourceKind)}
+          </p>
+          <strong>{title}</strong>
+          <small>{subtitle}</small>
+        </div>
+        <Badge variant={state === "active" ? "secondary" : "outline"}>
+          {formatStatus(state)}
+        </Badge>
+      </header>
+      <EdgeProvenanceDetails
+        provenance={provenance}
+        revokeReason={revokeReason}
+        revokedAt={revokedAt}
+        revokedByUserId={revokedByUserId}
+        state={state}
+      />
+      {state === "active" && authorityBlockers.length > 0 ? (
+        <div
+          className="capability-note"
+          aria-label={`Effective authority blockers for ${target}`}
+        >
+          <strong>
+            Edge lifecycle: Active. Effective authority: Does not contribute.
+          </strong>
+          <ul>
+            {authorityBlockers.map((blocker) => (
+              <li key={blocker.prerequisite}>
+                <strong>
+                  {blocker.prerequisite} prerequisite: {blocker.state}.
+                </strong>{" "}
+                {blocker.explanation}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {!canRevoke &&
+      state !== "revoked" &&
+      !isManagedByAuthorizationApi(managedByAuthorizationApi) ? (
+        <p className="source-owner-note">
+          Not managed by the authorization API (source:{" "}
+          {formatSourceKind(provenance.sourceKind)}); manual controls cannot
+          reconcile or revoke this edge.
+        </p>
+      ) : null}
+      {actionState.error ? (
+        <FocusedError title="Edge action failed" message={actionState.error} />
+      ) : null}
+      {refreshRequired ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isRefreshing || isSaving}
+          aria-label={`Retry loading current ${action}`}
+          onClick={() => void refreshStaleEdge()}
+        >
+          <RefreshCw aria-hidden="true" />
+          {isRefreshing
+            ? "Reloading current edge…"
+            : "Retry loading current edge"}
+        </Button>
+      ) : null}
+      {<AuthorizationEdgeActions model={model} />}
+    </article>
+  );
+}
+
+interface TenantGroupDetailDialogState {
+  tab: GroupTab;
+  edgeActionStates: Readonly<Record<string, EdgeActionState>>;
+  metadataDraft: GroupMetadataDraft;
+  retainedReadyDetail: Extract<
+    TenantGroupDetailState,
+    { kind: "ready" }
+  > | null;
+}
+
+interface GroupOverviewPanelState {
+  formError: string | null;
+  isSaving: boolean;
+  archiveOpen: boolean;
+  isArchiving: boolean;
+}
+
+function GroupOverviewPanelForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupOverviewPanelView>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    descriptionField,
+    group,
+    id,
+    isArchiving,
+    isSaving,
+    nameField,
+    onDraftChange,
+    setArchiveOpen,
+    submit,
+  } = model;
+  return (
+    <form className="group-form" onSubmit={submit} noValidate>
+      <FormField htmlFor={`${id}-overview-name`} label="Group name">
+        <Input
+          id={`${id}-overview-name`}
+          maxLength={120}
+          disabled={!canManage || group.value.archived || isSaving}
+          {...nameField}
+          onChange={(event) => {
+            const name = event.currentTarget.value;
+            void nameField.onChange(event);
+            onDraftChange((current) =>
+              updateGroupMetadataDraft(current, "name", name, group.value.name),
+            );
+          }}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${id}-overview-description`}
+        label="Description"
+        optional
+      >
+        <Textarea
+          id={`${id}-overview-description`}
+          maxLength={500}
+          disabled={!canManage || group.value.archived || isSaving}
+          {...descriptionField}
+          onChange={(event) => {
+            const description = event.currentTarget.value;
+            void descriptionField.onChange(event);
+            onDraftChange((current) =>
+              updateGroupMetadataDraft(
+                current,
+                "description",
+                description,
+                group.value.description ?? "",
+              ),
+            );
+          }}
+        />
+      </FormField>
+      {canManage && !group.value.archived ? (
+        <div className="group-overview-actions">
+          <Button type="submit" disabled={isSaving || isArchiving}>
+            {isSaving ? "Saving changes…" : "Save changes"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isSaving || isArchiving}
+            onClick={() => setArchiveOpen(true)}
+          >
+            <Archive aria-hidden="true" /> Archive group
+          </Button>
+        </div>
+      ) : null}
+    </form>
+  );
+}
+
+function GroupArchiveConfirmation({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupOverviewPanelView>["model"];
+}): React.ReactNode {
+  const { archive, archiveOpen, isArchiving, isSaving, setArchiveOpen } = model;
+  return archiveOpen ? (
+    <div className="destructive-confirmation" role="group">
+      <p>
+        Archiving stops this group from contributing live authority. Every
+        source-owned edge remains available as provenance.
+      </p>
+      <div>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={isSaving || isArchiving}
+          onClick={() => void archive()}
+        >
+          <Archive aria-hidden="true" />
+          {isArchiving ? "Archiving…" : "Confirm archive"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={isArchiving}
+          onClick={() => setArchiveOpen(false)}
+        >
+          Keep group active
+        </Button>
+      </div>
+    </div>
+  ) : null;
+}
+
+function GroupDetailTabs({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupDetailDialogContent>["model"];
+}): React.ReactNode {
+  const { moveTabFocus, setTab, tab, tabRefs } = model;
+  return (
+    <div className="group-tabs" role="tablist" aria-label="Group detail">
+      {groupTabs.map((item, index) => (
+        <button
+          aria-controls={`group-panel-${item.id}`}
+          aria-selected={tab === item.id}
+          data-index={index}
+          id={`group-tab-${item.id}`}
+          key={item.id}
+          onClick={() => setTab(item.id)}
+          onKeyDown={moveTabFocus}
+          ref={(node) => {
+            tabRefs.current[index] = node;
+          }}
+          role="tab"
+          tabIndex={tab === item.id ? 0 : -1}
+          type="button"
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GroupMembershipTabPanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupDetailDialogContent>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    canGrantRoles,
+    canManageMemberships,
+    canReadUsers,
+    csrfToken,
+    edgeActionStates,
+    getDetailGeneration,
+    group,
+    isDetailGenerationActive,
+    members,
+    pairKey,
+    tab,
+    tenantId,
+    updateEdgeActionState,
+  } = model;
+  if (!group) return null;
+  return (
+    <section
+      aria-labelledby="group-tab-members"
+      hidden={tab !== "members"}
+      id="group-panel-members"
+      role="tabpanel"
+      tabIndex={0}
+    >
+      <MembershipPanel
+        api={api}
+        canAdd={
+          !group.archived &&
+          canReadUsers &&
+          canManageMemberships &&
+          canGrantRoles
+        }
+        canRevoke={canManageMemberships && canGrantRoles}
+        csrfToken={csrfToken}
+        group={group}
+        getDetailGeneration={getDetailGeneration}
+        inventory={members}
+        isDetailGenerationActive={isDetailGenerationActive}
+        onAuthorityChanged={() => {
+          members.reload();
+        }}
+        edgeActionStates={edgeActionStates}
+        onEdgeActionStateChange={updateEdgeActionState}
+        pairKey={pairKey}
+        tenantId={tenantId}
+      />
+    </section>
+  );
+}
+
+function GroupRoleTabPanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof GroupDetailDialogContent>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    canGrantRoles,
+    canManage,
+    canReadRoles,
+    csrfToken,
+    edgeActionStates,
+    getDetailGeneration,
+    group,
+    isDetailGenerationActive,
+    pairKey,
+    roles,
+    tab,
+    tenantId,
+    updateEdgeActionState,
+  } = model;
+  if (!group) return null;
+  return (
+    <section
+      aria-labelledby="group-tab-roles"
+      hidden={tab !== "roles"}
+      id="group-panel-roles"
+      role="tabpanel"
+      tabIndex={0}
+    >
+      <RoleEdgePanel
+        api={api}
+        canAdd={!group.archived && canManage && canReadRoles && canGrantRoles}
+        canRevoke={canManage && canGrantRoles}
+        csrfToken={csrfToken}
+        group={group}
+        getDetailGeneration={getDetailGeneration}
+        inventory={roles}
+        isDetailGenerationActive={isDetailGenerationActive}
+        onAuthorityChanged={() => {
+          roles.reload();
+        }}
+        edgeActionStates={edgeActionStates}
+        onEdgeActionStateChange={updateEdgeActionState}
+        pairKey={pairKey}
+        tenantId={tenantId}
+      />
+    </section>
+  );
+}
+
+function AuthorizationEdgeActions({
+  model,
+}: {
+  model: React.ComponentProps<typeof AuthorizationEdgeCardContent>["model"];
+}): React.ReactNode {
+  const { actionState, canRevoke } = model;
+  return actionState.open ? (
+    <AuthorizationEdgeRevokeForm model={model} />
+  ) : canRevoke ? (
+    <AuthorizationEdgeRevokeAction model={model} />
+  ) : null;
+}
+
+function AuthorizationEdgeRevokeForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof AuthorizationEdgeActions>["model"];
+}): React.ReactNode {
+  const {
+    action,
+    actionState,
+    canRevoke,
+    id,
+    isRefreshing,
+    isSaving,
+    onActionStateChange,
+    onCancel,
+    refreshRequired,
+    submitRevoke,
+  } = model;
+  return (
+    <div
+      className="revoke-grant-form"
+      role="group"
+      aria-label={`Revoke ${action}`}
+    >
+      <strong id={`${id}-revoke-title`}>Revoke manual {action}</strong>
+      <FormField htmlFor={`${id}-revoke-reason`} label="Reason">
+        <Textarea
+          id={`${id}-revoke-reason`}
+          aria-label={`Reason for revoking ${action}`}
+          value={actionState.reason}
+          maxLength={500}
+          disabled={isSaving || isRefreshing}
+          onChange={(event) => {
+            const reason = event.currentTarget.value;
+            onActionStateChange((current) => ({
+              ...current,
+              error: null,
+              reason,
+            }));
+          }}
+        />
+      </FormField>
+      {!canRevoke ? (
+        <p className="capability-note">
+          The refreshed edge is no longer eligible for manual revocation. Its
+          draft remains open for review.
+        </p>
+      ) : null}
+      <div>
+        {canRevoke ? (
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={isSaving || isRefreshing || refreshRequired}
+            aria-label={`${isSaving ? "Revoking" : "Confirm revoke"} ${action}`}
+            onClick={() => void submitRevoke()}
+          >
+            <Trash2 aria-hidden="true" />
+            {isSaving ? "Revoking…" : "Confirm revoke"}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={isSaving || isRefreshing}
+          aria-label={`Keep edge; cancel revoke ${action}`}
+          onClick={onCancel}
+        >
+          Keep edge
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AuthorizationEdgeRevokeAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof AuthorizationEdgeActions>["model"];
+}): React.ReactNode {
+  const { action, onActionStateChange } = model;
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      aria-label={`Revoke ${action}`}
+      onClick={() =>
+        onActionStateChange((current) => ({ ...current, open: true }))
+      }
+    >
+      <Trash2 aria-hidden="true" /> Revoke
+    </Button>
+  );
+}
+
+function EdgeInventoryHeading({
+  label,
+  title,
+  actionLabel,
+  canAdd,
+  onAdd,
+}: {
+  label: string;
+  title: string;
+  actionLabel: string;
+  canAdd: boolean;
+  onAdd: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="section-heading group-edge-heading">
+      <div>
+        <p className="section-label">{label}</p>
+        <h3>{title}</h3>
+      </div>
+      {canAdd ? (
+        <Button type="button" onClick={onAdd}>
+          <Plus aria-hidden="true" /> {actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }

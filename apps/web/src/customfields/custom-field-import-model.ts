@@ -339,10 +339,11 @@ function requireExactRecord(
 ): Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError(`${label} must be an object.`);
   const actualKeys = Object.keys(value);
+  const allowedKeys = new Set(expectedKeys);
   if (
     actualKeys.length !== expectedKeys.length ||
     expectedKeys.some((key) => !Object.hasOwn(value, key)) ||
-    actualKeys.some((key) => !expectedKeys.includes(key))
+    actualKeys.some((key) => !allowedKeys.has(key))
   ) {
     throw new TypeError(`${label} has unsupported or missing properties.`);
   }

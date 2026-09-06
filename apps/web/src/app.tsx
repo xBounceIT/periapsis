@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -9,13 +8,14 @@ import {
   CardTitle,
 } from "@periapsis/ui/components/ui/card";
 import { Separator } from "@periapsis/ui/components/ui/separator";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   ArrowUpRight,
   BellRing,
   Bot,
-  BriefcaseBusiness,
   Braces,
+  BriefcaseBusiness,
   Building2,
   CircleUserRound,
   Clock3,
@@ -36,28 +36,36 @@ import {
   Network,
   Orbit,
   Palette,
-  RefreshCw,
   RadioTower,
+  RefreshCw,
   Search,
+  Send,
   ServerCog,
   Shield,
   ShieldCheck,
-  Send,
   Users,
   UsersRound,
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
 } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { appRouteTitle } from "./app-model";
 
-import { useSession } from "./auth/session-context";
+import {
+  platformAuditPermission,
+  platformAuditRouteDescriptor,
+  tenantAuditPermission,
+  tenantAuditRouteDescriptor,
+} from "./audit/model";
 import { mfaSecurityRouteDescriptor } from "./auth/mfa/model";
 import { PlatformOperatorTeamCoordinatorProvider } from "./auth/platform-operator-team-coordinator";
+import { useSession } from "./auth/session-context";
 import {
   TenantAuthorityProvider,
   useTenantAuthority,
@@ -66,8 +74,8 @@ import { FocusedError } from "./components/focused-error";
 import { StatusPanel } from "./components/status-panel";
 import { TenantSwitcher } from "./components/tenant-switcher";
 import { contactAdministrationRouteDescriptor } from "./contacts/model";
-import { customFieldAdministrationRouteDescriptor } from "./customfields/model";
 import { customFieldImportRouteDescriptor } from "./customfields/custom-field-import-model";
+import { customFieldAdministrationRouteDescriptor } from "./customfields/model";
 import { tenantFederationRouteDescriptor } from "./federation/model";
 import {
   describePhaseTwoError,
@@ -81,54 +89,46 @@ import {
   platformTenantReadPermission,
 } from "./lib/phase-two-types";
 import { loadSystemStatus } from "./lib/system-status";
-import {
-  TenantDateTimeProvider,
-  useTenantDateTime,
-} from "./lib/tenant-date-time-context";
+import { useTenantDateTime } from "./lib/tenant-date-time";
+import { TenantDateTimeProvider } from "./lib/tenant-date-time-context";
 import {
   platformMfaPolicyReadPermission,
   platformMfaPolicyRouteDescriptor,
   tenantMfaPolicyReadPermission,
   tenantMfaPolicyRouteDescriptor,
 } from "./mfapolicy/model";
+import { notificationInboxRouteDescriptor } from "./notifications/inbox-model";
 import {
-  hasAllTicketPermissionsAtOneScope,
-  hasAnyTicketPermission,
-} from "./ticketing/ticketing-model";
-import { OperatorDashboard } from "./ticketing/operator-dashboard";
-import { reportingRouteDescriptor } from "./ticketing/reporting-model";
-import {
-  notificationInboxRouteDescriptor,
   platformNotificationPermission,
   platformSmtpRouteDescriptor,
   tenantNotificationPermission,
   tenantNotificationRouteDescriptor,
-} from "./notifications";
-import { customerPortalRouteDescriptor } from "./portal/model";
-import { slaAdministrationRouteDescriptor } from "./sla/model";
-import { workflowAdministrationRouteDescriptor } from "./workflows/model";
+} from "./notifications/model";
 import { platformAuthProviderRouteDescriptor } from "./pages/platform-auth-provider-model";
 import { platformLocalAccountRouteDescriptor } from "./pages/platform-local-account-model";
-import {
-  platformAuditPermission,
-  platformAuditRouteDescriptor,
-  tenantAuditPermission,
-  tenantAuditRouteDescriptor,
-} from "./audit/model";
-import {
-  tenantSettingsChangedEvent,
-  tenantSettingsReadPermission,
-  tenantSettingsRouteDescriptor,
-  type VersionedTenantSettings,
-} from "./settings/model";
-import { tenantSettingsApi } from "./settings/tenant-settings-api";
-import { ticketNumberingRouteDescriptor } from "./settings/numbering/model";
 import { platformOperationsApi } from "./platform/platform-operations-api";
 import {
   platformOperationsRouteDescriptor,
   platformSettingsChangedEvent,
   type PlatformGlobalSettingsView,
 } from "./platform/platform-operations-model";
+import { customerPortalRouteDescriptor } from "./portal/model";
+import {
+  tenantSettingsChangedEvent,
+  tenantSettingsReadPermission,
+  tenantSettingsRouteDescriptor,
+  type VersionedTenantSettings,
+} from "./settings/model";
+import { ticketNumberingRouteDescriptor } from "./settings/numbering/model";
+import { tenantSettingsApi } from "./settings/tenant-settings-api";
+import { slaAdministrationRouteDescriptor } from "./sla/model";
+import { OperatorDashboard } from "./ticketing/operator-dashboard";
+import { reportingRouteDescriptor } from "./ticketing/reporting-model";
+import {
+  hasAllTicketPermissionsAtOneScope,
+  hasAnyTicketPermission,
+} from "./ticketing/ticketing-model";
+import { workflowAdministrationRouteDescriptor } from "./workflows/model";
 
 interface TenantBrandStyle extends CSSProperties {
   "--tenant-brand-accent": string;
@@ -153,9 +153,14 @@ export function AppShell({
   );
 }
 
-function AppShellFrame({
+function AppShellFrame(props: Required<AppShellProps>): React.JSX.Element {
+  const model = useAppShellFrameModel(props);
+  return <AppShellFrameView model={model.data} />;
+}
+
+function useAppShellFrameModel({
   navigateLogoutContinuation,
-}: Required<AppShellProps>): React.JSX.Element {
+}: Required<AppShellProps>) {
   const { api, clearSession, session, updateSession } = useSession();
   const tenantAuthority = useTenantAuthority();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -164,90 +169,33 @@ function AppShellFrame({
   const navigate = useNavigate();
   const mainRef = useRef<HTMLElement>(null);
   const routeTitle = appRouteTitle(location.pathname);
-  const canReadTenants = hasPermission(session, platformTenantReadPermission);
-  const canReadPlatformOperatorTeams = hasPermission(
-    session,
-    platformOperatorTeamReadPermission,
-  );
-  const canReadPlatformIdentityProviders = hasPermission(
-    session,
-    platformIdentityProviderReadPermission,
-  );
-  const canReadPlatformIdentityBindings = hasPermission(
-    session,
-    platformIdentityBindingReadPermission,
-  );
-  const canReadPlatformIdentityAccounts = hasPermission(
-    session,
-    platformIdentityAccountReadPermission,
-  );
-  const canManagePlatformNotifications = hasPermission(
-    session,
-    platformNotificationPermission,
-  );
-  const canAccessContacts =
-    contactAdministrationRouteDescriptor.permissions.some((permission) =>
-      tenantAuthority.hasPermission(permission, "tenant"),
-    );
-  const canAccessCustomerPortal =
-    customerPortalRouteDescriptor.permissions.some((permission) =>
-      tenantAuthority.hasPermission(permission, "own"),
-    );
-  const canReadTenantAudit = tenantAuthority.hasPermission(
-    tenantAuditPermission,
-    "tenant",
-  );
-  const canReadPlatformAudit = hasPermission(session, platformAuditPermission);
-  const canReadPlatformMfaPolicy = hasPermission(
-    session,
-    platformMfaPolicyReadPermission,
-  );
-  const canReadTenantMfaPolicy = tenantAuthority.hasPermission(
-    tenantMfaPolicyReadPermission,
-    "tenant",
-  );
-  const canReadTenantSettings = tenantAuthority.hasPermission(
-    tenantSettingsReadPermission,
-    "tenant",
-  );
-  const canAccessPlatformOperations =
-    !session.activeTenantId &&
-    platformOperationsRouteDescriptor.permissions.some((permission) =>
-      hasPermission(session, permission),
-    );
-  const canReadPlatformSettings =
-    !session.activeTenantId &&
-    hasPermission(session, platformSettingsReadPermission);
-  const canAccessSla =
-    tenantAuthority.hasPermission("sla.read", "tenant") ||
-    tenantAuthority.hasPermission("sla.manage", "tenant") ||
-    tenantAuthority.hasPermission("sla.simulate", "tenant");
-  const canAccessWorkflows =
-    workflowAdministrationRouteDescriptor.permissions.some((permission) =>
-      tenantAuthority.hasPermission(permission, "tenant"),
-    );
-  const canAccessActivity =
-    hasAllTicketPermissionsAtOneScope(tenantAuthority.hasPermission, [
-      "alert.read",
-      "alert.activity.read",
-    ]) ||
-    hasAllTicketPermissionsAtOneScope(tenantAuthority.hasPermission, [
-      "case.read",
-      "case.activity.read",
-    ]);
-  const canAccessReports =
-    hasAnyTicketPermission(tenantAuthority.hasPermission, "alert.read") ||
-    hasAnyTicketPermission(tenantAuthority.hasPermission, "case.read");
-  const canAccessCustomFields =
-    customFieldAdministrationRouteDescriptor.permissions.some((permission) =>
-      tenantAuthority.hasPermission(permission, "tenant"),
-    );
-  const canAccessCustomFieldImports =
-    canAccessCustomFields &&
-    (hasAnyTicketPermission(tenantAuthority.hasPermission, "alert.update") ||
-      hasAnyTicketPermission(tenantAuthority.hasPermission, "case.update"));
+  const {
+    canReadTenants,
+    canReadPlatformOperatorTeams,
+    canReadPlatformIdentityProviders,
+    canReadPlatformIdentityBindings,
+    canReadPlatformIdentityAccounts,
+    canManagePlatformNotifications,
+    canAccessContacts,
+    canAccessCustomerPortal,
+    canReadTenantAudit,
+    canReadPlatformAudit,
+    canReadPlatformMfaPolicy,
+    canReadTenantMfaPolicy,
+    canReadTenantSettings,
+    canAccessPlatformOperations,
+    canReadPlatformSettings,
+    canAccessSla,
+    canAccessWorkflows,
+    canAccessActivity,
+    canAccessReports,
+    canAccessCustomFields,
+    canAccessCustomFieldImports,
+  } = shellAccess(session, tenantAuthority);
   const sessionIdRef = useRef(session.id);
-  sessionIdRef.current = session.id;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session.id]);
   const tenantBrandPair =
     session.id + ":" + (session.activeTenantId ?? "inactive");
   const [tenantBrandRevision, setTenantBrandRevision] = useState(0);
@@ -468,6 +416,85 @@ function AppShellFrame({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      canAccessActivity,
+      canAccessContacts,
+      canAccessCustomFieldImports,
+      canAccessCustomFields,
+      canAccessCustomerPortal,
+      canAccessPlatformOperations,
+      canAccessReports,
+      canAccessSla,
+      canAccessWorkflows,
+      canManagePlatformNotifications,
+      canReadPlatformAudit,
+      canReadPlatformIdentityAccounts,
+      canReadPlatformIdentityBindings,
+      canReadPlatformIdentityProviders,
+      canReadPlatformMfaPolicy,
+      canReadPlatformOperatorTeams,
+      canReadTenantAudit,
+      canReadTenantMfaPolicy,
+      canReadTenantSettings,
+      canReadTenants,
+      isLoggingOut,
+      logout,
+      mainRef,
+      platformSettings,
+      routeTitle,
+      session,
+      sessionError,
+      shellName,
+      tenantAuthority,
+      tenantBrand,
+      tenantBrandStyle,
+    },
+  };
+}
+
+function AppShellFrameView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useAppShellFrameModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    canAccessActivity,
+    canAccessContacts,
+    canAccessCustomFieldImports,
+    canAccessCustomFields,
+    canAccessCustomerPortal,
+    canAccessPlatformOperations,
+    canAccessReports,
+    canAccessSla,
+    canAccessWorkflows,
+    canManagePlatformNotifications,
+    canReadPlatformAudit,
+    canReadPlatformIdentityAccounts,
+    canReadPlatformIdentityBindings,
+    canReadPlatformIdentityProviders,
+    canReadPlatformMfaPolicy,
+    canReadPlatformOperatorTeams,
+    canReadTenantAudit,
+    canReadTenantMfaPolicy,
+    canReadTenantSettings,
+    canReadTenants,
+    isLoggingOut,
+    logout,
+    mainRef,
+    platformSettings,
+    routeTitle,
+    session,
+    sessionError,
+    shellName,
+    tenantAuthority,
+    tenantBrand,
+    tenantBrandStyle,
+  } = model;
   return (
     <TenantDateTimeProvider
       locale={tenantBrand?.locale}
@@ -505,421 +532,33 @@ function AppShellFrame({
 
           <TenantSwitcher />
 
-          <nav className="nav-list" aria-label="Workspace">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                `nav-item${isActive ? " nav-item--active" : ""}`
-              }
-            >
-              <Activity aria-hidden="true" />
-              <span>Overview</span>
-            </NavLink>
-            <NavLink
-              to="/profile"
-              className={({ isActive }) =>
-                `nav-item${isActive ? " nav-item--active" : ""}`
-              }
-            >
-              <CircleUserRound aria-hidden="true" />
-              <span>Profile</span>
-            </NavLink>
-            <NavLink
-              to="/sessions"
-              className={({ isActive }) =>
-                `nav-item${isActive ? " nav-item--active" : ""}`
-              }
-            >
-              <Laptop aria-hidden="true" />
-              <span>Sessions</span>
-            </NavLink>
-            {session.activeTenantId ? (
-              <NavLink
-                to={mfaSecurityRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <KeyRound aria-hidden="true" />
-                <span>{mfaSecurityRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {session.activeTenantId ? (
-              <NavLink
-                to={notificationInboxRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Inbox aria-hidden="true" />
-                <span>{notificationInboxRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {hasAnyTicketPermission(
-              tenantAuthority.hasPermission,
-              "alert.read",
-            ) ? (
-              <NavLink
-                to="/alerts"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <BellRing aria-hidden="true" />
-                <span>Alerts</span>
-              </NavLink>
-            ) : null}
-            {canAccessActivity ? (
-              <NavLink
-                to="/activity"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Activity aria-hidden="true" />
-                <span>Activity</span>
-              </NavLink>
-            ) : null}
-            {hasAnyTicketPermission(
-              tenantAuthority.hasPermission,
-              "case.read",
-            ) ? (
-              <NavLink
-                to="/cases"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <BriefcaseBusiness aria-hidden="true" />
-                <span>Cases</span>
-              </NavLink>
-            ) : null}
-            {canAccessReports ? (
-              <NavLink
-                to={reportingRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <FileSpreadsheet aria-hidden="true" />
-                <span>{reportingRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {hasAnyTicketPermission(
-              tenantAuthority.hasPermission,
-              "alert.read",
-            ) ||
-            hasAnyTicketPermission(
-              tenantAuthority.hasPermission,
-              "case.read",
-            ) ? (
-              <NavLink
-                to="/search"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Search aria-hidden="true" />
-                <span>Global search</span>
-              </NavLink>
-            ) : null}
-            {canAccessCustomerPortal ? (
-              <NavLink
-                to={customerPortalRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <ShieldCheck aria-hidden="true" />
-                <span>Customer portal</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission("user.read") ? (
-              <NavLink
-                to="/tenant/users"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Users aria-hidden="true" />
-                <span>Users</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission("role.read") ? (
-              <NavLink
-                to="/tenant/roles"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Shield aria-hidden="true" />
-                <span>Roles</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission("group.read") ? (
-              <NavLink
-                to="/tenant/groups"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Network aria-hidden="true" />
-                <span>Groups</span>
-              </NavLink>
-            ) : null}
-            {canAccessContacts ? (
-              <NavLink
-                to={contactAdministrationRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <ContactRound aria-hidden="true" />
-                <span>Customer contacts</span>
-              </NavLink>
-            ) : null}
-            {canReadTenantAudit ? (
-              <NavLink
-                to={tenantAuditRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <FileClock aria-hidden="true" />
-                <span>Tenant audit</span>
-              </NavLink>
-            ) : null}
-            {canReadTenantSettings ? (
-              <NavLink
-                to={tenantSettingsRouteDescriptor.path}
-                end
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Palette aria-hidden="true" />
-                <span>{tenantSettingsRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canReadTenantSettings ? (
-              <NavLink
-                to={ticketNumberingRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Hash aria-hidden="true" />
-                <span>{ticketNumberingRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canAccessSla ? (
-              <NavLink
-                to={slaAdministrationRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Gauge aria-hidden="true" />
-                <span>SLA control room</span>
-              </NavLink>
-            ) : null}
-            {canAccessWorkflows ? (
-              <NavLink
-                to={workflowAdministrationRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <GitBranch aria-hidden="true" />
-                <span>Workflows</span>
-              </NavLink>
-            ) : null}
-            {canAccessCustomFields ? (
-              <NavLink
-                to={customFieldAdministrationRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Braces aria-hidden="true" />
-                <span>{customFieldAdministrationRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canAccessCustomFieldImports ? (
-              <NavLink
-                to={customFieldImportRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <FileJson2 aria-hidden="true" />
-                <span>{customFieldImportRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission("operator_team.read", "tenant") ? (
-              <NavLink
-                to="/tenant/operator-teams"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <UsersRound aria-hidden="true" />
-                <span>Operator teams</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission(
-              "identity_provider.read",
-              "tenant",
-            ) ? (
-              <>
-                <NavLink
-                  to="/tenant/identity-providers"
-                  className={({ isActive }) =>
-                    `nav-item${isActive ? " nav-item--active" : ""}`
-                  }
-                >
-                  <ServerCog aria-hidden="true" />
-                  <span>Identity providers</span>
-                </NavLink>
-                <NavLink
-                  to={tenantFederationRouteDescriptor.path}
-                  className={({ isActive }) =>
-                    `nav-item${isActive ? " nav-item--active" : ""}`
-                  }
-                >
-                  <RadioTower aria-hidden="true" />
-                  <span>{tenantFederationRouteDescriptor.label}</span>
-                </NavLink>
-              </>
-            ) : null}
-            {canReadTenantMfaPolicy ? (
-              <NavLink
-                to={tenantMfaPolicyRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <ShieldCheck aria-hidden="true" />
-                <span>{tenantMfaPolicyRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission("service_account.read", "tenant") ? (
-              <NavLink
-                to="/tenant/service-accounts"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Bot aria-hidden="true" />
-                <span>Service accounts</span>
-              </NavLink>
-            ) : null}
-            {tenantAuthority.hasPermission(
-              tenantNotificationPermission,
-              "tenant",
-            ) ? (
-              <NavLink
-                to={tenantNotificationRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Send aria-hidden="true" />
-                <span>Notifications</span>
-              </NavLink>
-            ) : null}
-            {canReadTenants ? (
-              <NavLink
-                to="/platform/tenants"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Building2 aria-hidden="true" />
-                <span>Platform tenants</span>
-              </NavLink>
-            ) : null}
-            {canAccessPlatformOperations ? (
-              <NavLink
-                to={platformOperationsRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Gauge aria-hidden="true" />
-                <span>{platformOperationsRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canReadPlatformOperatorTeams ? (
-              <NavLink
-                to="/platform/operator-teams"
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <RadioTower aria-hidden="true" />
-                <span>Platform teams</span>
-              </NavLink>
-            ) : null}
-            {canReadPlatformIdentityProviders ||
-            canReadPlatformIdentityBindings ||
-            canReadPlatformIdentityAccounts ? (
-              <NavLink
-                to={platformAuthProviderRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <Fingerprint aria-hidden="true" />
-                <span>{platformAuthProviderRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canReadPlatformIdentityAccounts ? (
-              <NavLink
-                to={platformLocalAccountRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <KeyRound aria-hidden="true" />
-                <span>{platformLocalAccountRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canManagePlatformNotifications ? (
-              <NavLink
-                to={platformSmtpRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <MailCheck aria-hidden="true" />
-                <span>Platform SMTP</span>
-              </NavLink>
-            ) : null}
-            {canReadPlatformMfaPolicy ? (
-              <NavLink
-                to={platformMfaPolicyRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <ShieldCheck aria-hidden="true" />
-                <span>{platformMfaPolicyRouteDescriptor.label}</span>
-              </NavLink>
-            ) : null}
-            {canReadPlatformAudit ? (
-              <NavLink
-                to={platformAuditRouteDescriptor.path}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}`
-                }
-              >
-                <FileClock aria-hidden="true" />
-                <span>Platform audit</span>
-              </NavLink>
-            ) : null}
-          </nav>
+          <ShellNavigation
+            access={{
+              canAccessActivity: canAccessActivity,
+              canAccessContacts: canAccessContacts,
+              canAccessCustomerPortal: canAccessCustomerPortal,
+              canAccessCustomFieldImports: canAccessCustomFieldImports,
+              canAccessCustomFields: canAccessCustomFields,
+              canAccessPlatformOperations: canAccessPlatformOperations,
+              canAccessReports: canAccessReports,
+              canAccessSla: canAccessSla,
+              canAccessWorkflows: canAccessWorkflows,
+              canManagePlatformNotifications: canManagePlatformNotifications,
+              canReadPlatformAudit: canReadPlatformAudit,
+              canReadPlatformIdentityAccounts: canReadPlatformIdentityAccounts,
+              canReadPlatformIdentityBindings: canReadPlatformIdentityBindings,
+              canReadPlatformIdentityProviders:
+                canReadPlatformIdentityProviders,
+              canReadPlatformMfaPolicy: canReadPlatformMfaPolicy,
+              canReadPlatformOperatorTeams: canReadPlatformOperatorTeams,
+              canReadTenantAudit: canReadTenantAudit,
+              canReadTenantMfaPolicy: canReadTenantMfaPolicy,
+              canReadTenants: canReadTenants,
+              canReadTenantSettings: canReadTenantSettings,
+              session: session,
+              tenantAuthority: tenantAuthority,
+            }}
+          />
 
           <div className="sidebar__footer">
             <Separator />
@@ -999,57 +638,6 @@ function AppShellFrame({
 
 function assignLogoutContinuation(continuationUrl: string): void {
   globalThis.location.assign(continuationUrl);
-}
-
-export function appRouteTitle(pathname: string): string {
-  const path = pathname.replace(/\/+$/, "") || "/";
-  const exactTitles: Readonly<Record<string, string>> = {
-    "/": "Overview",
-    "/activity": "Activity",
-    "/account/security": "MFA security",
-    "/alerts": "Alerts",
-    "/alerts/new": "Create Alert",
-    "/cases": "Cases",
-    "/cases/new": "Create Case",
-    "/platform/audit": "Platform audit",
-    "/platform/identity-providers": "Platform identity providers",
-    "/platform/local-accounts": "Platform local accounts",
-    "/platform/mfa-policies": "Platform MFA policies",
-    "/platform/notifications/smtp": "Platform SMTP",
-    "/platform/operator-teams": "Platform operator teams",
-    "/platform/operations": "Platform operations",
-    "/platform/tenants": "Platform tenants",
-    "/portal": "Customer portal",
-    "/profile": "User profile",
-    [notificationInboxRouteDescriptor.path]:
-      notificationInboxRouteDescriptor.label,
-    [reportingRouteDescriptor.path]: reportingRouteDescriptor.label,
-    "/search": "Global search",
-    "/sessions": "Sessions",
-    "/tenant/audit": "Tenant audit",
-    "/tenant/contacts": "Contacts",
-    "/tenant/custom-fields": "Custom fields",
-    [customFieldImportRouteDescriptor.path]:
-      customFieldImportRouteDescriptor.label,
-    "/tenant/federated-identity-providers": "Tenant federation",
-    "/tenant/groups": "Security groups",
-    "/tenant/identity-providers": "Identity providers",
-    "/tenant/mfa-policies": "Tenant MFA policies",
-    "/tenant/notifications": "Notifications",
-    "/tenant/operator-teams": "Operator teams",
-    "/tenant/roles": "Roles",
-    "/tenant/service-accounts": "Service accounts",
-    "/tenant/settings": "Tenant identity",
-    [ticketNumberingRouteDescriptor.path]: ticketNumberingRouteDescriptor.label,
-    "/tenant/sla": "SLA administration",
-    "/tenant/users": "Users",
-    "/tenant/workflows": "Workflows",
-  };
-  const exact = exactTitles[path];
-  if (exact) return exact;
-  if (path.startsWith("/alerts/")) return "Alert detail";
-  if (path.startsWith("/cases/")) return "Case detail";
-  return "Workspace";
 }
 
 export function ControlPlaneOverview(): React.JSX.Element {
@@ -1195,4 +783,468 @@ function earliestExpiry(idle: string, absolute: string): number | null {
     (value) => !Number.isNaN(value),
   );
   return values.length > 0 ? Math.min(...values) : null;
+}
+
+interface ShellNavigationAccess {
+  canAccessActivity: boolean;
+  canAccessContacts: boolean;
+  canAccessCustomerPortal: boolean;
+  canAccessCustomFieldImports: boolean;
+  canAccessCustomFields: boolean;
+  canAccessPlatformOperations: boolean;
+  canAccessReports: boolean;
+  canAccessSla: boolean;
+  canAccessWorkflows: boolean;
+  canManagePlatformNotifications: boolean;
+  canReadPlatformAudit: boolean;
+  canReadPlatformIdentityAccounts: boolean;
+  canReadPlatformIdentityBindings: boolean;
+  canReadPlatformIdentityProviders: boolean;
+  canReadPlatformMfaPolicy: boolean;
+  canReadPlatformOperatorTeams: boolean;
+  canReadTenantAudit: boolean;
+  canReadTenantMfaPolicy: boolean;
+  canReadTenants: boolean;
+  canReadTenantSettings: boolean;
+  session: ReturnType<typeof useSession>["session"];
+  tenantAuthority: ReturnType<typeof useTenantAuthority>;
+}
+
+function shellNavigationItems({
+  canAccessActivity,
+  canAccessContacts,
+  canAccessCustomerPortal,
+  canAccessCustomFieldImports,
+  canAccessCustomFields,
+  canAccessPlatformOperations,
+  canAccessReports,
+  canAccessSla,
+  canAccessWorkflows,
+  canManagePlatformNotifications,
+  canReadPlatformAudit,
+  canReadPlatformIdentityAccounts,
+  canReadPlatformIdentityBindings,
+  canReadPlatformIdentityProviders,
+  canReadPlatformMfaPolicy,
+  canReadPlatformOperatorTeams,
+  canReadTenantAudit,
+  canReadTenantMfaPolicy,
+  canReadTenants,
+  canReadTenantSettings,
+  session,
+  tenantAuthority,
+}: ShellNavigationAccess) {
+  return [
+    {
+      to: "/",
+      end: true,
+      label: "Overview",
+      Icon: Activity,
+      visible: true,
+    },
+    {
+      to: "/profile",
+      end: false,
+      label: "Profile",
+      Icon: CircleUserRound,
+      visible: true,
+    },
+    {
+      to: "/sessions",
+      end: false,
+      label: "Sessions",
+      Icon: Laptop,
+      visible: true,
+    },
+    {
+      to: mfaSecurityRouteDescriptor.path,
+      end: false,
+      label: mfaSecurityRouteDescriptor.label,
+      Icon: KeyRound,
+      visible: Boolean(session.activeTenantId),
+    },
+    {
+      to: notificationInboxRouteDescriptor.path,
+      end: false,
+      label: notificationInboxRouteDescriptor.label,
+      Icon: Inbox,
+      visible: Boolean(session.activeTenantId),
+    },
+    {
+      to: "/alerts",
+      end: false,
+      label: "Alerts",
+      Icon: BellRing,
+      visible: hasAnyTicketPermission(
+        tenantAuthority.hasPermission,
+        "alert.read",
+      ),
+    },
+    {
+      to: "/activity",
+      end: false,
+      label: "Activity",
+      Icon: Activity,
+      visible: canAccessActivity,
+    },
+    {
+      to: "/cases",
+      end: false,
+      label: "Cases",
+      Icon: BriefcaseBusiness,
+      visible: hasAnyTicketPermission(
+        tenantAuthority.hasPermission,
+        "case.read",
+      ),
+    },
+    {
+      to: reportingRouteDescriptor.path,
+      end: false,
+      label: reportingRouteDescriptor.label,
+      Icon: FileSpreadsheet,
+      visible: canAccessReports,
+    },
+    {
+      to: "/search",
+      end: false,
+      label: "Global search",
+      Icon: Search,
+      visible:
+        hasAnyTicketPermission(tenantAuthority.hasPermission, "alert.read") ||
+        hasAnyTicketPermission(tenantAuthority.hasPermission, "case.read"),
+    },
+    {
+      to: customerPortalRouteDescriptor.path,
+      end: false,
+      label: "Customer portal",
+      Icon: ShieldCheck,
+      visible: canAccessCustomerPortal,
+    },
+    {
+      to: "/tenant/users",
+      end: false,
+      label: "Users",
+      Icon: Users,
+      visible: tenantAuthority.hasPermission("user.read"),
+    },
+    {
+      to: "/tenant/roles",
+      end: false,
+      label: "Roles",
+      Icon: Shield,
+      visible: tenantAuthority.hasPermission("role.read"),
+    },
+    {
+      to: "/tenant/groups",
+      end: false,
+      label: "Groups",
+      Icon: Network,
+      visible: tenantAuthority.hasPermission("group.read"),
+    },
+    {
+      to: contactAdministrationRouteDescriptor.path,
+      end: false,
+      label: "Customer contacts",
+      Icon: ContactRound,
+      visible: canAccessContacts,
+    },
+    {
+      to: tenantAuditRouteDescriptor.path,
+      end: false,
+      label: "Tenant audit",
+      Icon: FileClock,
+      visible: canReadTenantAudit,
+    },
+    {
+      to: tenantSettingsRouteDescriptor.path,
+      end: true,
+      label: tenantSettingsRouteDescriptor.label,
+      Icon: Palette,
+      visible: canReadTenantSettings,
+    },
+    {
+      to: ticketNumberingRouteDescriptor.path,
+      end: false,
+      label: ticketNumberingRouteDescriptor.label,
+      Icon: Hash,
+      visible: canReadTenantSettings,
+    },
+    {
+      to: slaAdministrationRouteDescriptor.path,
+      end: false,
+      label: "SLA control room",
+      Icon: Gauge,
+      visible: canAccessSla,
+    },
+    {
+      to: workflowAdministrationRouteDescriptor.path,
+      end: false,
+      label: "Workflows",
+      Icon: GitBranch,
+      visible: canAccessWorkflows,
+    },
+    {
+      to: customFieldAdministrationRouteDescriptor.path,
+      end: false,
+      label: customFieldAdministrationRouteDescriptor.label,
+      Icon: Braces,
+      visible: canAccessCustomFields,
+    },
+    {
+      to: customFieldImportRouteDescriptor.path,
+      end: false,
+      label: customFieldImportRouteDescriptor.label,
+      Icon: FileJson2,
+      visible: canAccessCustomFieldImports,
+    },
+    {
+      to: "/tenant/operator-teams",
+      end: false,
+      label: "Operator teams",
+      Icon: UsersRound,
+      visible: tenantAuthority.hasPermission("operator_team.read", "tenant"),
+    },
+    {
+      to: "/tenant/identity-providers",
+      end: false,
+      label: "Identity providers",
+      Icon: ServerCog,
+      visible: tenantAuthority.hasPermission(
+        "identity_provider.read",
+        "tenant",
+      ),
+    },
+    {
+      to: tenantFederationRouteDescriptor.path,
+      end: false,
+      label: tenantFederationRouteDescriptor.label,
+      Icon: RadioTower,
+      visible: tenantAuthority.hasPermission(
+        "identity_provider.read",
+        "tenant",
+      ),
+    },
+    {
+      to: tenantMfaPolicyRouteDescriptor.path,
+      end: false,
+      label: tenantMfaPolicyRouteDescriptor.label,
+      Icon: ShieldCheck,
+      visible: canReadTenantMfaPolicy,
+    },
+    {
+      to: "/tenant/service-accounts",
+      end: false,
+      label: "Service accounts",
+      Icon: Bot,
+      visible: tenantAuthority.hasPermission("service_account.read", "tenant"),
+    },
+    {
+      to: tenantNotificationRouteDescriptor.path,
+      end: false,
+      label: "Notifications",
+      Icon: Send,
+      visible: tenantAuthority.hasPermission(
+        tenantNotificationPermission,
+        "tenant",
+      ),
+    },
+    {
+      to: "/platform/tenants",
+      end: false,
+      label: "Platform tenants",
+      Icon: Building2,
+      visible: canReadTenants,
+    },
+    {
+      to: platformOperationsRouteDescriptor.path,
+      end: false,
+      label: platformOperationsRouteDescriptor.label,
+      Icon: Gauge,
+      visible: canAccessPlatformOperations,
+    },
+    {
+      to: "/platform/operator-teams",
+      end: false,
+      label: "Platform teams",
+      Icon: RadioTower,
+      visible: canReadPlatformOperatorTeams,
+    },
+    {
+      to: platformAuthProviderRouteDescriptor.path,
+      end: false,
+      label: platformAuthProviderRouteDescriptor.label,
+      Icon: Fingerprint,
+      visible:
+        canReadPlatformIdentityProviders ||
+        canReadPlatformIdentityBindings ||
+        canReadPlatformIdentityAccounts,
+    },
+    {
+      to: platformLocalAccountRouteDescriptor.path,
+      end: false,
+      label: platformLocalAccountRouteDescriptor.label,
+      Icon: KeyRound,
+      visible: canReadPlatformIdentityAccounts,
+    },
+    {
+      to: platformSmtpRouteDescriptor.path,
+      end: false,
+      label: "Platform SMTP",
+      Icon: MailCheck,
+      visible: canManagePlatformNotifications,
+    },
+    {
+      to: platformMfaPolicyRouteDescriptor.path,
+      end: false,
+      label: platformMfaPolicyRouteDescriptor.label,
+      Icon: ShieldCheck,
+      visible: canReadPlatformMfaPolicy,
+    },
+    {
+      to: platformAuditRouteDescriptor.path,
+      end: false,
+      label: "Platform audit",
+      Icon: FileClock,
+      visible: canReadPlatformAudit,
+    },
+  ];
+}
+
+function ShellNavigation({
+  access,
+}: {
+  access: ShellNavigationAccess;
+}): React.JSX.Element {
+  return (
+    <nav className="nav-list" aria-label="Workspace">
+      {shellNavigationItems(access).map((item) =>
+        item.visible ? (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            className={navigationClassName}
+          >
+            <item.Icon aria-hidden="true" />
+            <span>{item.label}</span>
+          </NavLink>
+        ) : null,
+      )}
+    </nav>
+  );
+}
+
+function navigationClassName({ isActive }: { isActive: boolean }): string {
+  return "nav-item" + (isActive ? " nav-item--active" : "");
+}
+
+function shellAccess(
+  session: ReturnType<typeof useSession>["session"],
+  tenantAuthority: ReturnType<typeof useTenantAuthority>,
+) {
+  const canReadTenants = hasPermission(session, platformTenantReadPermission);
+  const canReadPlatformOperatorTeams = hasPermission(
+    session,
+    platformOperatorTeamReadPermission,
+  );
+  const canReadPlatformIdentityProviders = hasPermission(
+    session,
+    platformIdentityProviderReadPermission,
+  );
+  const canReadPlatformIdentityBindings = hasPermission(
+    session,
+    platformIdentityBindingReadPermission,
+  );
+  const canReadPlatformIdentityAccounts = hasPermission(
+    session,
+    platformIdentityAccountReadPermission,
+  );
+  const canManagePlatformNotifications = hasPermission(
+    session,
+    platformNotificationPermission,
+  );
+  const canAccessContacts =
+    contactAdministrationRouteDescriptor.permissions.some((permission) =>
+      tenantAuthority.hasPermission(permission, "tenant"),
+    );
+  const canAccessCustomerPortal =
+    customerPortalRouteDescriptor.permissions.some((permission) =>
+      tenantAuthority.hasPermission(permission, "own"),
+    );
+  const canReadTenantAudit = tenantAuthority.hasPermission(
+    tenantAuditPermission,
+    "tenant",
+  );
+  const canReadPlatformAudit = hasPermission(session, platformAuditPermission);
+  const canReadPlatformMfaPolicy = hasPermission(
+    session,
+    platformMfaPolicyReadPermission,
+  );
+  const canReadTenantMfaPolicy = tenantAuthority.hasPermission(
+    tenantMfaPolicyReadPermission,
+    "tenant",
+  );
+  const canReadTenantSettings = tenantAuthority.hasPermission(
+    tenantSettingsReadPermission,
+    "tenant",
+  );
+  const canAccessPlatformOperations =
+    !session.activeTenantId &&
+    platformOperationsRouteDescriptor.permissions.some((permission) =>
+      hasPermission(session, permission),
+    );
+  const canReadPlatformSettings =
+    !session.activeTenantId &&
+    hasPermission(session, platformSettingsReadPermission);
+  const canAccessSla =
+    tenantAuthority.hasPermission("sla.read", "tenant") ||
+    tenantAuthority.hasPermission("sla.manage", "tenant") ||
+    tenantAuthority.hasPermission("sla.simulate", "tenant");
+  const canAccessWorkflows =
+    workflowAdministrationRouteDescriptor.permissions.some((permission) =>
+      tenantAuthority.hasPermission(permission, "tenant"),
+    );
+  const canAccessActivity =
+    hasAllTicketPermissionsAtOneScope(tenantAuthority.hasPermission, [
+      "alert.read",
+      "alert.activity.read",
+    ]) ||
+    hasAllTicketPermissionsAtOneScope(tenantAuthority.hasPermission, [
+      "case.read",
+      "case.activity.read",
+    ]);
+  const canAccessReports =
+    hasAnyTicketPermission(tenantAuthority.hasPermission, "alert.read") ||
+    hasAnyTicketPermission(tenantAuthority.hasPermission, "case.read");
+  const canAccessCustomFields =
+    customFieldAdministrationRouteDescriptor.permissions.some((permission) =>
+      tenantAuthority.hasPermission(permission, "tenant"),
+    );
+  const canAccessCustomFieldImports =
+    canAccessCustomFields &&
+    (hasAnyTicketPermission(tenantAuthority.hasPermission, "alert.update") ||
+      hasAnyTicketPermission(tenantAuthority.hasPermission, "case.update"));
+  return {
+    canReadTenants,
+    canReadPlatformOperatorTeams,
+    canReadPlatformIdentityProviders,
+    canReadPlatformIdentityBindings,
+    canReadPlatformIdentityAccounts,
+    canManagePlatformNotifications,
+    canAccessContacts,
+    canAccessCustomerPortal,
+    canReadTenantAudit,
+    canReadPlatformAudit,
+    canReadPlatformMfaPolicy,
+    canReadTenantMfaPolicy,
+    canReadTenantSettings,
+    canAccessPlatformOperations,
+    canReadPlatformSettings,
+    canAccessSla,
+    canAccessWorkflows,
+    canAccessActivity,
+    canAccessReports,
+    canAccessCustomFields,
+    canAccessCustomFieldImports,
+  };
 }

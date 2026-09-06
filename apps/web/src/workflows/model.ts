@@ -201,10 +201,10 @@ export const workflowPermissionOrder: readonly WorkflowPermission[] = [
   "case.comment.private",
 ];
 const permissionsByKind: Readonly<
-  Record<WorkflowKind, readonly WorkflowPermission[]>
+  Record<WorkflowKind, ReadonlySet<WorkflowPermission>>
 > = {
-  alert: workflowPermissionOrder.slice(0, 7),
-  case: workflowPermissionOrder.slice(7),
+  alert: new Set(workflowPermissionOrder.slice(0, 7)),
+  case: new Set(workflowPermissionOrder.slice(7)),
 };
 const builtInConditionKinds: Readonly<
   Record<string, WorkflowConditionValue["type"]>
@@ -351,9 +351,7 @@ export function normalizeWorkflowDesign(
       `Transition ${key} permissions`,
     );
     if (
-      permissions.some(
-        (permission) => !permissionsByKind[kind].includes(permission),
-      )
+      permissions.some((permission) => !permissionsByKind[kind].has(permission))
     ) {
       throw new WorkflowInputError(
         `Transition ${key} contains a permission for another ticket kind.`,
@@ -430,9 +428,7 @@ export function normalizeWorkflowSimulation(
     "Simulation permissions",
   );
   if (
-    permissions.some(
-      (permission) => !permissionsByKind[kind].includes(permission),
-    )
+    permissions.some((permission) => !permissionsByKind[kind].has(permission))
   ) {
     throw new WorkflowInputError(
       "Simulation permission belongs to another ticket kind.",

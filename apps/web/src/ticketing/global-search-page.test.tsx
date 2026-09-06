@@ -16,7 +16,8 @@ import type {
   TenantPermissionKeyView,
 } from "../lib/phase-two-types";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
-import { GlobalSearchPage, canonicalSearch } from "./global-search-page";
+import { GlobalSearchPage } from "./global-search-page";
+import { canonicalSearch } from "./global-search-page-model";
 import { TicketingApiProvider } from "./ticketing-context";
 import {
   createTicketingApi,

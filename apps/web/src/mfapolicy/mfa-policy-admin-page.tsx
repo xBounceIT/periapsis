@@ -30,7 +30,14 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -132,22 +139,32 @@ type SimulationState = {
   result: MfaPolicySimulationResult;
 };
 
-export function MfaPolicyWorkspace({
+export function MfaPolicyWorkspace(
+  props: MfaPolicyWorkspaceProps,
+): React.JSX.Element {
+  const model = useMfaPolicyWorkspaceModel(props);
+  if (model.kind === "content") return model.content;
+  return <MfaPolicyWorkspaceView model={model.data} />;
+}
+
+function useMfaPolicyWorkspaceModel({
   api,
   authorityPending = false,
   boundary,
   canManage,
   canRead,
   csrfToken,
-}: MfaPolicyWorkspaceProps): React.JSX.Element {
+}: MfaPolicyWorkspaceProps) {
   const boundaryKey =
     boundary.kind === "platform" ? "platform" : `tenant:${boundary.tenantId}`;
+  const boundaryTenantId =
+    boundary.kind === "tenant" ? boundary.tenantId : undefined;
   const stableBoundary = useMemo<MfaPolicyBoundary>(
     () =>
-      boundary.kind === "platform"
+      boundaryTenantId === undefined
         ? { kind: "platform" }
-        : { kind: "tenant", tenantId: boundary.tenantId },
-    [boundary.kind, boundary.kind === "tenant" ? boundary.tenantId : ""],
+        : { kind: "tenant", tenantId: boundaryTenantId },
+    [boundaryTenantId],
   );
   const [items, setItems] = useState<MfaPolicyDocument[]>([]);
   const [nextCursor, setNextCursor] = useState<{
@@ -179,7 +196,9 @@ export function MfaPolicyWorkspace({
   const selectionGeneration = useRef(0);
   const operationGeneration = useRef(0);
   const contextKeyRef = useRef(boundaryKey);
-  contextKeyRef.current = boundaryKey;
+  useLayoutEffect(() => {
+    contextKeyRef.current = boundaryKey;
+  }, [boundaryKey]);
   const command = useRef<MfaPolicyCommandReference>({ current: null });
 
   function operationIsCurrent(
@@ -235,6 +254,7 @@ export function MfaPolicyWorkspace({
           requestGeneration === generation.current &&
           contextKeyRef.current === expectedContext
         ) {
+          // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
           setLoading(false);
           setLoadingMore(false);
         }
@@ -468,6 +488,7 @@ export function MfaPolicyWorkspace({
       });
     } catch (caught: unknown) {
       if (operationIsCurrent(requestGeneration, expectedContext)) {
+        // react-doctor-disable-next-line no-unowned-async-error-clear -- operationIsCurrent verifies both operation generation and authorization context before clearing this simulation.
         setSimulation(null);
         setError(
           mfaPolicyError(
@@ -478,6 +499,7 @@ export function MfaPolicyWorkspace({
       }
     } finally {
       if (operationIsCurrent(requestGeneration, expectedContext)) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setBusy(false);
       }
     }
@@ -619,25 +641,32 @@ export function MfaPolicyWorkspace({
       }
     } finally {
       if (operationIsCurrent(requestGeneration, expectedContext)) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setBusy(false);
       }
     }
   }
 
   if (authorityPending) {
-    return <RouteState title="Checking live tenant authority…" />;
+    return {
+      kind: "content" as const,
+      content: <RouteState title="Checking live tenant authority…" />,
+    };
   }
   if (
     !canRead ||
     (stableBoundary.kind === "tenant" && !stableBoundary.tenantId)
   ) {
-    return (
-      <RouteState
-        destructive
-        title="MFA policy administration is unavailable."
-        message="An active boundary and explicit live identity_policy.read authority are required. Navigation is not an authorization boundary."
-      />
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <RouteState
+          destructive
+          title="MFA policy administration is unavailable."
+          message="An active boundary and explicit live identity_policy.read authority are required. Navigation is not an authorization boundary."
+        />
+      ),
+    };
   }
 
   const operation = simulation?.result.operation;
@@ -653,6 +682,71 @@ export function MfaPolicyWorkspace({
     isMfaPolicyAuditReason(reason) &&
     !busy;
 
+  return {
+    kind: "ready" as const,
+    data: {
+      busy,
+      canManage,
+      contextAction,
+      enrollmentDeadline,
+      error,
+      freshnessSeconds,
+      includeRetired,
+      items,
+      level,
+      load,
+      loading,
+      loadingMore,
+      localRequired,
+      mutate,
+      mutationReady,
+      nextCursor,
+      notice,
+      operation,
+      reason,
+      resetDraft,
+      roleIds,
+      scope,
+      securityGroupIds,
+      selectDocument,
+      selected,
+      selectingKey,
+      setContextAction,
+      setEnrollmentDeadline,
+      setFreshnessSeconds,
+      setIncludeRetired,
+      setLevel,
+      setLocalRequired,
+      setReason,
+      setRoleIds,
+      setScope,
+      setSecurityGroupIds,
+      setTargetValue,
+      simulate,
+      simulation,
+      simulationFresh,
+      stableBoundary,
+      targetValue,
+    },
+  };
+}
+
+function MfaPolicyWorkspaceView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useMfaPolicyWorkspaceModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    canManage,
+    error,
+    notice,
+    simulation,
+    simulationFresh,
+    stableBoundary,
+  } = model;
   return (
     <section
       className="mfa-policy-workspace"
@@ -699,340 +793,16 @@ export function MfaPolicyWorkspace({
       ) : null}
 
       <div className="mfa-policy-grid">
-        <Card className="mfa-policy-history">
-          <CardHeader>
-            <div className="mfa-policy-card-heading">
-              <div>
-                <CardTitle>Publication history</CardTitle>
-                <CardDescription>
-                  Stable ID/revision order; history is never rewritten.
-                </CardDescription>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => void load()}
-                disabled={loading}
-              >
-                <RefreshCw aria-hidden="true" /> Refresh
-              </Button>
-            </div>
-            <label className="mfa-policy-check">
-              <Checkbox
-                checked={includeRetired}
-                disabled={busy}
-                onCheckedChange={(checked) =>
-                  setIncludeRetired(checked === true)
-                }
-              />
-              Include retired revisions
-            </label>
-          </CardHeader>
-          <CardContent className="mfa-policy-history__content">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={resetDraft}
-              disabled={busy}
-            >
-              New explicit publication
-            </Button>
-            {loading ? <p role="status">Loading policy history…</p> : null}
-            {!loading && items.length === 0 ? (
-              <div className="mfa-policy-empty">
-                <History aria-hidden="true" />
-                <strong>No publications yet</strong>
-                <p>
-                  {stableBoundary.kind === "platform"
-                    ? "No platform floor is seeded implicitly. Publish one explicitly only when recovery safety is proven."
-                    : "This tenant has no policy publications in the selected history view."}
-                </p>
-              </div>
-            ) : null}
-            <div className="mfa-policy-history__items">
-              {items.map((document) => {
-                const key = `${document.id}:${document.revision}`;
-                const active =
-                  selected?.value.id === document.id &&
-                  selected.value.revision === document.revision;
-                return (
-                  <button
-                    type="button"
-                    className={active ? "is-selected" : undefined}
-                    key={key}
-                    onClick={() => void selectDocument(document)}
-                    disabled={busy || selectingKey !== null}
-                    aria-pressed={active}
-                  >
-                    <span>
-                      <strong>{targetLabel(document.target)}</strong>
-                      <small>
-                        {shortId(document.id)} · revision {document.revision}
-                      </small>
-                    </span>
-                    <Badge
-                      variant={
-                        document.status === "live" ? "default" : "secondary"
-                      }
-                    >
-                      {selectingKey === key ? "Loading…" : document.status}
-                    </Badge>
-                  </button>
-                );
-              })}
-            </div>
-            {nextCursor ? (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => void load(nextCursor)}
-                disabled={loadingMore}
-              >
-                {loadingMore ? "Loading…" : "Load more history"}
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
+        <MfaPublicationHistory model={model} />
 
         <div className="mfa-policy-editor">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {selected
-                  ? "Replace or retire exact revision"
-                  : "Draft a publication"}
-              </CardTitle>
-              <CardDescription>
-                {selected
-                  ? `Strong CAS is pinned to ${selected.etag}; changing the target is not allowed within a revision chain.`
-                  : "Creation uses expected revision zero. Nothing is created until Publish succeeds."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="mfa-policy-form">
-              {stableBoundary.kind === "platform" ? (
-                <FormField htmlFor="mfa-policy-platform-target" label="Target">
-                  <Input
-                    id="mfa-policy-platform-target"
-                    value="platform_floor"
-                    readOnly
-                  />
-                </FormField>
-              ) : (
-                <>
-                  <FormField htmlFor="mfa-policy-scope" label="Target scope">
-                    <select
-                      id="mfa-policy-scope"
-                      value={scope}
-                      onChange={(event) => {
-                        setScope(parseTargetScope(event.target.value));
-                        setTargetValue("");
-                      }}
-                      disabled={selected !== null}
-                    >
-                      <option value="tenant_baseline">Tenant baseline</option>
-                      <option value="security_group">Security group</option>
-                      <option value="role">Role</option>
-                      <option value="action">Action</option>
-                    </select>
-                  </FormField>
-                  {scope !== "tenant_baseline" ? (
-                    <FormField
-                      htmlFor="mfa-policy-target-value"
-                      label={
-                        scope === "action"
-                          ? "Exact action"
-                          : scope === "role"
-                            ? "Role UUIDv7"
-                            : "Security-group UUIDv7"
-                      }
-                      hint="The target must be present in the exact simulation context."
-                    >
-                      <Input
-                        id="mfa-policy-target-value"
-                        value={targetValue}
-                        onChange={(event) => setTargetValue(event.target.value)}
-                        readOnly={selected !== null}
-                      />
-                    </FormField>
-                  ) : null}
-                </>
-              )}
-              <FormField htmlFor="mfa-policy-level" label="Required assurance">
-                <select
-                  id="mfa-policy-level"
-                  value={level}
-                  onChange={(event) =>
-                    setLevel(parsePolicyLevel(event.target.value))
-                  }
-                >
-                  <option value="primary">Primary</option>
-                  <option value="mfa">MFA</option>
-                  <option value="phishing_resistant">Phishing resistant</option>
-                </select>
-              </FormField>
-              <label className="mfa-policy-check">
-                <Checkbox
-                  checked={localRequired}
-                  onCheckedChange={(checked) =>
-                    setLocalRequired(checked === true)
-                  }
-                />
-                Require a local authentication path
-              </label>
-              <FormField
-                htmlFor="mfa-policy-freshness"
-                label="Freshness (seconds)"
-                hint="Zero adds no proof-age restriction; otherwise the shortest live value wins."
-              >
-                <Input
-                  id="mfa-policy-freshness"
-                  inputMode="numeric"
-                  value={freshnessSeconds}
-                  onChange={(event) => setFreshnessSeconds(event.target.value)}
-                />
-              </FormField>
-              <FormField
-                htmlFor="mfa-policy-deadline"
-                label="Enrollment deadline (UTC)"
-                optional
-                hint="Exact RFC3339 UTC milliseconds, for example 2027-01-15T12:00:00.000Z."
-              >
-                <Input
-                  id="mfa-policy-deadline"
-                  value={enrollmentDeadline}
-                  onChange={(event) =>
-                    setEnrollmentDeadline(event.target.value)
-                  }
-                  placeholder="2027-01-15T12:00:00.000Z"
-                />
-              </FormField>
-              {stableBoundary.kind === "tenant" ? (
-                <fieldset className="mfa-policy-context">
-                  <legend>Exact simulation context</legend>
-                  <p>
-                    Role and group arrays are bounded, deduplicated UUIDv7 sets.
-                    Action never defaults implicitly.
-                  </p>
-                  <FormField
-                    htmlFor="mfa-policy-role-context"
-                    label="Role UUIDv7 values"
-                    optional
-                    hint="Separate values with commas or new lines."
-                  >
-                    <Textarea
-                      id="mfa-policy-role-context"
-                      value={roleIds}
-                      onChange={(event) => setRoleIds(event.target.value)}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor="mfa-policy-group-context"
-                    label="Security-group UUIDv7 values"
-                    optional
-                    hint="Separate values with commas or new lines."
-                  >
-                    <Textarea
-                      id="mfa-policy-group-context"
-                      value={securityGroupIds}
-                      onChange={(event) =>
-                        setSecurityGroupIds(event.target.value)
-                      }
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor="mfa-policy-context-action"
-                    label="Exact action"
-                  >
-                    <Input
-                      id="mfa-policy-context-action"
-                      value={contextAction}
-                      onChange={(event) => setContextAction(event.target.value)}
-                    />
-                  </FormField>
-                </fieldset>
-              ) : null}
-              <div className="mfa-policy-actions">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void simulate("publish")}
-                  disabled={busy || selected?.value.status === "retired"}
-                >
-                  <FlaskConical aria-hidden="true" /> Simulate publication
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void simulate("retire")}
-                  disabled={
-                    busy || !selected || selected.value.status !== "live"
-                  }
-                >
-                  <FlaskConical aria-hidden="true" /> Simulate retirement
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <MfaSimulationEditor model={model} />
 
           {simulation ? (
             <SimulationCard simulation={simulation} fresh={simulationFresh} />
           ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Audited publication gate</CardTitle>
-              <CardDescription>
-                Simulation is explanatory, not a capability. The database
-                repeats recovery proof and CAS under lock.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="mfa-policy-form">
-              <FormField
-                htmlFor="mfa-policy-reason"
-                label="Audit reason"
-                hint="Visible ASCII, 1–2048 characters, without commas. The first audit envelope wins on replay."
-              >
-                <Textarea
-                  id="mfa-policy-reason"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                />
-              </FormField>
-              <Button
-                type="button"
-                onClick={() => void mutate()}
-                disabled={!mutationReady}
-              >
-                {busy
-                  ? "Submitting…"
-                  : operation === "retire"
-                    ? "Retire exact revision"
-                    : selected
-                      ? "Publish replacement revision"
-                      : stableBoundary.kind === "platform"
-                        ? "Publish platform floor"
-                        : "Publish tenant policy"}
-              </Button>
-              {!canManage ? (
-                <p className="mfa-policy-muted">
-                  Manage permission is required to publish or retire.
-                </p>
-              ) : null}
-              {simulation && !simulationFresh ? (
-                <p className="mfa-policy-muted">
-                  The draft changed after simulation. Simulate the exact draft
-                  again.
-                </p>
-              ) : null}
-              {simulationFresh && !simulation.result.recovery.safe ? (
-                <p className="mfa-policy-muted">
-                  Publication is blocked because the DB-authoritative recovery
-                  proof is unsafe.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+          <MfaPolicyWorkspaceAuditedPublicationGate model={model} />
         </div>
       </div>
     </section>
@@ -1093,9 +863,9 @@ function SimulationCard({
           </Alert>
         ) : null}
         <ol className="mfa-policy-sources">
-          {effective.sources.map((source, index) => (
+          {effective.sources.map((source) => (
             <li
-              key={`${source.source}:${source.policyId ?? "candidate"}:${index}`}
+              key={`${source.source}:${source.policyId ?? "candidate"}:${targetLabel(source.target)}`}
             >
               <span>
                 {source.source === "candidate"
@@ -1214,4 +984,429 @@ function mfaPolicyError(caught: unknown, fallback: string): string {
     return caught.message;
   }
   return fallback;
+}
+
+function MfaPublicationHistory({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaPolicyWorkspaceView>["model"];
+}): React.ReactNode {
+  return (
+    <Card className="mfa-policy-history">
+      <MfaPublicationHistoryHeading model={model} />
+      <MfaPublicationHistoryContent model={model} />
+    </Card>
+  );
+}
+
+function MfaSimulationEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaPolicyWorkspaceView>["model"];
+}): React.ReactNode {
+  const {
+    busy,
+    enrollmentDeadline,
+    freshnessSeconds,
+    level,
+    localRequired,
+    selected,
+    setEnrollmentDeadline,
+    setFreshnessSeconds,
+    setLevel,
+    setLocalRequired,
+    simulate,
+  } = model;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {selected
+            ? "Replace or retire exact revision"
+            : "Draft a publication"}
+        </CardTitle>
+        <CardDescription>
+          {selected
+            ? `Strong CAS is pinned to ${selected.etag}; changing the target is not allowed within a revision chain.`
+            : "Creation uses expected revision zero. Nothing is created until Publish succeeds."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="mfa-policy-form">
+        {<MfaSimulationTargetFields model={model} />}
+        <FormField htmlFor="mfa-policy-level" label="Required assurance">
+          <select
+            id="mfa-policy-level"
+            value={level}
+            onChange={(event) => setLevel(parsePolicyLevel(event.target.value))}
+          >
+            <option value="primary">Primary</option>
+            <option value="mfa">MFA</option>
+            <option value="phishing_resistant">Phishing resistant</option>
+          </select>
+        </FormField>
+        <label className="mfa-policy-check">
+          <Checkbox
+            checked={localRequired}
+            onCheckedChange={(checked) => setLocalRequired(checked === true)}
+          />
+          Require a local authentication path
+        </label>
+        <FormField
+          htmlFor="mfa-policy-freshness"
+          label="Freshness (seconds)"
+          hint="Zero adds no proof-age restriction; otherwise the shortest live value wins."
+        >
+          <Input
+            id="mfa-policy-freshness"
+            inputMode="numeric"
+            value={freshnessSeconds}
+            onChange={(event) => setFreshnessSeconds(event.target.value)}
+          />
+        </FormField>
+        <FormField
+          htmlFor="mfa-policy-deadline"
+          label="Enrollment deadline (UTC)"
+          optional
+          hint="Exact RFC3339 UTC milliseconds, for example 2027-01-15T12:00:00.000Z."
+        >
+          <Input
+            id="mfa-policy-deadline"
+            value={enrollmentDeadline}
+            onChange={(event) => setEnrollmentDeadline(event.target.value)}
+            placeholder="2027-01-15T12:00:00.000Z"
+          />
+        </FormField>
+        {<MfaSimulationContextForm model={model} />}
+        <div className="mfa-policy-actions">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void simulate("publish")}
+            disabled={busy || selected?.value.status === "retired"}
+          >
+            <FlaskConical aria-hidden="true" /> Simulate publication
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void simulate("retire")}
+            disabled={busy || !selected || selected.value.status !== "live"}
+          >
+            <FlaskConical aria-hidden="true" /> Simulate retirement
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MfaPolicyWorkspaceAuditedPublicationGate({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaPolicyWorkspaceView>["model"];
+}): React.ReactNode {
+  const {
+    busy,
+    canManage,
+    mutate,
+    mutationReady,
+    operation,
+    reason,
+    selected,
+    setReason,
+    simulation,
+    simulationFresh,
+    stableBoundary,
+  } = model;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Audited publication gate</CardTitle>
+        <CardDescription>
+          Simulation is explanatory, not a capability. The database repeats
+          recovery proof and CAS under lock.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="mfa-policy-form">
+        <FormField
+          htmlFor="mfa-policy-reason"
+          label="Audit reason"
+          hint="Visible ASCII, 1–2048 characters, without commas. The first audit envelope wins on replay."
+        >
+          <Textarea
+            id="mfa-policy-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </FormField>
+        <Button
+          type="button"
+          onClick={() => void mutate()}
+          disabled={!mutationReady}
+        >
+          {busy
+            ? "Submitting…"
+            : operation === "retire"
+              ? "Retire exact revision"
+              : selected
+                ? "Publish replacement revision"
+                : stableBoundary.kind === "platform"
+                  ? "Publish platform floor"
+                  : "Publish tenant policy"}
+        </Button>
+        {!canManage ? (
+          <p className="mfa-policy-muted">
+            Manage permission is required to publish or retire.
+          </p>
+        ) : null}
+        {simulation && !simulationFresh ? (
+          <p className="mfa-policy-muted">
+            The draft changed after simulation. Simulate the exact draft again.
+          </p>
+        ) : null}
+        {simulationFresh && simulation && !simulation.result.recovery.safe ? (
+          <p className="mfa-policy-muted">
+            Publication is blocked because the DB-authoritative recovery proof
+            is unsafe.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MfaPublicationHistoryHeading({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaPublicationHistory>["model"];
+}): React.ReactNode {
+  const { busy, includeRetired, load, loading, setIncludeRetired } = model;
+  return (
+    <CardHeader>
+      <div className="mfa-policy-card-heading">
+        <div>
+          <CardTitle>Publication history</CardTitle>
+          <CardDescription>
+            Stable ID/revision order; history is never rewritten.
+          </CardDescription>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          <RefreshCw aria-hidden="true" /> Refresh
+        </Button>
+      </div>
+      <label className="mfa-policy-check">
+        <Checkbox
+          checked={includeRetired}
+          disabled={busy}
+          onCheckedChange={(checked) => setIncludeRetired(checked === true)}
+        />
+        Include retired revisions
+      </label>
+    </CardHeader>
+  );
+}
+
+function MfaPublicationHistoryContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaPublicationHistory>["model"];
+}): React.ReactNode {
+  const {
+    busy,
+    items,
+    load,
+    loading,
+    loadingMore,
+    nextCursor,
+    resetDraft,
+    selectDocument,
+    selected,
+    selectingKey,
+    stableBoundary,
+  } = model;
+  return (
+    <CardContent className="mfa-policy-history__content">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={resetDraft}
+        disabled={busy}
+      >
+        New explicit publication
+      </Button>
+      {loading ? <p role="status">Loading policy history…</p> : null}
+      {!loading && items.length === 0 ? (
+        <div className="mfa-policy-empty">
+          <History aria-hidden="true" />
+          <strong>No publications yet</strong>
+          <p>
+            {stableBoundary.kind === "platform"
+              ? "No platform floor is seeded implicitly. Publish one explicitly only when recovery safety is proven."
+              : "This tenant has no policy publications in the selected history view."}
+          </p>
+        </div>
+      ) : null}
+      <div className="mfa-policy-history__items">
+        {items.map((document) => {
+          const key = `${document.id}:${document.revision}`;
+          const active =
+            selected?.value.id === document.id &&
+            selected.value.revision === document.revision;
+          return (
+            <button
+              type="button"
+              className={active ? "is-selected" : undefined}
+              key={key}
+              onClick={() => void selectDocument(document)}
+              disabled={busy || selectingKey !== null}
+              aria-pressed={active}
+            >
+              <span>
+                <strong>{targetLabel(document.target)}</strong>
+                <small>
+                  {shortId(document.id)} · revision {document.revision}
+                </small>
+              </span>
+              <Badge
+                variant={document.status === "live" ? "default" : "secondary"}
+              >
+                {selectingKey === key ? "Loading…" : document.status}
+              </Badge>
+            </button>
+          );
+        })}
+      </div>
+      {nextCursor ? (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => void load(nextCursor)}
+          disabled={loadingMore}
+        >
+          {loadingMore ? "Loading…" : "Load more history"}
+        </Button>
+      ) : null}
+    </CardContent>
+  );
+}
+
+function MfaSimulationTargetFields({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaSimulationEditor>["model"];
+}): React.ReactNode {
+  const {
+    scope,
+    selected,
+    setScope,
+    setTargetValue,
+    stableBoundary,
+    targetValue,
+  } = model;
+  return stableBoundary.kind === "platform" ? (
+    <FormField htmlFor="mfa-policy-platform-target" label="Target">
+      <Input id="mfa-policy-platform-target" value="platform_floor" readOnly />
+    </FormField>
+  ) : (
+    <>
+      <FormField htmlFor="mfa-policy-scope" label="Target scope">
+        <select
+          id="mfa-policy-scope"
+          value={scope}
+          onChange={(event) => {
+            setScope(parseTargetScope(event.target.value));
+            setTargetValue("");
+          }}
+          disabled={selected !== null}
+        >
+          <option value="tenant_baseline">Tenant baseline</option>
+          <option value="security_group">Security group</option>
+          <option value="role">Role</option>
+          <option value="action">Action</option>
+        </select>
+      </FormField>
+      {scope !== "tenant_baseline" ? (
+        <FormField
+          htmlFor="mfa-policy-target-value"
+          label={
+            scope === "action"
+              ? "Exact action"
+              : scope === "role"
+                ? "Role UUIDv7"
+                : "Security-group UUIDv7"
+          }
+          hint="The target must be present in the exact simulation context."
+        >
+          <Input
+            id="mfa-policy-target-value"
+            value={targetValue}
+            onChange={(event) => setTargetValue(event.target.value)}
+            readOnly={selected !== null}
+          />
+        </FormField>
+      ) : null}
+    </>
+  );
+}
+
+function MfaSimulationContextForm({
+  model,
+}: {
+  model: React.ComponentProps<typeof MfaSimulationEditor>["model"];
+}): React.ReactNode {
+  const {
+    contextAction,
+    roleIds,
+    securityGroupIds,
+    setContextAction,
+    setRoleIds,
+    setSecurityGroupIds,
+    stableBoundary,
+  } = model;
+  return stableBoundary.kind === "tenant" ? (
+    <fieldset className="mfa-policy-context">
+      <legend>Exact simulation context</legend>
+      <p>
+        Role and group arrays are bounded, deduplicated UUIDv7 sets. Action
+        never defaults implicitly.
+      </p>
+      <FormField
+        htmlFor="mfa-policy-role-context"
+        label="Role UUIDv7 values"
+        optional
+        hint="Separate values with commas or new lines."
+      >
+        <Textarea
+          id="mfa-policy-role-context"
+          value={roleIds}
+          onChange={(event) => setRoleIds(event.target.value)}
+        />
+      </FormField>
+      <FormField
+        htmlFor="mfa-policy-group-context"
+        label="Security-group UUIDv7 values"
+        optional
+        hint="Separate values with commas or new lines."
+      >
+        <Textarea
+          id="mfa-policy-group-context"
+          value={securityGroupIds}
+          onChange={(event) => setSecurityGroupIds(event.target.value)}
+        />
+      </FormField>
+      <FormField htmlFor="mfa-policy-context-action" label="Exact action">
+        <Input
+          id="mfa-policy-context-action"
+          value={contextAction}
+          onChange={(event) => setContextAction(event.target.value)}
+        />
+      </FormField>
+    </fieldset>
+  ) : null;
 }

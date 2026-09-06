@@ -1,4 +1,8 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  TicketNumberingDraft,
+  TicketNumberingKind,
+  TicketNumberingPreview,
+} from "@periapsis/contracts";
 import {
   Alert,
   AlertDescription,
@@ -14,11 +18,7 @@ import {
   CardTitle,
 } from "@periapsis/ui/components/ui/card";
 import { Input } from "@periapsis/ui/components/ui/input";
-import type {
-  TicketNumberingDraft,
-  TicketNumberingKind,
-  TicketNumberingPreview,
-} from "@periapsis/contracts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
   BriefcaseBusiness,
@@ -29,7 +29,15 @@ import {
   Save,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  type FormEvent,
+} from "react";
+import { reduceWorkspaceState } from "../../pages/workspace-state";
 
 import { useSession } from "../../auth/session-context";
 import { useTenantAuthority } from "../../auth/tenant-authority-context";
@@ -186,7 +194,18 @@ export function TicketNumberingPage({
   );
 }
 
-function NumberingPolicyCard({
+function NumberingPolicyCard(props: {
+  api: TicketNumberingApi;
+  canManage: boolean;
+  definition: NumberingCardDefinition;
+  tenantId: string;
+}): React.JSX.Element {
+  const model = useNumberingPolicyCardModel(props);
+  if (model.kind === "content") return model.content;
+  return <NumberingPolicyCardView model={model.data} />;
+}
+
+function useNumberingPolicyCardModel({
   api,
   canManage,
   definition,
@@ -196,14 +215,16 @@ function NumberingPolicyCard({
   canManage: boolean;
   definition: NumberingCardDefinition;
   tenantId: string;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const queryClient = useQueryClient();
   const { kind } = definition;
   const pairKey = `${session.id}:${tenantId}:${kind}`;
   const pairKeyRef = useRef(pairKey);
-  pairKeyRef.current = pairKey;
+  useLayoutEffect(() => {
+    pairKeyRef.current = pairKey;
+  }, [pairKey]);
   const loadedPairRef = useRef<string | null>(null);
   const loadedVersionRef = useRef<string | null>(null);
   const updateAttempt = useRef<{
@@ -211,20 +232,65 @@ function NumberingPolicyCard({
   }>({
     current: null,
   });
-  const [form, setForm] = useState<TicketNumberingFormDraft>(() =>
-    emptyForm(kind),
+  const [workspaceState, updateWorkspaceState] = useReducer(
+    reduceWorkspaceState<NumberingPolicyCardState>,
+    undefined,
+    (): NumberingPolicyCardState => ({
+      form: (() => emptyForm(kind))(),
+      touched: (() => new Set())(),
+      reason: "",
+      reasonError: null,
+      notice: null,
+      mutationError: null,
+      saving: false,
+      previewDraft: null,
+    }),
   );
-  const [touched, setTouched] = useState<Set<TicketNumberingDraftField>>(
-    () => new Set(),
+  const {
+    form,
+    touched,
+    reason,
+    reasonError,
+    notice,
+    mutationError,
+    saving,
+    previewDraft,
+  } = workspaceState;
+  const {
+    setTouched,
+    setReason,
+    setReasonError,
+    setNotice,
+    setMutationError,
+    setSaving,
+    setPreviewDraft,
+  } = useMemo(
+    () => ({
+      setTouched: (
+        value: React.SetStateAction<NumberingPolicyCardState["touched"]>,
+      ) => updateWorkspaceState({ touched: value }),
+      setReason: (
+        value: React.SetStateAction<NumberingPolicyCardState["reason"]>,
+      ) => updateWorkspaceState({ reason: value }),
+      setReasonError: (
+        value: React.SetStateAction<NumberingPolicyCardState["reasonError"]>,
+      ) => updateWorkspaceState({ reasonError: value }),
+      setNotice: (
+        value: React.SetStateAction<NumberingPolicyCardState["notice"]>,
+      ) => updateWorkspaceState({ notice: value }),
+      setMutationError: (
+        value: React.SetStateAction<NumberingPolicyCardState["mutationError"]>,
+      ) => updateWorkspaceState({ mutationError: value }),
+      setSaving: (
+        value: React.SetStateAction<NumberingPolicyCardState["saving"]>,
+      ) => updateWorkspaceState({ saving: value }),
+      setPreviewDraft: (
+        value: React.SetStateAction<NumberingPolicyCardState["previewDraft"]>,
+      ) => updateWorkspaceState({ previewDraft: value }),
+    }),
+    [updateWorkspaceState],
   );
-  const [reason, setReason] = useState("");
-  const [reasonError, setReasonError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [previewDraft, setPreviewDraft] = useState<TicketNumberingDraft | null>(
-    null,
-  );
+
   const queryKey = ticketNumberingQueryKey(session.id, tenantId, kind);
   const policyQuery = useQuery({
     queryKey,
@@ -256,13 +322,14 @@ function NumberingPolicyCard({
     const changedPair = loadedPairRef.current !== pairKey;
     loadedPairRef.current = pairKey;
     loadedVersionRef.current = identity;
-    setForm(ticketNumberingFormFrom(current.value));
-    setTouched(new Set());
-    setReason("");
-    setReasonError(null);
+    updateWorkspaceState({
+      form: ticketNumberingFormFrom(current.value),
+      touched: new Set(),
+      reason: "",
+      reasonError: null,
+    });
     if (changedPair) {
-      setMutationError(null);
-      setNotice(null);
+      updateWorkspaceState({ mutationError: null, notice: null });
     }
     updateAttempt.current.current = null;
   }, [pairKey, policyQuery.data]);
@@ -274,7 +341,7 @@ function NumberingPolicyCard({
     }
     const timer = window.setTimeout(() => setPreviewDraft(validDraft), 180);
     return () => window.clearTimeout(timer);
-  }, [validDraft]);
+  }, [setPreviewDraft, validDraft]);
 
   const previewQuery = useQuery({
     queryKey: previewDraft
@@ -288,10 +355,12 @@ function NumberingPolicyCard({
   });
 
   function change(field: TicketNumberingDraftField, value: string): void {
-    setForm((current) => ({ ...current, [field]: value }));
-    setTouched((current) => new Set(current).add(field));
-    setMutationError(null);
-    setNotice(null);
+    updateWorkspaceState({
+      form: (current) => ({ ...current, [field]: value }),
+      touched: (current) => new Set(current).add(field),
+      mutationError: null,
+      notice: null,
+    });
   }
 
   async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -302,9 +371,11 @@ function NumberingPolicyCard({
     const nextReasonError = ticketNumberingReasonIsValid(reason)
       ? null
       : "Use 1–2,048 visible ASCII characters, without commas or surrounding spaces.";
-    setReasonError(nextReasonError);
-    setMutationError(null);
-    setNotice(null);
+    updateWorkspaceState({
+      reasonError: nextReasonError,
+      mutationError: null,
+      notice: null,
+    });
     if (!validDraft || nextReasonError) return;
     if (!ticketNumberingDraftDiffers(current.value, validDraft)) {
       setNotice("No values changed; no policy or audit event was created.");
@@ -339,14 +410,14 @@ function NumberingPolicyCard({
         value: updated.value,
       });
       updateAttempt.current.current = null;
-      setForm(ticketNumberingFormFrom(updated.value));
-      setTouched(new Set());
-      setReason("");
-      setNotice(
-        updated.replayed
+      updateWorkspaceState({
+        form: ticketNumberingFormFrom(updated.value),
+        touched: new Set(),
+        reason: "",
+        notice: updated.replayed
           ? "The original successful publication was confirmed again; no duplicate version was created."
           : `Version ${updated.value.version} is published. New ${kind === "alert" ? "Alerts" : "Cases"} use this policy.`,
-      );
+      });
     } catch (caught) {
       if (pairKeyRef.current !== expectedPair) return;
       if (caught instanceof PhaseTwoApiError && caught.status === 412) {
@@ -376,33 +447,39 @@ function NumberingPolicyCard({
   }
 
   if (policyQuery.isLoading) {
-    return <NumberingCardSkeleton definition={definition} />;
+    return {
+      kind: "content" as const,
+      content: <NumberingCardSkeleton definition={definition} />,
+    };
   }
   if (!policyQuery.data) {
-    return (
-      <Card className="ticket-numbering-card ticket-numbering-card--error">
-        <CardHeader>
-          <CardTitle>{definition.label}</CardTitle>
-          <CardDescription>{definition.description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FocusedError
-            title={`${definition.label} could not be loaded`}
-            message={describePhaseTwoError(
-              policyQuery.error,
-              "The current immutable policy is unavailable.",
-            )}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void policyQuery.refetch()}
-          >
-            <RefreshCw aria-hidden="true" /> Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <Card className="ticket-numbering-card ticket-numbering-card--error">
+          <CardHeader>
+            <CardTitle>{definition.label}</CardTitle>
+            <CardDescription>{definition.description}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FocusedError
+              title={`${definition.label} could not be loaded`}
+              message={describePhaseTwoError(
+                policyQuery.error,
+                "The current immutable policy is unavailable.",
+              )}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void policyQuery.refetch()}
+            >
+              <RefreshCw aria-hidden="true" /> Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ),
+    };
   }
 
   const policy = policyQuery.data.value;
@@ -421,229 +498,50 @@ function NumberingPolicyCard({
   const startError = fieldError("start");
   const prefix = `ticket-numbering-${kind}`;
 
-  return (
-    <Card className={`ticket-numbering-card ticket-numbering-card--${kind}`}>
-      <CardHeader className="ticket-numbering-card__header">
-        <div className="ticket-numbering-card__identity">
-          <span aria-hidden="true">
-            {kind === "alert" ? <BellRing /> : <BriefcaseBusiness />}
-          </span>
-          <div>
-            <CardTitle id={`${prefix}-title`} role="heading" aria-level={2}>
-              {definition.label}
-            </CardTitle>
-            <CardDescription>{definition.description}</CardDescription>
-          </div>
-        </div>
-        <Badge variant="outline">Current v{policy.version}</Badge>
-      </CardHeader>
-      <CardContent>
-        <NumberPlacard
-          kind={kind}
-          preview={preview}
-          previewError={previewQuery.error}
-          previewing={previewing}
-          valid={validDraft !== null}
-        />
+  return {
+    kind: "ready" as const,
+    data: {
+      canManage,
+      change,
+      definition,
+      form,
+      hasChanges,
+      kind,
+      mutationError,
+      notice,
+      periodError,
+      policy,
+      policyQuery,
+      prefix,
+      prefixError,
+      preview,
+      previewQuery,
+      previewing,
+      reason,
+      reasonError,
+      save,
+      saving,
+      separatorError,
+      setMutationError,
+      setNotice,
+      setReason,
+      setReasonError,
+      startError,
+      validDraft,
+      widthError,
+    },
+  };
+}
 
-        {notice ? (
-          <Alert className="ticket-numbering-card__notice">
-            <CheckCircle2 aria-hidden="true" />
-            <AlertTitle>Policy synchronized</AlertTitle>
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        ) : null}
-        {mutationError ? (
-          <FocusedError
-            title={`${definition.label} were not changed`}
-            message={mutationError}
-          />
-        ) : null}
-
-        <form
-          className="ticket-numbering-form"
-          aria-labelledby={`${prefix}-title`}
-          onSubmit={save}
-          noValidate
-        >
-          <fieldset disabled={saving}>
-            <legend className="sr-only">{definition.label} policy</legend>
-            <div className="ticket-numbering-form__grid">
-              <FormField
-                htmlFor={`${prefix}-prefix`}
-                label="Prefix"
-                hint="1–12 uppercase letters or digits; begin with a letter."
-                {...(prefixError ? { error: prefixError } : {})}
-              >
-                <Input
-                  id={`${prefix}-prefix`}
-                  className="ticket-numbering-form__code"
-                  value={form.prefix}
-                  maxLength={12}
-                  readOnly={!canManage}
-                  autoComplete="off"
-                  aria-invalid={Boolean(prefixError)}
-                  aria-describedby={`${prefix}-prefix-${prefixError ? "error" : "hint"}`}
-                  onChange={(event) =>
-                    change("prefix", event.currentTarget.value.toUpperCase())
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor={`${prefix}-separator`}
-                label="Separator"
-                hint="The same separator is used throughout the number."
-                {...(separatorError ? { error: separatorError } : {})}
-              >
-                <select
-                  id={`${prefix}-separator`}
-                  className="ticket-numbering-form__select ticket-numbering-form__code"
-                  value={form.separator}
-                  disabled={!canManage || saving}
-                  aria-invalid={Boolean(separatorError)}
-                  aria-describedby={`${prefix}-separator-${separatorError ? "error" : "hint"}`}
-                  onChange={(event) =>
-                    change("separator", event.currentTarget.value)
-                  }
-                >
-                  <option value="-">Hyphen — -</option>
-                  <option value="/">Slash — /</option>
-                  <option value=".">Dot — .</option>
-                  <option value="_">Underscore — _</option>
-                </select>
-              </FormField>
-              <FormField
-                htmlFor={`${prefix}-period`}
-                label="Counter period"
-                hint="Annual keys use the allocation instant's UTC year."
-                {...(periodError ? { error: periodError } : {})}
-              >
-                <select
-                  id={`${prefix}-period`}
-                  className="ticket-numbering-form__select"
-                  value={form.period}
-                  disabled={!canManage || saving}
-                  aria-invalid={Boolean(periodError)}
-                  aria-describedby={`${prefix}-period-${periodError ? "error" : "hint"}`}
-                  onChange={(event) =>
-                    change("period", event.currentTarget.value)
-                  }
-                >
-                  <option value="annual">Annual · UTC year</option>
-                  <option value="lifetime">Lifetime · one sequence</option>
-                </select>
-              </FormField>
-              <FormField
-                htmlFor={`${prefix}-width`}
-                label="Sequence width"
-                hint="Fixed serial width from 4 to 12 digits."
-                {...(widthError ? { error: widthError } : {})}
-              >
-                <Input
-                  id={`${prefix}-width`}
-                  className="ticket-numbering-form__code"
-                  type="number"
-                  min={4}
-                  max={12}
-                  step={1}
-                  inputMode="numeric"
-                  value={form.width}
-                  readOnly={!canManage}
-                  aria-invalid={Boolean(widthError)}
-                  aria-describedby={`${prefix}-width-${widthError ? "error" : "hint"}`}
-                  onChange={(event) =>
-                    change("width", event.currentTarget.value)
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor={`${prefix}-start`}
-                label="Start value"
-                hint="A lower bound for a fresh period; it never rewinds an existing counter."
-                {...(startError ? { error: startError } : {})}
-              >
-                <Input
-                  id={`${prefix}-start`}
-                  className="ticket-numbering-form__code"
-                  type="number"
-                  min={1}
-                  max={999_999_999_999}
-                  step={1}
-                  inputMode="numeric"
-                  value={form.start}
-                  readOnly={!canManage}
-                  aria-invalid={Boolean(startError)}
-                  aria-describedby={`${prefix}-start-${startError ? "error" : "hint"}`}
-                  onChange={(event) =>
-                    change("start", event.currentTarget.value)
-                  }
-                />
-              </FormField>
-            </div>
-
-            {canManage ? (
-              <div className="ticket-numbering-form__commit">
-                <FormField
-                  htmlFor={`${prefix}-reason`}
-                  label="Audit reason"
-                  hint="Non-secret operational reason; recorded in tenant audit and never reflected."
-                  {...(reasonError ? { error: reasonError } : {})}
-                >
-                  <Input
-                    id={`${prefix}-reason`}
-                    value={reason}
-                    maxLength={2048}
-                    autoComplete="off"
-                    aria-invalid={Boolean(reasonError)}
-                    aria-describedby={`${prefix}-reason-${reasonError ? "error" : "hint"}`}
-                    onChange={(event) => {
-                      setReason(event.currentTarget.value);
-                      setReasonError(null);
-                      setMutationError(null);
-                      setNotice(null);
-                    }}
-                  />
-                </FormField>
-                <div className="ticket-numbering-form__actions">
-                  <p>
-                    <ShieldCheck aria-hidden="true" /> Strong precondition{" "}
-                    {policyQuery.data.etag}
-                  </p>
-                  <Button
-                    type="submit"
-                    disabled={
-                      saving ||
-                      !hasChanges ||
-                      validDraft === null ||
-                      previewQuery.isFetching ||
-                      !preview
-                    }
-                  >
-                    <Save aria-hidden="true" />
-                    {saving ? "Publishing…" : "Publish policy"}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <p className="ticket-numbering-form__readonly">
-                Manage permission is required to publish a new immutable
-                version. The current policy and side-effect-free preview remain
-                visible for operational context.
-              </p>
-            )}
-          </fieldset>
-        </form>
-
-        <p className="ticket-numbering-card__provenance">
-          <Clock3 aria-hidden="true" /> Published{" "}
-          <TenantInstant value={policy.publishedAt} precision="second" /> by{" "}
-          {policy.publisher.type === "system"
-            ? "the system default"
-            : `membership ${policy.publisher.membershipId}`}
-        </p>
-      </CardContent>
-    </Card>
-  );
+function NumberingPolicyCardView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useNumberingPolicyCardModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <NumberingPolicyCardContent model={model} />;
 }
 
 function NumberPlacard({
@@ -753,6 +651,335 @@ function NumberingBoundaryError({
       <Button type="button" variant="outline" onClick={onRetry}>
         <RefreshCw aria-hidden="true" /> Retry authority check
       </Button>
+    </div>
+  );
+}
+
+function NumberingPolicyCardContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCardView>["model"];
+}): React.ReactNode {
+  const {
+    canManage,
+    change,
+    definition,
+    form,
+    kind,
+    mutationError,
+    notice,
+    policy,
+    prefix,
+    prefixError,
+    preview,
+    previewQuery,
+    previewing,
+    save,
+    saving,
+    validDraft,
+  } = model;
+  return (
+    <Card className={`ticket-numbering-card ticket-numbering-card--${kind}`}>
+      <CardHeader className="ticket-numbering-card__header">
+        <div className="ticket-numbering-card__identity">
+          <span aria-hidden="true">
+            {kind === "alert" ? <BellRing /> : <BriefcaseBusiness />}
+          </span>
+          <div>
+            <CardTitle id={`${prefix}-title`} role="heading" aria-level={2}>
+              {definition.label}
+            </CardTitle>
+            <CardDescription>{definition.description}</CardDescription>
+          </div>
+        </div>
+        <Badge variant="outline">Current v{policy.version}</Badge>
+      </CardHeader>
+      <CardContent>
+        <NumberPlacard
+          kind={kind}
+          preview={preview}
+          previewError={previewQuery.error}
+          previewing={previewing}
+          valid={validDraft !== null}
+        />
+
+        {notice ? (
+          <Alert className="ticket-numbering-card__notice">
+            <CheckCircle2 aria-hidden="true" />
+            <AlertTitle>Policy synchronized</AlertTitle>
+            <AlertDescription>{notice}</AlertDescription>
+          </Alert>
+        ) : null}
+        {mutationError ? (
+          <FocusedError
+            title={`${definition.label} were not changed`}
+            message={mutationError}
+          />
+        ) : null}
+
+        <form
+          className="ticket-numbering-form"
+          aria-labelledby={`${prefix}-title`}
+          onSubmit={save}
+          noValidate
+        >
+          <fieldset disabled={saving}>
+            <legend className="sr-only">{definition.label} policy</legend>
+            <div className="ticket-numbering-form__grid">
+              <FormField
+                htmlFor={`${prefix}-prefix`}
+                label="Prefix"
+                hint="1–12 uppercase letters or digits; begin with a letter."
+                {...(prefixError ? { error: prefixError } : {})}
+              >
+                <Input
+                  id={`${prefix}-prefix`}
+                  className="ticket-numbering-form__code"
+                  value={form.prefix}
+                  maxLength={12}
+                  readOnly={!canManage}
+                  autoComplete="off"
+                  aria-invalid={Boolean(prefixError)}
+                  aria-describedby={`${prefix}-prefix-${prefixError ? "error" : "hint"}`}
+                  onChange={(event) =>
+                    change("prefix", event.currentTarget.value.toUpperCase())
+                  }
+                />
+              </FormField>
+              <NumberingSeparatorField model={model} />
+              <NumberingCounterPeriodField model={model} />
+              <NumberingSequenceWidthField model={model} />
+              <NumberingStartValueField model={model} />
+            </div>
+
+            {<NumberingPolicyCommitPanel model={model} />}
+          </fieldset>
+        </form>
+
+        <p className="ticket-numbering-card__provenance">
+          <Clock3 aria-hidden="true" /> Published{" "}
+          <TenantInstant value={policy.publishedAt} precision="second" /> by{" "}
+          {policy.publisher.type === "system"
+            ? "the system default"
+            : `membership ${policy.publisher.membershipId}`}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface NumberingPolicyCardState {
+  form: TicketNumberingFormDraft;
+  touched: Set<TicketNumberingDraftField>;
+  reason: string;
+  reasonError: string | null;
+  notice: string | null;
+  mutationError: string | null;
+  saving: boolean;
+  previewDraft: TicketNumberingDraft | null;
+}
+
+function NumberingPolicyCommitPanel({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCardContent>["model"];
+}): React.ReactNode {
+  const { canManage } = model;
+  return canManage ? (
+    <NumberingPolicyCommitActions model={model} />
+  ) : (
+    <p className="ticket-numbering-form__readonly">
+      Manage permission is required to publish a new immutable version. The
+      current policy and side-effect-free preview remain visible for operational
+      context.
+    </p>
+  );
+}
+
+function NumberingSeparatorField({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCardContent>["model"];
+}): React.ReactNode {
+  const { canManage, change, form, prefix, saving, separatorError } = model;
+  return (
+    <FormField
+      htmlFor={`${prefix}-separator`}
+      label="Separator"
+      hint="The same separator is used throughout the number."
+      {...(separatorError ? { error: separatorError } : {})}
+    >
+      <select
+        id={`${prefix}-separator`}
+        className="ticket-numbering-form__select ticket-numbering-form__code"
+        value={form.separator}
+        disabled={!canManage || saving}
+        aria-invalid={Boolean(separatorError)}
+        aria-describedby={`${prefix}-separator-${separatorError ? "error" : "hint"}`}
+        onChange={(event) => change("separator", event.currentTarget.value)}
+      >
+        <option value="-">Hyphen — -</option>
+        <option value="/">Slash — /</option>
+        <option value=".">Dot — .</option>
+        <option value="_">Underscore — _</option>
+      </select>
+    </FormField>
+  );
+}
+
+function NumberingCounterPeriodField({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCardContent>["model"];
+}): React.ReactNode {
+  const { canManage, change, form, periodError, prefix, saving } = model;
+  return (
+    <FormField
+      htmlFor={`${prefix}-period`}
+      label="Counter period"
+      hint="Annual keys use the allocation instant's UTC year."
+      {...(periodError ? { error: periodError } : {})}
+    >
+      <select
+        id={`${prefix}-period`}
+        className="ticket-numbering-form__select"
+        value={form.period}
+        disabled={!canManage || saving}
+        aria-invalid={Boolean(periodError)}
+        aria-describedby={`${prefix}-period-${periodError ? "error" : "hint"}`}
+        onChange={(event) => change("period", event.currentTarget.value)}
+      >
+        <option value="annual">Annual · UTC year</option>
+        <option value="lifetime">Lifetime · one sequence</option>
+      </select>
+    </FormField>
+  );
+}
+
+function NumberingSequenceWidthField({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCardContent>["model"];
+}): React.ReactNode {
+  const { canManage, change, form, prefix, widthError } = model;
+  return (
+    <FormField
+      htmlFor={`${prefix}-width`}
+      label="Sequence width"
+      hint="Fixed serial width from 4 to 12 digits."
+      {...(widthError ? { error: widthError } : {})}
+    >
+      <Input
+        id={`${prefix}-width`}
+        className="ticket-numbering-form__code"
+        type="number"
+        min={4}
+        max={12}
+        step={1}
+        inputMode="numeric"
+        value={form.width}
+        readOnly={!canManage}
+        aria-invalid={Boolean(widthError)}
+        aria-describedby={`${prefix}-width-${widthError ? "error" : "hint"}`}
+        onChange={(event) => change("width", event.currentTarget.value)}
+      />
+    </FormField>
+  );
+}
+
+function NumberingStartValueField({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCardContent>["model"];
+}): React.ReactNode {
+  const { canManage, change, form, prefix, startError } = model;
+  return (
+    <FormField
+      htmlFor={`${prefix}-start`}
+      label="Start value"
+      hint="A lower bound for a fresh period; it never rewinds an existing counter."
+      {...(startError ? { error: startError } : {})}
+    >
+      <Input
+        id={`${prefix}-start`}
+        className="ticket-numbering-form__code"
+        type="number"
+        min={1}
+        max={999_999_999_999}
+        step={1}
+        inputMode="numeric"
+        value={form.start}
+        readOnly={!canManage}
+        aria-invalid={Boolean(startError)}
+        aria-describedby={`${prefix}-start-${startError ? "error" : "hint"}`}
+        onChange={(event) => change("start", event.currentTarget.value)}
+      />
+    </FormField>
+  );
+}
+
+function NumberingPolicyCommitActions({
+  model,
+}: {
+  model: React.ComponentProps<typeof NumberingPolicyCommitPanel>["model"];
+}): React.ReactNode {
+  const {
+    hasChanges,
+    policyQuery,
+    prefix,
+    preview,
+    previewQuery,
+    reason,
+    reasonError,
+    saving,
+    setMutationError,
+    setNotice,
+    setReason,
+    setReasonError,
+    validDraft,
+  } = model;
+  return (
+    <div className="ticket-numbering-form__commit">
+      <FormField
+        htmlFor={`${prefix}-reason`}
+        label="Audit reason"
+        hint="Non-secret operational reason; recorded in tenant audit and never reflected."
+        {...(reasonError ? { error: reasonError } : {})}
+      >
+        <Input
+          id={`${prefix}-reason`}
+          value={reason}
+          maxLength={2048}
+          autoComplete="off"
+          aria-invalid={Boolean(reasonError)}
+          aria-describedby={`${prefix}-reason-${reasonError ? "error" : "hint"}`}
+          onChange={(event) => {
+            setReason(event.currentTarget.value);
+            setReasonError(null);
+            setMutationError(null);
+            setNotice(null);
+          }}
+        />
+      </FormField>
+      <div className="ticket-numbering-form__actions">
+        <p>
+          <ShieldCheck aria-hidden="true" /> Strong precondition{" "}
+          {policyQuery.data.etag}
+        </p>
+        <Button
+          type="submit"
+          disabled={
+            saving ||
+            !hasChanges ||
+            validDraft === null ||
+            previewQuery.isFetching ||
+            !preview
+          }
+        >
+          <Save aria-hidden="true" />
+          {saving ? "Publishing…" : "Publish policy"}
+        </Button>
+      </div>
     </div>
   );
 }

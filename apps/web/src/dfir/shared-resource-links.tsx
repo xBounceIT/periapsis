@@ -44,6 +44,36 @@ export function SharedResourceLinks({
       : "asset";
   const inventory = resourceKind === "ioc" ? indicators : assets;
   const selected = inventory.find((item) => item.id === selectedId);
+  function submit(event: React.FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const expectedVersion = linked ? Number(version) : selected?.version;
+    const id = linked ? resourceId : selected?.id;
+    if (
+      busy ||
+      !id ||
+      expectedVersion === undefined ||
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 1 ||
+      expectedVersion >= Number.MAX_SAFE_INTEGER
+    )
+      return;
+    const fingerprint = JSON.stringify({
+      expectedVersion,
+      linked,
+      resourceId: id,
+      resourceKind,
+    });
+    if (intentRef.current?.fingerprint !== fingerprint) {
+      intentRef.current = { fingerprint, eventId: generateUuidV7() };
+    }
+    onSubmit({
+      expectedVersion,
+      linked,
+      resourceId: id,
+      resourceKind,
+      eventId: intentRef.current.eventId,
+    });
+  }
   return (
     <details className="dfir-shared-link-controls">
       <summary>Shared resource links</summary>
@@ -51,39 +81,7 @@ export function SharedResourceLinks({
         Link an existing IOC or asset using its identifier and current version.
         Managing a shared resource requires access to every linked ticket.
       </p>
-      <form
-        className="dfir-resource-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const expectedVersion = linked ? Number(version) : selected?.version;
-          const id = linked ? resourceId : selected?.id;
-          if (
-            busy ||
-            !id ||
-            expectedVersion === undefined ||
-            !Number.isSafeInteger(expectedVersion) ||
-            expectedVersion < 1 ||
-            expectedVersion >= Number.MAX_SAFE_INTEGER
-          )
-            return;
-          const fingerprint = JSON.stringify({
-            expectedVersion,
-            linked,
-            resourceId: id,
-            resourceKind,
-          });
-          if (intentRef.current?.fingerprint !== fingerprint) {
-            intentRef.current = { fingerprint, eventId: generateUuidV7() };
-          }
-          onSubmit({
-            expectedVersion,
-            linked,
-            resourceId: id,
-            resourceKind,
-            eventId: intentRef.current.eventId,
-          });
-        }}
-      >
+      <form className="dfir-resource-form" onSubmit={submit}>
         <div className="dfir-resource-form__field">
           <Label htmlFor={`${formId}-action`}>Link action</Label>
           <select
@@ -143,44 +141,70 @@ export function SharedResourceLinks({
             </div>
           </>
         ) : (
-          <>
-            <div className="dfir-resource-form__field">
-              <Label htmlFor={`${formId}-existing`}>Linked resource</Label>
-              <select
-                id={`${formId}-existing`}
-                disabled={busy}
-                required
-                value={selected?.id ?? ""}
-                onChange={(event) => setSelectedId(event.currentTarget.value)}
-              >
-                <option value="">Choose a resource</option>
-                {inventory.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.id} · version {item.version}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <p>
-              The last link and links required by this ticket’s timeline or
-              relationships cannot be removed.
-            </p>
-            <Label htmlFor={`${formId}-confirm`}>
-              <input
-                key={selected?.id ?? "empty"}
-                id={`${formId}-confirm`}
-                type="checkbox"
-                required
-                disabled={busy}
-              />
-              Remove this resource from this ticket
-            </Label>
-          </>
+          <SharedResourceUnlinkFields
+            busy={busy}
+            formId={formId}
+            inventory={inventory}
+            selected={selected}
+            setSelectedId={setSelectedId}
+          />
         )}
         <Button type="submit" disabled={busy || (!linked && !selected)}>
           {linked ? "Link resource" : "Confirm unlink"}
         </Button>
       </form>
     </details>
+  );
+}
+
+interface SharedResourceUnlinkFieldsProps {
+  busy: boolean;
+  formId: string;
+  inventory: readonly { id: string; version: number }[];
+  selected: { id: string; version: number } | undefined;
+  setSelectedId: React.Dispatch<React.SetStateAction<string>>;
+}
+
+function SharedResourceUnlinkFields({
+  busy,
+  formId,
+  inventory,
+  selected,
+  setSelectedId,
+}: SharedResourceUnlinkFieldsProps): React.JSX.Element {
+  return (
+    <>
+      <div className="dfir-resource-form__field">
+        <Label htmlFor={`${formId}-existing`}>Linked resource</Label>
+        <select
+          id={`${formId}-existing`}
+          disabled={busy}
+          required
+          value={selected?.id ?? ""}
+          onChange={(event) => setSelectedId(event.currentTarget.value)}
+        >
+          <option value="">Choose a resource</option>
+          {inventory.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.id} · version {item.version}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p>
+        The last link and links required by this ticket’s timeline or
+        relationships cannot be removed.
+      </p>
+      <Label htmlFor={`${formId}-confirm`}>
+        <input
+          key={selected?.id ?? "empty"}
+          id={`${formId}-confirm`}
+          type="checkbox"
+          required
+          disabled={busy}
+        />
+        Remove this resource from this ticket
+      </Label>
+    </>
   );
 }

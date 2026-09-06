@@ -1,10 +1,13 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SessionContext } from "../auth/session-context";
@@ -22,7 +25,10 @@ import {
   createLdapProviderDraft,
   toLdapProviderUpdateInput,
 } from "./ldap-provider-model";
-import { TenantLdapProvidersPage } from "./tenant-ldap-providers";
+import {
+  LdapProviderEditor,
+  TenantLdapProvidersPage,
+} from "./tenant-ldap-providers";
 
 const tenantId = "0198c97d-cf4f-7000-8000-000000000010";
 const providerId = "0198c97d-cf4f-7000-8000-000000000088";
@@ -356,6 +362,82 @@ describe("TenantLdapProvidersPage", () => {
     expect(document.body.textContent).not.toContain("invalidCredentials");
   });
 
+  it("preserves endpoint input identity while editing priority and removing another endpoint", () => {
+    const onChange = vi.fn();
+    function EditorHarness(): React.JSX.Element {
+      const [draft, setDraft] = useState(() => {
+        const initial = createLdapProviderDraft("openldap");
+        return {
+          ...initial,
+          endpoints: [
+            initial.endpoints[0]!,
+            {
+              ...initial.endpoints[0]!,
+              host: "secondary.example.org",
+              priority: 2,
+            },
+          ],
+        };
+      });
+      return (
+        <LdapProviderEditor
+          mode="create"
+          draft={draft}
+          onChange={(next) => {
+            onChange(next);
+            setDraft(next);
+          }}
+        />
+      );
+    }
+    render(<EditorHarness />);
+    const hosts = screen.getAllByLabelText<HTMLInputElement>("Host");
+    const secondaryHost = hosts[1]!;
+    const secondaryRow = secondaryHost.closest<HTMLElement>(
+      ".ldap-endpoint-editor",
+    )!;
+    const priority = within(secondaryRow).getByLabelText("Priority");
+    priority.focus();
+    fireEvent.change(priority, { target: { value: "3" } });
+    expect(priority).toHaveFocus();
+    expect(screen.getAllByLabelText("Host")[1]).toBe(secondaryHost);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Remove endpoint" })[0]!,
+    );
+    expect(screen.getByLabelText("Host")).toBe(secondaryHost);
+    expect(secondaryHost).toHaveValue("secondary.example.org");
+    expect(screen.getByLabelText("Priority")).toHaveValue(3);
+    const latest = onChange.mock.lastCall![0];
+    expect(latest.endpoints).toHaveLength(1);
+    expect(latest.endpoints[0]).not.toHaveProperty("key");
+  });
+
+  it("ignores an expired-session response from a create dialog after its scope unmounts", async () => {
+    let rejectRequest!: (error: unknown) => void;
+    const pending = new Promise<{ location: string }>((_, reject) => {
+      rejectRequest = reject;
+    });
+    const createTenantLdapAuthProvider = vi.fn<
+      PhaseTwoApi["createTenantLdapAuthProvider"]
+    >(() => pending);
+    const view = renderPage({ createTenantLdapAuthProvider });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create provider" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create disabled provider" }),
+    );
+    await waitFor(() =>
+      expect(createTenantLdapAuthProvider).toHaveBeenCalledTimes(1),
+    );
+    view.unmount();
+    await act(async () => {
+      rejectRequest(new PhaseTwoApiError("The old session expired.", 401));
+      await pending.catch(() => undefined);
+    });
+    expect(view.clearSession).not.toHaveBeenCalled();
+  });
+
   it("shows bounded list failures without exposing management actions", async () => {
     renderPage({
       listTenantLdapAuthProviders: async () => {
@@ -379,7 +461,7 @@ function renderPage(
   overrides: Partial<PhaseTwoApi> = {},
   permissions: readonly TenantPermissionKeyView[] = allPermissions,
   provider = providerFixture(),
-): void {
+) {
   const api = createPhaseTwoApi({
     getTenantAuthority: async () => authorityFixture(permissions),
     getTenantLdapAuthProvider: async () => ({
@@ -397,11 +479,12 @@ function renderPage(
     activeTenantId: tenantId,
     idleExpiresAt: "2099-08-23T12:00:00Z",
   };
-  render(
+  const clearSession = vi.fn();
+  const view = render(
     <SessionContext.Provider
       value={{
         api,
-        clearSession: vi.fn(),
+        clearSession,
         membershipRevision: 0,
         refreshMemberships: vi.fn(),
         session,
@@ -413,6 +496,7 @@ function renderPage(
       </TenantAuthorityProvider>
     </SessionContext.Provider>,
   );
+  return { ...view, clearSession };
 }
 
 function authorityFixture(

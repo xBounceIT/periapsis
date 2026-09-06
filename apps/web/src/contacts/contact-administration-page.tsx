@@ -1,8 +1,10 @@
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import type {
+  ContactRecipientRuleNode,
+  CustomerContact,
+  CustomerContactGroup,
+  CustomerContactGroupVersionWrite,
+  CustomerContactWrite,
+} from "@periapsis/contracts";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -26,18 +28,14 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
-import type {
-  ContactRecipientRuleNode,
-  CustomerContact,
-  CustomerContactGroup,
-  CustomerContactGroupVersionWrite,
-  CustomerContactWrite,
-} from "@periapsis/contracts";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Archive,
   ContactRound,
@@ -50,6 +48,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -102,10 +101,10 @@ export function ContactAdministrationPage({
     <div className="content contact-admin">
       <ContactAdministrationWorkspace
         api={api}
-        canManageContacts={canManageContacts}
-        canManageGroups={canManageGroups}
-        canReadContacts={canReadContacts}
-        canReadGroups={canReadGroups}
+        permissions={{
+          contacts: { read: canReadContacts, manage: canManageContacts },
+          groups: { read: canReadGroups, manage: canManageGroups },
+        }}
         csrfToken={session.csrfToken}
         tenantId={tenantId}
       />
@@ -115,23 +114,24 @@ export function ContactAdministrationPage({
 
 interface ContactAdministrationWorkspaceProps {
   api: ContactPortalApi;
-  canManageContacts: boolean;
-  canManageGroups: boolean;
-  canReadContacts: boolean;
-  canReadGroups: boolean;
+  permissions: {
+    contacts: { read: boolean; manage: boolean };
+    groups: { read: boolean; manage: boolean };
+  };
   csrfToken: string;
   tenantId: string;
 }
 
 export function ContactAdministrationWorkspace({
   api,
-  canManageContacts,
-  canManageGroups,
-  canReadContacts,
-  canReadGroups,
+  permissions,
   csrfToken,
   tenantId,
 }: ContactAdministrationWorkspaceProps): React.JSX.Element {
+  const {
+    contacts: { read: canReadContacts, manage: canManageContacts },
+    groups: { read: canReadGroups, manage: canManageGroups },
+  } = permissions;
   const [view, setView] = useState<"contacts" | "groups">(
     canReadContacts ? "contacts" : "groups",
   );
@@ -319,17 +319,15 @@ function ContactDirectory({
       {contactItems.length > 0 ? (
         <div className="contact-table-frame">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Contact</TableHead>
-                <TableHead>Routing</TableHead>
-                <TableHead>Portal identity</TableHead>
-                <TableHead>Availability</TableHead>
-                <TableHead>
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
+            <TableColumnHeaders
+              columns={[
+                "Contact",
+                "Routing",
+                "Portal identity",
+                "Availability",
+              ]}
+              actionLabel="Actions"
+            />
             <TableBody>
               {contactItems.map((contact) => (
                 <TableRow key={contact.id}>

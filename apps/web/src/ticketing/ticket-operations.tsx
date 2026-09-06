@@ -44,13 +44,13 @@ import {
   type TicketKind,
   type VersionedTicket,
 } from "../lib/ticketing-api";
-import { useTicketingApi } from "./ticketing-context";
 import {
   EscalationInventoryError,
   loadEscalationInventory,
   setBoundedSelection,
   type EscalationInventory,
 } from "./escalation-inventory";
+import { useTicketingApi } from "./ticketing-context";
 import {
   codePointCompare,
   compactIdentifier,
@@ -99,7 +99,7 @@ const escalationCopyFields = [
   "tags",
 ] as const satisfies readonly EscalationCopyField[];
 
-export function TicketOperations({
+function useTicketOperationsState({
   kind,
   onCommitted,
   onConflict,
@@ -113,7 +113,7 @@ export function TicketOperations({
   onDeleted: () => void;
   onEscalated: (caseId: string) => void;
   ticket: VersionedTicket<OperatorTicketProjection>;
-}): React.JSX.Element | null {
+}) {
   const api = useTicketingApi();
   const dfirApi = useAlertDfirApi();
   const { session } = useSession();
@@ -188,7 +188,6 @@ export function TicketOperations({
       value.assignment.assignedTeamId,
     ],
   );
-
   useEffect(() => {
     inventoryAbortRef.current?.abort();
     inventoryAbortRef.current = null;
@@ -234,10 +233,99 @@ export function TicketOperations({
       }
     };
   }, [api, dfirApi, inventoryRevision, kind, operation, tenantId, value.id]);
+  return {
+    kind,
+    onCommitted,
+    onConflict,
+    onDeleted,
+    onEscalated,
+    ticket,
+    api,
+    dfirApi,
+    session,
+    authority,
+    operation,
+    setOperation,
+    draft,
+    setDraft,
+    copyFields,
+    setCopyFields,
+    copyCustomFieldKeys,
+    setCopyCustomFieldKeys,
+    copyIocIds,
+    setCopyIocIds,
+    copyAssetIds,
+    setCopyAssetIds,
+    copyAttachmentIds,
+    setCopyAttachmentIds,
+    copyContactIds,
+    setCopyContactIds,
+    copyPublicCommentIds,
+    setCopyPublicCommentIds,
+    inventoryState,
+    setInventoryState,
+    inventoryRevision,
+    setInventoryRevision,
+    inventoryAbortRef,
+    saving,
+    setSaving,
+    error,
+    setError,
+    attemptRef,
+    tenantId,
+    value,
+    escalationCustomFieldKeys,
+    transitions,
+    canTransition,
+    canAssign,
+    canClaim,
+    canEscalate,
+    canDelete,
+    eligibleTeams,
+  };
+}
 
-  if (!tenantId) return null;
-  const activeTenantId = tenantId;
-
+function createTicketOperationsActions({
+  kind,
+  onCommitted,
+  onConflict,
+  onDeleted,
+  onEscalated,
+  ticket,
+  api,
+  session,
+  operation,
+  setOperation,
+  draft,
+  setDraft,
+  copyFields,
+  setCopyFields,
+  copyCustomFieldKeys,
+  setCopyCustomFieldKeys,
+  copyIocIds,
+  setCopyIocIds,
+  copyAssetIds,
+  setCopyAssetIds,
+  copyAttachmentIds,
+  setCopyAttachmentIds,
+  copyContactIds,
+  setCopyContactIds,
+  copyPublicCommentIds,
+  setCopyPublicCommentIds,
+  inventoryState,
+  setInventoryState,
+  setInventoryRevision,
+  inventoryAbortRef,
+  saving,
+  setSaving,
+  setError,
+  attemptRef,
+  value,
+  escalationCustomFieldKeys,
+  transitions,
+  eligibleTeams,
+  activeTenantId,
+}: ReturnType<typeof useTicketOperationsState> & { activeTenantId: string }) {
   function open(next: Operation): void {
     setDraft(initialDraft(ticket, eligibleTeams));
     setCopyFields(new Set(escalationCopyFields));
@@ -254,7 +342,6 @@ export function TicketOperations({
     attemptRef.current = null;
     setOperation(next);
   }
-
   function close(): void {
     if (saving) return;
     inventoryAbortRef.current?.abort();
@@ -263,7 +350,6 @@ export function TicketOperations({
     setOperation(null);
     setError(null);
   }
-
   function changeInventorySelection(
     category: EscalationInventoryCategory,
     id: string,
@@ -288,7 +374,6 @@ export function TicketOperations({
       );
     }
   }
-
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!operation) return;
@@ -443,7 +528,6 @@ export function TicketOperations({
       setSaving(false);
     }
   }
-
   async function submitEscalation(): Promise<void> {
     if (kind !== "alert") throw new Error("Only Alerts can be escalated.");
     if (inventoryState.status !== "ready") {
@@ -537,7 +621,6 @@ export function TicketOperations({
     setOperation(null);
     onEscalated(result.case.id);
   }
-
   async function submitDelete(): Promise<void> {
     if (kind !== "alert") throw new Error("Only Alerts can be deleted.");
     const reason = draft.reason.trim();
@@ -567,11 +650,62 @@ export function TicketOperations({
     setOperation(null);
     onDeleted();
   }
+  return {
+    open,
+    close,
+    changeInventorySelection,
+    submit,
+    submitEscalation,
+    submitDelete,
+  };
+}
 
+export function TicketOperations(props: {
+  kind: TicketKind;
+  onCommitted: (value: VersionedTicket<OperatorTicketProjection>) => void;
+  onConflict: () => Promise<unknown>;
+  onDeleted: () => void;
+  onEscalated: (caseId: string) => void;
+  ticket: VersionedTicket<OperatorTicketProjection>;
+}): React.JSX.Element | null {
+  const state = useTicketOperationsState(props);
+  const {
+    kind,
+    operation,
+    draft,
+    setDraft,
+    copyFields,
+    setCopyFields,
+    copyCustomFieldKeys,
+    setCopyCustomFieldKeys,
+    copyIocIds,
+    copyAssetIds,
+    copyAttachmentIds,
+    copyContactIds,
+    copyPublicCommentIds,
+    inventoryState,
+    setInventoryRevision,
+    saving,
+    error,
+    setError,
+    tenantId,
+    value,
+    escalationCustomFieldKeys,
+    transitions,
+    canTransition,
+    canAssign,
+    canClaim,
+    canEscalate,
+    canDelete,
+    eligibleTeams,
+  } = state;
+  if (!tenantId) return null;
+  const activeTenantId = tenantId;
   const selectedTransition = transitions.find(
     (transition) => transition.transitionKey === draft.transitionKey,
   );
-
+  const { open, close, changeInventorySelection, submit } =
+    createTicketOperationsActions({ ...state, activeTenantId });
   return (
     <>
       <div
@@ -623,250 +757,34 @@ export function TicketOperations({
         open={operation !== null}
         onOpenChange={(openState) => !openState && close()}
       >
-        <DialogContent className="ticket-operation-dialog">
-          <DialogHeader>
-            <DialogTitle>
-              {operation ? operationTitle(operation, kind) : "Ticket action"}
-            </DialogTitle>
-            <DialogDescription>
-              {operation === "delete"
-                ? `This removes ${alertNumber(value)} from every ordinary view. Audit and retention evidence remain. Server policy and live authority are rechecked.`
-                : `This command uses version ${value.version}. Server policy, workflow, and live team authority are rechecked when it runs.`}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="ticket-operation-form"
-            onSubmit={(event) => void submit(event)}
-          >
-            {error ? (
-              <FocusedError message={error} title="Action not completed" />
-            ) : null}
-            {operation === "transition" ? (
-              <>
-                <label className="ticket-native-field">
-                  <span>Server-provided transition</span>
-                  <select
-                    value={draft.transitionKey}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        transitionKey: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Select a transition</option>
-                    {transitions.map((transition) => (
-                      <option
-                        value={transition.transitionKey}
-                        key={transition.transitionKey}
-                      >
-                        {humanizeKey(transition.transitionKey)} →{" "}
-                        {humanizeKey(transition.targetStateKey)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {selectedTransition?.requiredCustomFieldKeys.map((key) => (
-                  <FormField
-                    htmlFor={`transition-${key}`}
-                    label={humanizeKey(key)}
-                    key={key}
-                  >
-                    <Input
-                      id={`transition-${key}`}
-                      value={draft.customFields[key] ?? ""}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          customFields: {
-                            ...current.customFields,
-                            [key]: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </FormField>
-                ))}
-              </>
-            ) : null}
-
-            {operation === "assign" || operation === "transfer" ? (
-              <>
-                <FormField
-                  htmlFor="operation-team"
-                  label={
-                    operation === "transfer"
-                      ? "Destination team ID"
-                      : "Assigned team ID"
-                  }
-                >
-                  <Input
-                    id="operation-team"
-                    list="eligible-ticket-teams"
-                    value={draft.teamId}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        teamId: event.target.value,
-                      }))
-                    }
-                  />
-                  <datalist id="eligible-ticket-teams">
-                    {eligibleTeams.map((teamId) => (
-                      <option value={teamId} key={teamId} />
-                    ))}
-                  </datalist>
-                </FormField>
-                <FormField
-                  htmlFor="operation-assignee"
-                  label="Assignee user ID"
-                  optional
-                >
-                  <Input
-                    id="operation-assignee"
-                    value={draft.assigneeId}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        assigneeId: event.target.value,
-                      }))
-                    }
-                  />
-                </FormField>
-              </>
-            ) : null}
-
-            {operation === "claim" ? (
-              <ClaimTeamField
-                assignedTeamId={value.assignment.assignedTeamId}
-                draftTeamId={draft.teamId}
-                eligibleTeams={eligibleTeams}
-                onChange={(teamId) =>
-                  setDraft((current) => ({ ...current, teamId }))
-                }
-              />
-            ) : null}
-
-            {operation === "escalate" ? (
-              <EscalationFields
-                availableCustomFieldKeys={escalationCustomFieldKeys}
-                copyCustomFieldKeys={copyCustomFieldKeys}
-                copyFields={copyFields}
-                draft={draft}
-                inventoryState={inventoryState}
-                selections={{
-                  assets: copyAssetIds,
-                  attachments: copyAttachmentIds,
-                  contacts: copyContactIds,
-                  iocs: copyIocIds,
-                  publicComments: copyPublicCommentIds,
-                }}
-                onCopyFieldChange={(field, checked) =>
-                  setCopyFields((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(field);
-                    else next.delete(field);
-                    return next;
-                  })
-                }
-                onCopyCustomFieldChange={(key, checked) =>
-                  setCopyCustomFieldKeys((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(key);
-                    else next.delete(key);
-                    return next;
-                  })
-                }
-                onDraftChange={(change) =>
-                  setDraft((current) => ({ ...current, ...change }))
-                }
-                onInventoryRetry={() => {
-                  setError(null);
-                  setInventoryRevision((current) => current + 1);
-                }}
-                onInventorySelectionChange={changeInventorySelection}
-              />
-            ) : null}
-
-            {operation === "delete" ? (
-              <FormField
-                htmlFor="operation-delete-confirmation"
-                label={`Type ${alertNumber(value)} to confirm`}
-              >
-                <Input
-                  id="operation-delete-confirmation"
-                  autoComplete="off"
-                  value={draft.deleteConfirmation}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      deleteConfirmation: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-            ) : null}
-
-            {operation ? (
-              <FormField
-                htmlFor="operation-reason"
-                label={operation === "transition" ? "Comment" : "Reason"}
-                optional={
-                  operation === "assign" ||
-                  operation === "claim" ||
-                  (operation === "transition" &&
-                    !selectedTransition?.commentRequired)
-                }
-              >
-                <Textarea
-                  id="operation-reason"
-                  rows={3}
-                  maxLength={2_000}
-                  value={draft.reason}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      reason: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-            ) : null}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={close}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant={operation === "delete" ? "destructive" : "default"}
-                disabled={
-                  saving ||
-                  (operation === "escalate" &&
-                    inventoryState.status !== "ready")
-                }
-              >
-                {operation === "delete" ? (
-                  <Trash2 aria-hidden="true" />
-                ) : (
-                  <BadgeCheck aria-hidden="true" />
-                )}
-                {saving
-                  ? operation === "delete"
-                    ? "Deleting Alert…"
-                    : "Applying action…"
-                  : operation === "delete"
-                    ? "Delete Alert"
-                    : "Apply action"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
+        <TicketOperationDialog
+          changeInventorySelection={changeInventorySelection}
+          close={close}
+          copyAssetIds={copyAssetIds}
+          copyAttachmentIds={copyAttachmentIds}
+          copyContactIds={copyContactIds}
+          copyCustomFieldKeys={copyCustomFieldKeys}
+          copyFields={copyFields}
+          copyIocIds={copyIocIds}
+          copyPublicCommentIds={copyPublicCommentIds}
+          draft={draft}
+          eligibleTeams={eligibleTeams}
+          error={error}
+          escalationCustomFieldKeys={escalationCustomFieldKeys}
+          inventoryState={inventoryState}
+          kind={kind}
+          operation={operation}
+          saving={saving}
+          selectedTransition={selectedTransition}
+          setCopyCustomFieldKeys={setCopyCustomFieldKeys}
+          setCopyFields={setCopyFields}
+          setDraft={setDraft}
+          setError={setError}
+          setInventoryRevision={setInventoryRevision}
+          submit={submit}
+          transitions={transitions}
+          value={value}
+        />
       </Dialog>
     </>
   );
@@ -1280,6 +1198,378 @@ function alertNumber(value: OperatorTicketProjection): string {
   throw new Error("The Alert projection is inconsistent.");
 }
 
-export function transitionLabel(transition: WorkflowActionHint): string {
-  return `${humanizeKey(transition.transitionKey)} → ${humanizeKey(transition.targetStateKey)}`;
+interface TicketOperationDialogProps {
+  changeInventorySelection: ReturnType<
+    typeof createTicketOperationsActions
+  >["changeInventorySelection"];
+  close: ReturnType<typeof createTicketOperationsActions>["close"];
+  copyAssetIds: ReturnType<typeof useTicketOperationsState>["copyAssetIds"];
+  copyAttachmentIds: ReturnType<
+    typeof useTicketOperationsState
+  >["copyAttachmentIds"];
+  copyContactIds: ReturnType<typeof useTicketOperationsState>["copyContactIds"];
+  copyCustomFieldKeys: ReturnType<
+    typeof useTicketOperationsState
+  >["copyCustomFieldKeys"];
+  copyFields: ReturnType<typeof useTicketOperationsState>["copyFields"];
+  copyIocIds: ReturnType<typeof useTicketOperationsState>["copyIocIds"];
+  copyPublicCommentIds: ReturnType<
+    typeof useTicketOperationsState
+  >["copyPublicCommentIds"];
+  draft: ReturnType<typeof useTicketOperationsState>["draft"];
+  eligibleTeams: ReturnType<typeof useTicketOperationsState>["eligibleTeams"];
+  error: ReturnType<typeof useTicketOperationsState>["error"];
+  escalationCustomFieldKeys: ReturnType<
+    typeof useTicketOperationsState
+  >["escalationCustomFieldKeys"];
+  inventoryState: ReturnType<typeof useTicketOperationsState>["inventoryState"];
+  kind: ReturnType<typeof useTicketOperationsState>["kind"];
+  operation: ReturnType<typeof useTicketOperationsState>["operation"];
+  saving: ReturnType<typeof useTicketOperationsState>["saving"];
+  selectedTransition: WorkflowActionHint | undefined;
+  setCopyCustomFieldKeys: ReturnType<
+    typeof useTicketOperationsState
+  >["setCopyCustomFieldKeys"];
+  setCopyFields: ReturnType<typeof useTicketOperationsState>["setCopyFields"];
+  setDraft: ReturnType<typeof useTicketOperationsState>["setDraft"];
+  setError: ReturnType<typeof useTicketOperationsState>["setError"];
+  setInventoryRevision: ReturnType<
+    typeof useTicketOperationsState
+  >["setInventoryRevision"];
+  submit: ReturnType<typeof createTicketOperationsActions>["submit"];
+  transitions: ReturnType<typeof useTicketOperationsState>["transitions"];
+  value: ReturnType<typeof useTicketOperationsState>["value"];
+}
+
+function TicketOperationDialog({
+  changeInventorySelection,
+  close,
+  copyAssetIds,
+  copyAttachmentIds,
+  copyContactIds,
+  copyCustomFieldKeys,
+  copyFields,
+  copyIocIds,
+  copyPublicCommentIds,
+  draft,
+  eligibleTeams,
+  error,
+  escalationCustomFieldKeys,
+  inventoryState,
+  kind,
+  operation,
+  saving,
+  selectedTransition,
+  setCopyCustomFieldKeys,
+  setCopyFields,
+  setDraft,
+  setError,
+  setInventoryRevision,
+  submit,
+  transitions,
+  value,
+}: TicketOperationDialogProps): React.JSX.Element {
+  return (
+    <DialogContent className="ticket-operation-dialog">
+      <DialogHeader>
+        <DialogTitle>
+          {operation ? operationTitle(operation, kind) : "Ticket action"}
+        </DialogTitle>
+        <DialogDescription>
+          {operation === "delete"
+            ? `This removes ${alertNumber(value)} from every ordinary view. Audit and retention evidence remain. Server policy and live authority are rechecked.`
+            : `This command uses version ${value.version}. Server policy, workflow, and live team authority are rechecked when it runs.`}
+        </DialogDescription>
+      </DialogHeader>
+      <form
+        className="ticket-operation-form"
+        onSubmit={(event) => void submit(event)}
+      >
+        {error ? (
+          <FocusedError message={error} title="Action not completed" />
+        ) : null}
+        {operation === "transition" ? (
+          <TicketOperationWorkflowFields
+            draft={draft}
+            selectedTransition={selectedTransition}
+            setDraft={setDraft}
+            transitions={transitions}
+          />
+        ) : null}
+
+        {operation === "assign" || operation === "transfer" ? (
+          <TicketOperationAssignmentFields
+            draft={draft}
+            eligibleTeams={eligibleTeams}
+            operation={operation}
+            setDraft={setDraft}
+          />
+        ) : null}
+
+        {operation === "claim" ? (
+          <ClaimTeamField
+            assignedTeamId={value.assignment.assignedTeamId}
+            draftTeamId={draft.teamId}
+            eligibleTeams={eligibleTeams}
+            onChange={(teamId) =>
+              setDraft((current) => ({ ...current, teamId }))
+            }
+          />
+        ) : null}
+
+        {operation === "escalate" ? (
+          <EscalationFields
+            availableCustomFieldKeys={escalationCustomFieldKeys}
+            copyCustomFieldKeys={copyCustomFieldKeys}
+            copyFields={copyFields}
+            draft={draft}
+            inventoryState={inventoryState}
+            selections={{
+              assets: copyAssetIds,
+              attachments: copyAttachmentIds,
+              contacts: copyContactIds,
+              iocs: copyIocIds,
+              publicComments: copyPublicCommentIds,
+            }}
+            onCopyFieldChange={(field, checked) =>
+              setCopyFields((current) => {
+                const next = new Set(current);
+                if (checked) next.add(field);
+                else next.delete(field);
+                return next;
+              })
+            }
+            onCopyCustomFieldChange={(key, checked) =>
+              setCopyCustomFieldKeys((current) => {
+                const next = new Set(current);
+                if (checked) next.add(key);
+                else next.delete(key);
+                return next;
+              })
+            }
+            onDraftChange={(change) =>
+              setDraft((current) => ({ ...current, ...change }))
+            }
+            onInventoryRetry={() => {
+              setError(null);
+              setInventoryRevision((current) => current + 1);
+            }}
+            onInventorySelectionChange={changeInventorySelection}
+          />
+        ) : null}
+
+        {operation === "delete" ? (
+          <FormField
+            htmlFor="operation-delete-confirmation"
+            label={`Type ${alertNumber(value)} to confirm`}
+          >
+            <Input
+              id="operation-delete-confirmation"
+              autoComplete="off"
+              value={draft.deleteConfirmation}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  deleteConfirmation: event.target.value,
+                }))
+              }
+            />
+          </FormField>
+        ) : null}
+
+        {operation ? (
+          <FormField
+            htmlFor="operation-reason"
+            label={operation === "transition" ? "Comment" : "Reason"}
+            optional={
+              operation === "assign" ||
+              operation === "claim" ||
+              (operation === "transition" &&
+                !selectedTransition?.commentRequired)
+            }
+          >
+            <Textarea
+              id="operation-reason"
+              rows={3}
+              maxLength={2_000}
+              value={draft.reason}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  reason: event.target.value,
+                }))
+              }
+            />
+          </FormField>
+        ) : null}
+
+        <TicketOperationDialogFooter
+          close={close}
+          inventoryState={inventoryState}
+          operation={operation}
+          saving={saving}
+        />
+      </form>
+    </DialogContent>
+  );
+}
+
+interface TicketOperationAssignmentFieldsProps {
+  draft: ReturnType<typeof useTicketOperationsState>["draft"];
+  eligibleTeams: ReturnType<typeof useTicketOperationsState>["eligibleTeams"];
+  operation: ReturnType<typeof useTicketOperationsState>["operation"];
+  setDraft: ReturnType<typeof useTicketOperationsState>["setDraft"];
+}
+
+function TicketOperationAssignmentFields({
+  draft,
+  eligibleTeams,
+  operation,
+  setDraft,
+}: TicketOperationAssignmentFieldsProps): React.JSX.Element {
+  return (
+    <>
+      <FormField
+        htmlFor="operation-team"
+        label={
+          operation === "transfer" ? "Destination team ID" : "Assigned team ID"
+        }
+      >
+        <Input
+          id="operation-team"
+          list="eligible-ticket-teams"
+          value={draft.teamId}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              teamId: event.target.value,
+            }))
+          }
+        />
+        <datalist id="eligible-ticket-teams">
+          {eligibleTeams.map((teamId) => (
+            <option value={teamId} key={teamId} />
+          ))}
+        </datalist>
+      </FormField>
+      <FormField htmlFor="operation-assignee" label="Assignee user ID" optional>
+        <Input
+          id="operation-assignee"
+          value={draft.assigneeId}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              assigneeId: event.target.value,
+            }))
+          }
+        />
+      </FormField>
+    </>
+  );
+}
+
+interface TicketOperationWorkflowFieldsProps {
+  draft: ReturnType<typeof useTicketOperationsState>["draft"];
+  selectedTransition: WorkflowActionHint | undefined;
+  setDraft: ReturnType<typeof useTicketOperationsState>["setDraft"];
+  transitions: ReturnType<typeof useTicketOperationsState>["transitions"];
+}
+
+function TicketOperationWorkflowFields({
+  draft,
+  selectedTransition,
+  setDraft,
+  transitions,
+}: TicketOperationWorkflowFieldsProps): React.JSX.Element {
+  return (
+    <>
+      <label className="ticket-native-field">
+        <span>Server-provided transition</span>
+        <select
+          value={draft.transitionKey}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              transitionKey: event.target.value,
+            }))
+          }
+        >
+          <option value="">Select a transition</option>
+          {transitions.map((transition) => (
+            <option
+              value={transition.transitionKey}
+              key={transition.transitionKey}
+            >
+              {humanizeKey(transition.transitionKey)} →{" "}
+              {humanizeKey(transition.targetStateKey)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selectedTransition?.requiredCustomFieldKeys.map((key) => (
+        <FormField
+          htmlFor={`transition-${key}`}
+          label={humanizeKey(key)}
+          key={key}
+        >
+          <Input
+            id={`transition-${key}`}
+            value={draft.customFields[key] ?? ""}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                customFields: {
+                  ...current.customFields,
+                  [key]: event.target.value,
+                },
+              }))
+            }
+          />
+        </FormField>
+      ))}
+    </>
+  );
+}
+
+interface TicketOperationDialogFooterProps {
+  close: ReturnType<typeof createTicketOperationsActions>["close"];
+  inventoryState: ReturnType<typeof useTicketOperationsState>["inventoryState"];
+  operation: ReturnType<typeof useTicketOperationsState>["operation"];
+  saving: ReturnType<typeof useTicketOperationsState>["saving"];
+}
+
+function TicketOperationDialogFooter({
+  close,
+  inventoryState,
+  operation,
+  saving,
+}: TicketOperationDialogFooterProps): React.JSX.Element {
+  return (
+    <DialogFooter>
+      <Button type="button" variant="ghost" onClick={close} disabled={saving}>
+        Cancel
+      </Button>
+      <Button
+        type="submit"
+        variant={operation === "delete" ? "destructive" : "default"}
+        disabled={
+          saving ||
+          (operation === "escalate" && inventoryState.status !== "ready")
+        }
+      >
+        {operation === "delete" ? (
+          <Trash2 aria-hidden="true" />
+        ) : (
+          <BadgeCheck aria-hidden="true" />
+        )}
+        {saving
+          ? operation === "delete"
+            ? "Deleting Alert…"
+            : "Applying action…"
+          : operation === "delete"
+            ? "Delete Alert"
+            : "Apply action"}
+      </Button>
+    </DialogFooter>
+  );
 }

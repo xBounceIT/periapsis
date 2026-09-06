@@ -151,20 +151,25 @@ export function draftsFromDefaults(
   definitions: readonly CustomFieldDefinitionView[],
   audience: CustomFieldAudience,
 ): CustomFieldDrafts {
-  return Object.fromEntries(
-    visibleDefinitions(definitions, audience, "create")
-      .filter(
-        (definition) =>
-          canEditDefinition(definition, audience, "create") &&
-          definition.defaultValue !== undefined,
-      )
-      .map((definition) => [
+  const drafts: [string, CustomFieldDraft][] = [];
+  for (const definition of visibleDefinitions(
+    definitions,
+    audience,
+    "create",
+  )) {
+    if (
+      canEditDefinition(definition, audience, "create") &&
+      definition.defaultValue !== undefined
+    ) {
+      drafts.push([
         definition.key,
         definition.defaultValue === null
-          ? ({ presence: "null" } satisfies CustomFieldDraft)
+          ? { presence: "null" }
           : presentDraft(definition.defaultValue),
-      ]),
-  );
+      ]);
+    }
+  }
+  return Object.fromEntries(drafts);
 }
 
 export function customFieldValuesFromDrafts(
@@ -293,9 +298,9 @@ function normalizeDraftValue(
         return "Choose only available options.";
       }
       const live = new Set(
-        (definition.options ?? [])
-          .filter((option) => !option.archived)
-          .map((option) => option.key),
+        (definition.options ?? []).flatMap((option) =>
+          option.archived ? [] : [option.key],
+        ),
       );
       const selected = [...new Set(value)].toSorted(codePointCompare);
       if (selected.some((item) => !live.has(item))) {

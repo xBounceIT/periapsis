@@ -1,9 +1,9 @@
-import { Badge } from "@periapsis/ui/components/ui/badge";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from "@periapsis/ui/components/ui/alert";
+import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
   Dialog,
@@ -26,8 +26,6 @@ import {
   TableBody,
   TableCaption,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
@@ -43,9 +41,24 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
-import { useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
+import { TableColumnHeaders } from "../components/table-column-headers";
+import { TenantRequiredPage } from "../components/tenant-required-page";
+import {
+  deriveDelegableRoleChoice,
+  effectiveAuthorityPathKey,
+  mergeTenantUsers,
+  type DelegableRoleChoice,
+} from "./tenant-users-model";
 
 import { useSession } from "../auth/session-context";
 import { useTenantAuthority } from "../auth/tenant-authority-context";
@@ -57,23 +70,31 @@ import {
   isPayloadBoundToIdempotencyKey,
 } from "../lib/payload-idempotency";
 import {
+  describePhaseTwoError,
+  PhaseTwoApiError,
+  type DirectUserRoleGrantView,
+  type EffectiveTenantDelegationView,
+  type EffectiveTenantRoleGrantView,
+  type PhaseTwoApi,
+  type TenantMembershipLifecycleReceiptView,
+  type TenantUserSummaryView,
+} from "../lib/phase-two-types";
+import {
   currentInstant,
   hasInstantReached,
   parseRfc3339Instant,
 } from "../lib/rfc3339-instant";
 import { hasControlCharacters } from "../lib/text-validation";
-import {
-  describePhaseTwoError,
-  PhaseTwoApiError,
-  type DirectUserRoleGrantView,
-  type EffectiveTenantRoleGrantView,
-  type EffectiveTenantDelegationView,
-  type PhaseTwoApi,
-  type TenantRoleView,
-  type TenantMembershipLifecycleReceiptView,
-  type TenantUserSummaryView,
-} from "../lib/phase-two-types";
 import { AccessPathRail } from "./tenant-group-detail";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZoneName: "short",
+  year: "numeric",
+});
 
 type UserListState =
   | { kind: "error"; message: string }
@@ -99,11 +120,6 @@ type GrantListState =
 interface DirectGrantEntry {
   grant: DirectUserRoleGrantView;
   originCursor?: string;
-}
-
-interface DelegableRoleChoice {
-  delegableUntil?: string;
-  role: TenantRoleView;
 }
 
 interface PairSnapshot<T> {
@@ -197,22 +213,36 @@ const grantFormSchema = z.object({
 type GrantFormValues = z.infer<typeof grantFormSchema>;
 
 export function TenantUsersPage(): React.JSX.Element {
+  const model = useTenantUsersPageModel();
+  if (model.kind === "content") return model.content;
+  return <TenantUsersPageView model={model.data} />;
+}
+
+function useTenantUsersPageModel() {
   const { api, clearSession, session } = useSession();
   const authority = useTenantAuthority();
   const tenantId = session.activeTenantId;
   const requestPair = JSON.stringify([session.id, tenantId ?? null]);
   const requestPairRef = useRef(requestPair);
-  requestPairRef.current = requestPair;
+  useLayoutEffect(() => {
+    requestPairRef.current = requestPair;
+  });
   const canRead = authority.hasPermission("user.read");
   const authorityReady =
     Boolean(tenantId) && authority.status === "ready" && canRead;
   const authorityReadyRef = useRef(authorityReady);
-  authorityReadyRef.current = authorityReady;
-  const initialListState = deriveInitialUserListState(
-    tenantId,
-    authority.status,
-    authority.message,
-    canRead,
+  useLayoutEffect(() => {
+    authorityReadyRef.current = authorityReady;
+  });
+  const initialListState = useMemo(
+    () =>
+      deriveInitialUserListState(
+        tenantId,
+        authority.status,
+        authority.message,
+        canRead,
+      ),
+    [tenantId, authority.status, authority.message, canRead],
   );
   const [listSnapshot, setListSnapshot] = useState<PairSnapshot<UserListState>>(
     () => ({ pairKey: requestPair, state: initialListState }),
@@ -269,6 +299,7 @@ export function TenantUsersPage(): React.JSX.Element {
     });
     setListSnapshot({ pairKey: requestPair, state: initialListState });
   }, [
+    initialListState,
     authority.message,
     authority.status,
     authorityReady,
@@ -351,6 +382,7 @@ export function TenantUsersPage(): React.JSX.Element {
 
     return () => controller.abort();
   }, [
+    initialListState,
     api,
     authority.message,
     authority.status,
@@ -562,248 +594,65 @@ export function TenantUsersPage(): React.JSX.Element {
   }
 
   if (listState.kind === "forbidden") {
-    return <ServerDenied resource="the tenant user inventory" />;
+    return {
+      kind: "content" as const,
+      content: <ServerDenied resource="the tenant user inventory" />,
+    };
   }
 
   if (listState.kind === "inactive") {
-    return (
-      <div className="content content--narrow">
-        <section className="page-heading">
-          <div>
-            <p className="section-label">Tenant authorization</p>
-            <h1>Select a tenant to inspect users.</h1>
-            <p>User administration always requires an explicit tenant path.</p>
-          </div>
-        </section>
-      </div>
-    );
+    return {
+      kind: "content" as const,
+      content: (
+        <TenantRequiredPage
+          label="Tenant authorization"
+          title="Select a tenant to inspect users."
+        >
+          User administration always requires an explicit tenant path.
+        </TenantRequiredPage>
+      ),
+    };
   }
 
-  return (
-    <div className="content tenant-admin-page">
-      <section className="page-heading" aria-labelledby="users-page-title">
-        <div>
-          <p className="section-label">Membership orbit / Phase 2B</p>
-          <h1 id="users-page-title">Tenant users</h1>
-          <p>
-            Review tenant-scoped membership identities and the provenance,
-            expiry, and lifecycle of their direct role grants. No global user
-            catalog is exposed here.
-          </p>
-        </div>
-        <Badge variant="outline">
-          <Users aria-hidden="true" /> Tenant projection
-        </Badge>
-      </section>
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      applyMembershipLifecycle,
+      authority,
+      authorityReadyRef,
+      canGrant,
+      canManageMembership,
+      clearSession,
+      closeUserAccess,
+      isLoadingMore,
+      listState,
+      loadMore,
+      openMembershipLifecycle,
+      openUserAccess,
+      paginationError,
+      requestPair,
+      requestPairRef,
+      selectedLifecycle,
+      selectedUser,
+      selectedUserSelection,
+      session,
+      setLifecycleSelection,
+      setLoadAttempt,
+      tenantId,
+    },
+  };
+}
 
-      {paginationError ? (
-        <FocusedError
-          title="More users could not be loaded"
-          message={paginationError}
-        />
-      ) : null}
-      {listState.kind === "loading" ? <UserListSkeleton /> : null}
-      {listState.kind === "error" ? (
-        <div className="tenant-admin-error">
-          <FocusedError message={listState.message} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-          >
-            <RefreshCw aria-hidden="true" /> Retry user inventory
-          </Button>
-        </div>
-      ) : null}
-      {listState.kind === "ready" && listState.items.length === 0 ? (
-        <div className="tenant-empty">
-          <Users aria-hidden="true" />
-          <h2>No tenant users returned</h2>
-          <p>The server returned no membership identities for this tenant.</p>
-        </div>
-      ) : null}
-      {listState.kind === "ready" && listState.items.length > 0 ? (
-        <section
-          className="authority-inventory"
-          aria-labelledby="user-inventory-title"
-        >
-          <div className="section-heading">
-            <div>
-              <p className="section-label">Server inventory</p>
-              <h2 id="user-inventory-title">Membership identities</h2>
-            </div>
-          </div>
-          <Table className="authority-table">
-            <TableCaption className="sr-only">
-              Users in the active tenant membership projection
-            </TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Membership</TableHead>
-                <TableHead>Legacy label</TableHead>
-                <TableHead>Updated</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listState.items.map((item) => (
-                <TableRow key={item.membershipId}>
-                  <TableCell>
-                    <span className="role-name-cell">
-                      <strong>{item.user.displayName}</strong>
-                      <small>{item.user.email}</small>
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        item.membershipStatus === "active"
-                          ? "secondary"
-                          : "outline"
-                      }
-                    >
-                      {item.membershipStatus === "suspended" ? (
-                        <Ban aria-hidden="true" />
-                      ) : item.membershipStatus === "active" ? (
-                        <ShieldCheck aria-hidden="true" />
-                      ) : (
-                        <UserRound aria-hidden="true" />
-                      )}
-                      {formatStatus(item.membershipStatus)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {formatStatus(item.legacyMembershipRole)}
-                  </TableCell>
-                  <TableCell>{formatTimestamp(item.updatedAt)}</TableCell>
-                  <TableCell>
-                    <span className="flex flex-wrap gap-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Review access for ${item.user.displayName} (${item.user.email})`}
-                        onClick={() => openUserAccess(item)}
-                      >
-                        <KeyRound aria-hidden="true" /> Access
-                      </Button>
-                      {canManageMembership &&
-                      (item.membershipStatus === "active" ||
-                        (item.membershipStatus === "suspended" &&
-                          item.user.active)) ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            item.membershipStatus === "active"
-                              ? "destructive"
-                              : "outline"
-                          }
-                          aria-label={`${
-                            item.membershipStatus === "active"
-                              ? "Suspend"
-                              : "Reactivate"
-                          } membership for ${item.user.displayName} (${item.user.email})`}
-                          onClick={() => openMembershipLifecycle(item)}
-                        >
-                          {item.membershipStatus === "active" ? (
-                            <Ban aria-hidden="true" />
-                          ) : (
-                            <RotateCcw aria-hidden="true" />
-                          )}
-                          {item.membershipStatus === "active"
-                            ? "Suspend"
-                            : "Reactivate"}
-                        </Button>
-                      ) : null}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {listState.nextCursor ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isLoadingMore}
-              onClick={() => void loadMore()}
-            >
-              <ArrowDown aria-hidden="true" />
-              {isLoadingMore ? "Loading users…" : "Load more users"}
-            </Button>
-          ) : null}
-        </section>
-      ) : null}
-
-      {tenantId && selectedUser && selectedUserSelection ? (
-        <UserAccessDialog
-          api={api}
-          canGrant={canGrant}
-          csrfToken={session.csrfToken}
-          delegation={authority.authority?.delegationCeiling ?? []}
-          effectiveGrants={
-            selectedUser.user.id === session.user.id
-              ? (authority.authority?.roleGrants ?? [])
-              : []
-          }
-          onAuthorityChanged={() => {
-            if (
-              requestPairRef.current === requestPair &&
-              authorityReadyRef.current
-            ) {
-              authority.reload();
-            }
-          }}
-          onOpenChange={(open) => {
-            if (!open) {
-              closeUserAccess();
-            }
-          }}
-          pairKey={requestPair}
-          key={`${requestPair}:${selectedUser.user.id}:${selectedUserSelection.generation}`}
-          tenantId={tenantId}
-          user={selectedUser}
-        />
-      ) : null}
-
-      {tenantId && selectedLifecycle ? (
-        <MembershipLifecycleDialog
-          api={api}
-          csrfToken={session.csrfToken}
-          isCurrent={() =>
-            requestPairRef.current === selectedLifecycle.pairKey &&
-            authorityReadyRef.current
-          }
-          key={`${selectedLifecycle.pairKey}:${selectedLifecycle.user.membershipId}`}
-          onCompleted={(receipt) => {
-            if (
-              receipt.status === "suspended" &&
-              receipt.userId === session.user.id
-            ) {
-              clearSession(session.id);
-              return;
-            }
-            applyMembershipLifecycle(selectedLifecycle.user, {
-              etag: receipt.etag,
-              lifecycleRevision: receipt.lifecycleRevision,
-              membershipStatus: receipt.status,
-              updatedAt: receipt.updatedAt,
-            });
-          }}
-          onOpenChange={(open) => {
-            if (!open) {
-              setLifecycleSelection(null);
-            }
-          }}
-          onStale={() => setLoadAttempt((attempt) => attempt + 1)}
-          tenantId={tenantId}
-          user={selectedLifecycle.user}
-        />
-      ) : null}
-    </div>
-  );
+function TenantUsersPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useTenantUsersPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <UserWorkspace model={model} />;
 }
 
 function MembershipLifecycleDialog({
@@ -901,6 +750,7 @@ function MembershipLifecycleDialog({
       );
     } finally {
       if (isCurrent()) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setSaving(false);
       }
     }
@@ -996,7 +846,23 @@ function MembershipLifecycleDialog({
   );
 }
 
-function UserAccessDialog({
+function UserAccessDialog(props: {
+  api: PhaseTwoApi;
+  canGrant: boolean;
+  csrfToken: string;
+  delegation: readonly EffectiveTenantDelegationView[];
+  effectiveGrants: readonly EffectiveTenantRoleGrantView[];
+  onAuthorityChanged: () => void;
+  onOpenChange: (open: boolean) => void;
+  pairKey: string;
+  tenantId: string;
+  user: TenantUserSummaryView;
+}): React.JSX.Element {
+  const model = useUserAccessDialogModel(props);
+  return <UserAccessDialogView model={model.data} />;
+}
+
+function useUserAccessDialogModel({
   api,
   canGrant,
   csrfToken,
@@ -1018,7 +884,7 @@ function UserAccessDialog({
   pairKey: string;
   tenantId: string;
   user: TenantUserSummaryView;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const [loadRevision, setLoadRevision] = useState(0);
   const dialogKey = JSON.stringify([pairKey, user.user.id]);
@@ -1034,7 +900,9 @@ function UserAccessDialog({
   const [grantingKey, setGrantingKey] = useState<string | null>(null);
   const granting = grantingKey === dialogKey;
   const grantRequestRef = useRef(grantRequestKey);
-  grantRequestRef.current = grantRequestKey;
+  useLayoutEffect(() => {
+    grantRequestRef.current = grantRequestKey;
+  });
   const grantLoadGenerationRef = useRef(0);
   const grantPaginationGenerationRef = useRef(0);
   const grantPaginationRequestRef = useRef<PaginationRequest | null>(null);
@@ -1056,6 +924,7 @@ function UserAccessDialog({
 
   function commitGrantSnapshot(next: PairSnapshot<GrantListState>): void {
     grantSnapshotRef.current = next;
+    // react-doctor-disable-next-line react-doctor/no-derived-state -- next is an asynchronously loaded or refreshed grant snapshot, not a prop-derived value.
     setGrantSnapshot(next);
   }
 
@@ -1087,6 +956,7 @@ function UserAccessDialog({
     };
   }, []);
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state-effect -- This cancellable effect loads grant history from the API; server results and freshness cannot be derived during rendering.
   useEffect(() => {
     const generation = grantLoadGenerationRef.current + 1;
     grantLoadGenerationRef.current = generation;
@@ -1397,158 +1267,45 @@ function UserAccessDialog({
     }
   }
 
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="user-access-dialog">
-        <DialogHeader>
-          <DialogTitle>
-            {granting
-              ? "Grant a tenant role"
-              : `Access · ${user.user.displayName}`}
-          </DialogTitle>
-          <DialogDescription>
-            {granting
-              ? "The selected role must fit your live exact-tuple delegation ceiling."
-              : "Direct grants and available inherited group paths keep their source-qualified provenance separate."}
-          </DialogDescription>
-        </DialogHeader>
-        {granting ? (
-          <GrantRoleForm
-            api={api}
-            csrfToken={csrfToken}
-            delegation={delegation}
-            onCancel={() => setGrantingKey(null)}
-            onGranted={() => {
-              if (!dialogMountedRef.current) {
-                return;
-              }
-              onAuthorityChanged();
-              setGrantingKey(null);
-              setLoadRevision((revision) => revision + 1);
-            }}
-            pairKey={dialogKey}
-            tenantId={tenantId}
-            userId={user.user.id}
-          />
-        ) : (
-          <>
-            <div className="user-access-identity">
-              <UserRound aria-hidden="true" />
-              <span>
-                <strong>{user.user.displayName}</strong>
-                <small>{user.user.email}</small>
-              </span>
-              <Badge variant="outline">
-                {formatStatus(user.membershipStatus)}
-              </Badge>
-              <Badge variant={user.user.active ? "secondary" : "outline"}>
-                {user.user.active ? "User active" : "User disabled"}
-              </Badge>
-            </div>
-            {grantState.kind === "loading" ? <UserListSkeleton /> : null}
-            {grantState.kind === "forbidden" ? (
-              <FocusedError
-                title="Grant history denied"
-                message="The server denied access to this user's direct role grants."
-              />
-            ) : null}
-            {grantState.kind === "error" ? (
-              <FocusedError message={grantState.message} />
-            ) : null}
-            {grantState.kind === "ready" && grantState.items.length === 0 ? (
-              <div className="grant-empty">
-                <ShieldCheck aria-hidden="true" />
-                <p>No direct role grants were returned for this user.</p>
-              </div>
-            ) : null}
-            {grantState.kind === "ready" && grantState.items.length > 0 ? (
-              <div className="grant-list">
-                {grantState.items.map((entry) => (
-                  <DirectGrantCard
-                    api={api}
-                    canGrant={canGrant}
-                    csrfToken={csrfToken}
-                    draft={revokeDrafts[entry.grant.id] ?? emptyRevokeDraft}
-                    entry={entry}
-                    isDialogActive={() => dialogMountedRef.current}
-                    isGrantViewCurrent={() =>
-                      isCurrentDialogRequest(grantRequestKey)
-                    }
-                    key={entry.grant.id}
-                    onCancel={() => clearRevokeDraft(entry.grant.id)}
-                    onDraftChange={(update) =>
-                      updateRevokeDraft(entry.grant.id, update)
-                    }
-                    onRevoked={() => {
-                      if (!dialogMountedRef.current) {
-                        return;
-                      }
-                      clearRevokeDraft(entry.grant.id);
-                      onAuthorityChanged();
-                      setLoadRevision((revision) => revision + 1);
-                    }}
-                    onRefreshStale={refreshDirectGrant}
-                    tenantId={tenantId}
-                    userActive={user.user.active}
-                    userMembershipStatus={user.membershipStatus}
-                  />
-                ))}
-              </div>
-            ) : null}
-            {grantPaginationState.error ? (
-              <FocusedError
-                title="More grant history could not be loaded"
-                message={grantPaginationState.error}
-              />
-            ) : null}
-            {grantState.kind === "ready" && grantState.nextCursor ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={grantPaginationState.loading}
-                onClick={() => void loadMoreGrantHistory()}
-              >
-                <ArrowDown aria-hidden="true" />
-                {grantPaginationState.loading
-                  ? "Loading grant history…"
-                  : "Load more grant history"}
-              </Button>
-            ) : null}
-            {effectiveGrants.some(
-              (grant) =>
-                grant.path.pathType === "group" &&
-                grant.path.group !== undefined,
-            ) ? (
-              <InheritedGroupPaths grants={effectiveGrants} />
-            ) : null}
-            <DialogFooter>
-              {canGrant && grantState.kind !== "forbidden" ? (
-                <Button type="button" onClick={() => setGrantingKey(dialogKey)}>
-                  <Plus aria-hidden="true" /> Grant role
-                </Button>
-              ) : null}
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      api,
+      canGrant,
+      clearRevokeDraft,
+      csrfToken,
+      delegation,
+      dialogKey,
+      dialogMountedRef,
+      effectiveGrants,
+      grantPaginationState,
+      grantRequestKey,
+      grantState,
+      granting,
+      isCurrentDialogRequest,
+      loadMoreGrantHistory,
+      onAuthorityChanged,
+      onOpenChange,
+      refreshDirectGrant,
+      revokeDrafts,
+      setGrantingKey,
+      setLoadRevision,
+      tenantId,
+      updateRevokeDraft,
+      user,
+    },
+  };
 }
 
-export function effectiveAuthorityPathKey(
-  grant: EffectiveTenantRoleGrantView,
-): string {
-  if (grant.path.pathType === "direct") {
-    return `direct:${grant.grantId}`;
-  }
-  const path = grant.path.group;
-  return [
-    "group",
-    grant.grantId,
-    path.group.id,
-    path.membershipEdge.id,
-    path.roleGrantEdge.id,
-  ].join(":");
+function UserAccessDialogView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useUserAccessDialogModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <UserAccessDialogContent model={model} />;
 }
 
 export function InheritedGroupPaths({
@@ -1618,7 +1375,29 @@ export function InheritedGroupPaths({
   );
 }
 
-function DirectGrantCard({
+function DirectGrantCard(props: {
+  api: PhaseTwoApi;
+  canGrant: boolean;
+  csrfToken: string;
+  draft: RevokeDraft;
+  entry: DirectGrantEntry;
+  isDialogActive: () => boolean;
+  isGrantViewCurrent: () => boolean;
+  onCancel: () => void;
+  onDraftChange: (update: (draft: RevokeDraft) => RevokeDraft) => void;
+  onRefreshStale: (
+    rejectedEntry: DirectGrantEntry,
+  ) => Promise<DirectUserRoleGrantView | null>;
+  onRevoked: () => void;
+  tenantId: string;
+  userActive: boolean;
+  userMembershipStatus: TenantUserSummaryView["membershipStatus"];
+}): React.JSX.Element {
+  const model = useDirectGrantCardModel(props);
+  return <DirectGrantCardView model={model.data} />;
+}
+
+function useDirectGrantCardModel({
   api,
   canGrant,
   csrfToken,
@@ -1650,7 +1429,7 @@ function DirectGrantCard({
   tenantId: string;
   userActive: boolean;
   userMembershipStatus: TenantUserSummaryView["membershipStatus"];
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const id = useId();
   const grant = entry.grant;
@@ -1806,202 +1585,37 @@ function DirectGrantCard({
     }
   }
 
-  return (
-    <article className="grant-card">
-      <header>
-        <div>
-          <strong>{grant.role.name}</strong>
-          <small>{grant.role.key}</small>
-        </div>
-        <Badge variant={grant.state === "active" ? "secondary" : "outline"}>
-          {formatStatus(grant.state)}
-        </Badge>
-      </header>
-      <dl>
-        <div>
-          <dt>Edge lifecycle</dt>
-          <dd>{formatStatus(grant.state)}</dd>
-        </div>
-        <div>
-          <dt>Effective authority</dt>
-          <dd>{authorityBlocker ? "Not contributing" : "Contributing"}</dd>
-        </div>
-        <div>
-          <dt>Membership state</dt>
-          <dd>{formatStatus(userMembershipStatus)}</dd>
-        </div>
-        <div>
-          <dt>User state</dt>
-          <dd>{userActive ? "Active" : "Disabled"}</dd>
-        </div>
-        <div>
-          <dt>Authority path</dt>
-          <dd>Direct</dd>
-        </div>
-        <div>
-          <dt>Source kind</dt>
-          <dd>{formatStatus(grant.provenance.sourceKind)}</dd>
-        </div>
-        <div>
-          <dt>Source type</dt>
-          <dd>{formatStatus(grant.provenance.sourceType)}</dd>
-        </div>
-        <div>
-          <dt>Source ID</dt>
-          <dd>{grant.provenance.sourceId}</dd>
-        </div>
-        <div>
-          <dt>Source mode</dt>
-          <dd>
-            {grant.provenance.authoritative ? "Authoritative" : "Additive"}
-          </dd>
-        </div>
-        <div>
-          <dt>Granted</dt>
-          <dd>{formatTimestamp(grant.provenance.grantedAt)}</dd>
-        </div>
-        <div>
-          <dt>Expires</dt>
-          <dd>
-            {grant.provenance.expiresAt
-              ? formatTimestamp(grant.provenance.expiresAt)
-              : "No scheduled expiry"}
-          </dd>
-        </div>
-        <div>
-          <dt>Source retirement</dt>
-          <dd>
-            {grant.provenance.retiredAt
-              ? formatTimestamp(grant.provenance.retiredAt)
-              : "Source active"}
-          </dd>
-        </div>
-        <div>
-          <dt>Role state</dt>
-          <dd>{grant.role.archived ? "Archived" : "Available"}</dd>
-        </div>
-        {grant.provenance.grantedByUserId ? (
-          <div>
-            <dt>Granted by</dt>
-            <dd>{grant.provenance.grantedByUserId}</dd>
-          </div>
-        ) : null}
-        {grant.state === "revoked" && grant.revokeReason ? (
-          <div>
-            <dt>Revocation reason</dt>
-            <dd>{grant.revokeReason}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {authorityBlocker ? (
-        <p className="capability-note">
-          This direct path no longer contributes authority because{" "}
-          {authorityBlocker}. The {formatStatus(grant.state)} badge describes
-          only the edge lifecycle.
-        </p>
-      ) : null}
-      <blockquote>{grant.provenance.reason}</blockquote>
-      {draft.error ? (
-        <FocusedError title="Grant action failed" message={draft.error} />
-      ) : null}
-      {draft.notice ? (
-        <p className="capability-note" role="status">
-          {draft.notice}
-        </p>
-      ) : null}
-      {grant.state !== "revoked" &&
-      !isManagedByAuthorizationApi(grant.managedByAuthorizationApi) ? (
-        <p className="source-owner-note">
-          Not managed by the authorization API (source:{" "}
-          {formatStatus(grant.provenance.sourceKind)}); direct controls cannot
-          revoke this grant.
-        </p>
-      ) : null}
-      {rejectedRefreshEntry ? (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={staleRefreshState === "refreshing"}
-          aria-label={`Retry current grant refresh for ${roleTarget}`}
-          onClick={() => void refreshStaleGrant(rejectedRefreshEntry)}
-        >
-          <RefreshCw aria-hidden="true" />
-          {staleRefreshState === "refreshing"
-            ? "Refreshing grant…"
-            : "Retry grant refresh"}
-        </Button>
-      ) : null}
-      {canGrant && directGrantIsRevocable(grant) ? (
-        draft.open ? (
-          <div
-            className="revoke-grant-form"
-            role="group"
-            aria-labelledby={`${id}-revoke-title`}
-          >
-            <strong id={`${id}-revoke-title`}>
-              Revoke direct grant for {roleTarget}
-            </strong>
-            <FormField htmlFor={`${id}-revoke-reason`} label="Reason">
-              <Textarea
-                id={`${id}-revoke-reason`}
-                aria-label={`Reason for revoking direct grant for ${roleTarget}`}
-                value={draft.reason}
-                maxLength={500}
-                disabled={isSaving || staleRefreshState === "refreshing"}
-                onChange={(event) => {
-                  const reason = event.currentTarget.value;
-                  onDraftChange((current) => ({
-                    ...current,
-                    error: null,
-                    notice: null,
-                    reason,
-                  }));
-                }}
-              />
-            </FormField>
-            <div>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isSaving || staleRefreshState !== "idle"}
-                aria-label={`${isSaving ? "Revoking" : "Confirm revoke"} direct grant for ${roleTarget}`}
-                onClick={() => void revoke()}
-              >
-                <Trash2 aria-hidden="true" />
-                {isSaving ? "Revoking…" : "Confirm revoke"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={isSaving || staleRefreshState === "refreshing"}
-                aria-label={`Keep grant for ${roleTarget}`}
-                onClick={onCancel}
-              >
-                Keep grant
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-label={`Revoke direct grant for ${roleTarget}`}
-            onClick={() =>
-              onDraftChange((current) => ({
-                ...current,
-                error: null,
-                notice: null,
-                open: true,
-              }))
-            }
-          >
-            <Trash2 aria-hidden="true" /> Revoke
-          </Button>
-        )
-      ) : null}
-    </article>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      authorityBlocker,
+      canGrant,
+      draft,
+      grant,
+      id,
+      isSaving,
+      onCancel,
+      onDraftChange,
+      refreshStaleGrant,
+      rejectedRefreshEntry,
+      revoke,
+      roleTarget,
+      staleRefreshState,
+      userActive,
+      userMembershipStatus,
+    },
+  };
+}
+
+function DirectGrantCardView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useDirectGrantCardModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <DirectGrantDetails model={model} />;
 }
 
 function useDeadlineReached(value: string | undefined): boolean {
@@ -2103,7 +1717,21 @@ function joinAuthorityBlockers(blockers: readonly string[]): string | null {
   return `${blockers.slice(0, -1).join(", ")} and ${blockers.at(-1)}`;
 }
 
-function GrantRoleForm({
+function GrantRoleForm(props: {
+  api: PhaseTwoApi;
+  csrfToken: string;
+  delegation: readonly EffectiveTenantDelegationView[];
+  onCancel: () => void;
+  onGranted: () => void;
+  pairKey: string;
+  tenantId: string;
+  userId: string;
+}): React.JSX.Element {
+  const model = useGrantRoleFormModel(props);
+  return <GrantRoleFormView model={model.data} />;
+}
+
+function useGrantRoleFormModel({
   api,
   csrfToken,
   delegation,
@@ -2121,7 +1749,7 @@ function GrantRoleForm({
   pairKey: string;
   tenantId: string;
   userId: string;
-}): React.JSX.Element {
+}) {
   const { clearSession, session } = useSession();
   const id = useId();
   type RoleState =
@@ -2150,7 +1778,9 @@ function GrantRoleForm({
     key: string;
   } | null>(null);
   const roleRequestRef = useRef(roleRequestKey);
-  roleRequestRef.current = roleRequestKey;
+  useLayoutEffect(() => {
+    roleRequestRef.current = roleRequestKey;
+  });
   const roleLoadGenerationRef = useRef(0);
   const rolePaginationGenerationRef = useRef(0);
   const rolePaginationRequestRef = useRef<PaginationRequest | null>(null);
@@ -2451,133 +2081,33 @@ function GrantRoleForm({
     }
   });
 
-  return (
-    <form className="grant-role-form" onSubmit={submit} noValidate>
-      {formError ? (
-        <FocusedError title="Role not granted" message={formError} />
-      ) : null}
-      {roleState.kind === "loading" ? <UserListSkeleton /> : null}
-      {roleState.kind === "error" ? (
-        <FocusedError
-          title="Role catalog unavailable"
-          message={roleState.message}
-        />
-      ) : null}
-      {rolePaginationState.error ? (
-        <FocusedError
-          title="More role options could not be loaded"
-          message={rolePaginationState.error}
-        />
-      ) : null}
-      {roleState.kind === "ready" && roleState.items.length === 0 ? (
-        <div className="grant-empty">
-          <ShieldCheck aria-hidden="true" />
-          <p>
-            {roleState.nextCursor
-              ? "No delegable role was found on the loaded pages yet."
-              : "No active role fits your live delegation ceiling."}
-          </p>
-        </div>
-      ) : null}
-      {roleState.kind === "ready" && roleState.items.length > 0 ? (
-        <>
-          <FormField htmlFor={`${id}-grant-role`} label="Role">
-            <Controller
-              control={control}
-              name="roleId"
-              render={({ field }) => (
-                <Select
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger
-                    id={`${id}-grant-role`}
-                    className="grant-role-select"
-                  >
-                    <SelectValue placeholder="Select a role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roleState.items.map((choice) => (
-                      <SelectItem key={choice.role.id} value={choice.role.id}>
-                        {choice.role.name} ({choice.role.key})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </FormField>
-          <FormField
-            htmlFor={`${id}-grant-expiry`}
-            label="Grant expiry"
-            optional={!selectedRole?.delegableUntil}
-            hint={
-              selectedRole?.delegableUntil
-                ? `Must be on or before ${formatTimestamp(selectedRole.delegableUntil)}.`
-                : "Leave empty only when the selected role has no effective delegation horizon."
-            }
-          >
-            <Input
-              id={`${id}-grant-expiry`}
-              aria-describedby={`${id}-grant-expiry-hint`}
-              type="datetime-local"
-              min={toLocalDateTime(new Date().toISOString())}
-              max={
-                selectedRole?.delegableUntil
-                  ? toLocalDateTime(selectedRole.delegableUntil)
-                  : undefined
-              }
-              step={1}
-              disabled={isSaving}
-              {...register("expiresAt")}
-            />
-          </FormField>
-          <FormField htmlFor={`${id}-grant-reason`} label="Reason">
-            <Textarea
-              id={`${id}-grant-reason`}
-              maxLength={500}
-              disabled={isSaving}
-              {...register("reason")}
-            />
-          </FormField>
-        </>
-      ) : null}
-      {roleState.kind === "ready" && roleState.nextCursor ? (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isSaving || rolePaginationState.loading}
-          onClick={() => void loadMoreRoleOptions()}
-        >
-          <ArrowDown aria-hidden="true" />
-          {rolePaginationState.loading
-            ? "Loading role options…"
-            : "Load more role options"}
-        </Button>
-      ) : null}
-      <DialogFooter>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={isSaving}
-          onClick={onCancel}
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          disabled={
-            isSaving ||
-            roleState.kind !== "ready" ||
-            roleState.items.length === 0
-          }
-        >
-          {isSaving ? "Granting role…" : "Grant role"}
-        </Button>
-      </DialogFooter>
-    </form>
-  );
+  return {
+    kind: "ready" as const,
+    data: {
+      control,
+      formError,
+      id,
+      isSaving,
+      loadMoreRoleOptions,
+      onCancel,
+      register,
+      rolePaginationState,
+      roleState,
+      selectedRole,
+      submit,
+    },
+  };
+}
+
+function GrantRoleFormView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useGrantRoleFormModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  return <RoleGrantEditor model={model} />;
 }
 
 async function loadDelegableRolePage(
@@ -2621,66 +2151,6 @@ async function loadDelegableRolePage(
       return choice ? [choice] : [];
     }),
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-  };
-}
-
-export function deriveDelegableRoleChoice(
-  role: TenantRoleView,
-  delegation: readonly EffectiveTenantDelegationView[],
-): DelegableRoleChoice | null {
-  if (role.principalKind !== "human") {
-    return null;
-  }
-  const parsedHorizons = new Map<string, bigint>();
-  for (const entry of delegation) {
-    if (entry.delegableUntil === undefined) {
-      continue;
-    }
-    const instant = parseRfc3339Instant(entry.delegableUntil);
-    if (instant === undefined) {
-      return null;
-    }
-    parsedHorizons.set(entry.delegableUntil, instant);
-  }
-  const required = new Map<string, { permissionKey: string; scope: string }>();
-  for (const tuple of [
-    ...role.policy.permissions,
-    ...role.policy.delegationCeiling,
-  ]) {
-    required.set(`${tuple.permissionKey}:${tuple.scope}`, tuple);
-  }
-  const ceilings = [...required.values()].map((tuple) =>
-    delegation.find(
-      (entry) =>
-        entry.permissionKey === tuple.permissionKey &&
-        entry.scope === tuple.scope,
-    ),
-  );
-  if (ceilings.some((entry) => !entry)) {
-    return null;
-  }
-  const horizons = ceilings.flatMap((entry) =>
-    entry?.delegableUntil ? [entry.delegableUntil] : [],
-  );
-  const delegableUntil = horizons.toSorted((first, second) => {
-    const firstInstant = parsedHorizons.get(first);
-    const secondInstant = parsedHorizons.get(second);
-    if (firstInstant === undefined || secondInstant === undefined) return 0;
-    return firstInstant < secondInstant
-      ? -1
-      : firstInstant > secondInstant
-        ? 1
-        : 0;
-  })[0];
-  if (
-    delegableUntil &&
-    hasInstantReached(parsedHorizons.get(delegableUntil) ?? 0n)
-  ) {
-    return null;
-  }
-  return {
-    ...(delegableUntil ? { delegableUntil } : {}),
-    role,
   };
 }
 
@@ -2739,17 +2209,6 @@ function assertDirectGrants(
   ) {
     throw new Error("The role grant response contained an invalid expiry.");
   }
-}
-
-export function mergeTenantUsers(
-  current: readonly TenantUserSummaryView[],
-  incoming: readonly TenantUserSummaryView[],
-): readonly TenantUserSummaryView[] {
-  const users = new Map(current.map((user) => [user.membershipId, user]));
-  for (const user of incoming) {
-    users.set(user.membershipId, user);
-  }
-  return [...users.values()];
 }
 
 function deriveInitialUserListState(
@@ -2906,14 +2365,7 @@ function formatTimestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
     ? "Unavailable"
-    : new Intl.DateTimeFormat(undefined, {
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZoneName: "short",
-        year: "numeric",
-      }).format(date);
+    : dateTimeFormatter.format(date);
 }
 
 function toLocalDateTime(value: string): string {
@@ -2946,4 +2398,928 @@ function isCurrentPaginationRequest(
     request.generation === generation &&
     !request.controller.signal.aborted
   );
+}
+
+function UserWorkspace({
+  model,
+}: {
+  model: React.ComponentProps<typeof TenantUsersPageView>["model"];
+}): React.ReactNode {
+  const { listState, paginationError, setLoadAttempt } = model;
+  return (
+    <div className="content tenant-admin-page">
+      <section className="page-heading" aria-labelledby="users-page-title">
+        <div>
+          <p className="section-label">Membership orbit / Phase 2B</p>
+          <h1 id="users-page-title">Tenant users</h1>
+          <p>
+            Review tenant-scoped membership identities and the provenance,
+            expiry, and lifecycle of their direct role grants. No global user
+            catalog is exposed here.
+          </p>
+        </div>
+        <Badge variant="outline">
+          <Users aria-hidden="true" /> Tenant projection
+        </Badge>
+      </section>
+
+      {paginationError ? (
+        <FocusedError
+          title="More users could not be loaded"
+          message={paginationError}
+        />
+      ) : null}
+      {listState.kind === "loading" ? <UserListSkeleton /> : null}
+      {listState.kind === "error" ? (
+        <div className="tenant-admin-error">
+          <FocusedError message={listState.message} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            <RefreshCw aria-hidden="true" /> Retry user inventory
+          </Button>
+        </div>
+      ) : null}
+      {listState.kind === "ready" && listState.items.length === 0 ? (
+        <div className="tenant-empty">
+          <Users aria-hidden="true" />
+          <h2>No tenant users returned</h2>
+          <p>The server returned no membership identities for this tenant.</p>
+        </div>
+      ) : null}
+      {<MembershipInventory model={model} />}
+
+      {<UserAccessAction model={model} />}
+
+      {<MembershipLifecycleAction model={model} />}
+    </div>
+  );
+}
+
+function UserAccessDialogContent({
+  model,
+}: {
+  model: React.ComponentProps<typeof UserAccessDialogView>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    csrfToken,
+    delegation,
+    dialogKey,
+    dialogMountedRef,
+    granting,
+    onAuthorityChanged,
+    onOpenChange,
+    setGrantingKey,
+    setLoadRevision,
+    tenantId,
+    user,
+  } = model;
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="user-access-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            {granting
+              ? "Grant a tenant role"
+              : `Access · ${user.user.displayName}`}
+          </DialogTitle>
+          <DialogDescription>
+            {granting
+              ? "The selected role must fit your live exact-tuple delegation ceiling."
+              : "Direct grants and available inherited group paths keep their source-qualified provenance separate."}
+          </DialogDescription>
+        </DialogHeader>
+        {granting ? (
+          <GrantRoleForm
+            api={api}
+            csrfToken={csrfToken}
+            delegation={delegation}
+            onCancel={() => setGrantingKey(null)}
+            onGranted={() => {
+              if (!dialogMountedRef.current) {
+                return;
+              }
+              onAuthorityChanged();
+              setGrantingKey(null);
+              setLoadRevision((revision) => revision + 1);
+            }}
+            pairKey={dialogKey}
+            tenantId={tenantId}
+            userId={user.user.id}
+          />
+        ) : (
+          <UserGrantHistory model={model} />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DirectGrantDetails({
+  model,
+}: {
+  model: React.ComponentProps<typeof DirectGrantCardView>["model"];
+}): React.ReactNode {
+  const {
+    authorityBlocker,
+    draft,
+    grant,
+    refreshStaleGrant,
+    rejectedRefreshEntry,
+    roleTarget,
+    staleRefreshState,
+  } = model;
+  return (
+    <article className="grant-card">
+      <header>
+        <div>
+          <strong>{grant.role.name}</strong>
+          <small>{grant.role.key}</small>
+        </div>
+        <Badge variant={grant.state === "active" ? "secondary" : "outline"}>
+          {formatStatus(grant.state)}
+        </Badge>
+      </header>
+      <DirectGrantMetadata model={model} />
+      {authorityBlocker ? (
+        <p className="capability-note">
+          This direct path no longer contributes authority because{" "}
+          {authorityBlocker}. The {formatStatus(grant.state)} badge describes
+          only the edge lifecycle.
+        </p>
+      ) : null}
+      <blockquote>{grant.provenance.reason}</blockquote>
+      {draft.error ? (
+        <FocusedError title="Grant action failed" message={draft.error} />
+      ) : null}
+      {draft.notice ? (
+        <p className="capability-note" role="status">
+          {draft.notice}
+        </p>
+      ) : null}
+      {grant.state !== "revoked" &&
+      !isManagedByAuthorizationApi(grant.managedByAuthorizationApi) ? (
+        <p className="source-owner-note">
+          Not managed by the authorization API (source:{" "}
+          {formatStatus(grant.provenance.sourceKind)}); direct controls cannot
+          revoke this grant.
+        </p>
+      ) : null}
+      {rejectedRefreshEntry ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={staleRefreshState === "refreshing"}
+          aria-label={`Retry current grant refresh for ${roleTarget}`}
+          onClick={() => void refreshStaleGrant(rejectedRefreshEntry)}
+        >
+          <RefreshCw aria-hidden="true" />
+          {staleRefreshState === "refreshing"
+            ? "Refreshing grant…"
+            : "Retry grant refresh"}
+        </Button>
+      ) : null}
+      {<DirectGrantRevokeAction model={model} />}
+    </article>
+  );
+}
+
+function RoleGrantEditor({
+  model,
+}: {
+  model: React.ComponentProps<typeof GrantRoleFormView>["model"];
+}): React.ReactNode {
+  const {
+    formError,
+    isSaving,
+    loadMoreRoleOptions,
+    onCancel,
+    rolePaginationState,
+    roleState,
+    submit,
+  } = model;
+  return (
+    <form className="grant-role-form" onSubmit={submit} noValidate>
+      {formError ? (
+        <FocusedError title="Role not granted" message={formError} />
+      ) : null}
+      {roleState.kind === "loading" ? <UserListSkeleton /> : null}
+      {roleState.kind === "error" ? (
+        <FocusedError
+          title="Role catalog unavailable"
+          message={roleState.message}
+        />
+      ) : null}
+      {rolePaginationState.error ? (
+        <FocusedError
+          title="More role options could not be loaded"
+          message={rolePaginationState.error}
+        />
+      ) : null}
+      {roleState.kind === "ready" && roleState.items.length === 0 ? (
+        <div className="grant-empty">
+          <ShieldCheck aria-hidden="true" />
+          <p>
+            {roleState.nextCursor
+              ? "No delegable role was found on the loaded pages yet."
+              : "No active role fits your live delegation ceiling."}
+          </p>
+        </div>
+      ) : null}
+      {<RoleGrantFields model={model} />}
+      {roleState.kind === "ready" && roleState.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isSaving || rolePaginationState.loading}
+          onClick={() => void loadMoreRoleOptions()}
+        >
+          <ArrowDown aria-hidden="true" />
+          {rolePaginationState.loading
+            ? "Loading role options…"
+            : "Load more role options"}
+        </Button>
+      ) : null}
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={isSaving}
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={
+            isSaving ||
+            roleState.kind !== "ready" ||
+            roleState.items.length === 0
+          }
+        >
+          {isSaving ? "Granting role…" : "Grant role"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function MembershipInventory({
+  model,
+}: {
+  model: React.ComponentProps<typeof UserWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    canManageMembership,
+    isLoadingMore,
+    listState,
+    loadMore,
+    openMembershipLifecycle,
+    openUserAccess,
+  } = model;
+  return listState.kind === "ready" && listState.items.length > 0 ? (
+    <section
+      className="authority-inventory"
+      aria-labelledby="user-inventory-title"
+    >
+      <div className="section-heading">
+        <div>
+          <p className="section-label">Server inventory</p>
+          <h2 id="user-inventory-title">Membership identities</h2>
+        </div>
+      </div>
+      <Table className="authority-table">
+        <TableCaption className="sr-only">
+          Users in the active tenant membership projection
+        </TableCaption>
+        <TableColumnHeaders
+          columns={["User", "Membership", "Legacy label", "Updated", "Actions"]}
+        />
+        <TableBody>
+          {listState.items.map((item) => (
+            <TableRow key={item.membershipId}>
+              <TableCell>
+                <span className="role-name-cell">
+                  <strong>{item.user.displayName}</strong>
+                  <small>{item.user.email}</small>
+                </span>
+              </TableCell>
+              <TableCell>
+                <Badge
+                  variant={
+                    item.membershipStatus === "active" ? "secondary" : "outline"
+                  }
+                >
+                  {item.membershipStatus === "suspended" ? (
+                    <Ban aria-hidden="true" />
+                  ) : item.membershipStatus === "active" ? (
+                    <ShieldCheck aria-hidden="true" />
+                  ) : (
+                    <UserRound aria-hidden="true" />
+                  )}
+                  {formatStatus(item.membershipStatus)}
+                </Badge>
+              </TableCell>
+              <TableCell>{formatStatus(item.legacyMembershipRole)}</TableCell>
+              <TableCell>{formatTimestamp(item.updatedAt)}</TableCell>
+              <TableCell>
+                <span className="flex flex-wrap gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Review access for ${item.user.displayName} (${item.user.email})`}
+                    onClick={() => openUserAccess(item)}
+                  >
+                    <KeyRound aria-hidden="true" /> Access
+                  </Button>
+                  {canManageMembership &&
+                  (item.membershipStatus === "active" ||
+                    (item.membershipStatus === "suspended" &&
+                      item.user.active)) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        item.membershipStatus === "active"
+                          ? "destructive"
+                          : "outline"
+                      }
+                      aria-label={`${
+                        item.membershipStatus === "active"
+                          ? "Suspend"
+                          : "Reactivate"
+                      } membership for ${item.user.displayName} (${item.user.email})`}
+                      onClick={() => openMembershipLifecycle(item)}
+                    >
+                      {item.membershipStatus === "active" ? (
+                        <Ban aria-hidden="true" />
+                      ) : (
+                        <RotateCcw aria-hidden="true" />
+                      )}
+                      {item.membershipStatus === "active"
+                        ? "Suspend"
+                        : "Reactivate"}
+                    </Button>
+                  ) : null}
+                </span>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {listState.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isLoadingMore}
+          onClick={() => void loadMore()}
+        >
+          <ArrowDown aria-hidden="true" />
+          {isLoadingMore ? "Loading users…" : "Load more users"}
+        </Button>
+      ) : null}
+    </section>
+  ) : null;
+}
+
+function UserAccessAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof UserWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    authority,
+    authorityReadyRef,
+    canGrant,
+    closeUserAccess,
+    requestPair,
+    requestPairRef,
+    selectedUser,
+    selectedUserSelection,
+    session,
+    tenantId,
+  } = model;
+  return tenantId && selectedUser && selectedUserSelection ? (
+    <UserAccessDialog
+      api={api}
+      canGrant={canGrant}
+      csrfToken={session.csrfToken}
+      delegation={authority.authority?.delegationCeiling ?? []}
+      effectiveGrants={
+        selectedUser.user.id === session.user.id
+          ? (authority.authority?.roleGrants ?? [])
+          : []
+      }
+      onAuthorityChanged={() => {
+        if (
+          requestPairRef.current === requestPair &&
+          authorityReadyRef.current
+        ) {
+          authority.reload();
+        }
+      }}
+      onOpenChange={(open) => {
+        if (!open) {
+          closeUserAccess();
+        }
+      }}
+      pairKey={requestPair}
+      key={`${requestPair}:${selectedUser.user.id}:${selectedUserSelection.generation}`}
+      tenantId={tenantId}
+      user={selectedUser}
+    />
+  ) : null;
+}
+
+function MembershipLifecycleAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof UserWorkspace>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    applyMembershipLifecycle,
+    authorityReadyRef,
+    clearSession,
+    requestPairRef,
+    selectedLifecycle,
+    session,
+    setLifecycleSelection,
+    setLoadAttempt,
+    tenantId,
+  } = model;
+  return tenantId && selectedLifecycle ? (
+    <MembershipLifecycleDialog
+      api={api}
+      csrfToken={session.csrfToken}
+      isCurrent={() =>
+        requestPairRef.current === selectedLifecycle.pairKey &&
+        authorityReadyRef.current
+      }
+      key={`${selectedLifecycle.pairKey}:${selectedLifecycle.user.membershipId}`}
+      onCompleted={(receipt) => {
+        if (
+          receipt.status === "suspended" &&
+          receipt.userId === session.user.id
+        ) {
+          clearSession(session.id);
+          return;
+        }
+        applyMembershipLifecycle(selectedLifecycle.user, {
+          etag: receipt.etag,
+          lifecycleRevision: receipt.lifecycleRevision,
+          membershipStatus: receipt.status,
+          updatedAt: receipt.updatedAt,
+        });
+      }}
+      onOpenChange={(open) => {
+        if (!open) {
+          setLifecycleSelection(null);
+        }
+      }}
+      onStale={() => setLoadAttempt((attempt) => attempt + 1)}
+      tenantId={tenantId}
+      user={selectedLifecycle.user}
+    />
+  ) : null;
+}
+
+function UserGrantHistory({
+  model,
+}: {
+  model: React.ComponentProps<typeof UserAccessDialogContent>["model"];
+}): React.ReactNode {
+  const {
+    api,
+    canGrant,
+    clearRevokeDraft,
+    csrfToken,
+    dialogKey,
+    dialogMountedRef,
+    effectiveGrants,
+    grantPaginationState,
+    grantRequestKey,
+    grantState,
+    isCurrentDialogRequest,
+    onAuthorityChanged,
+    refreshDirectGrant,
+    revokeDrafts,
+    setGrantingKey,
+    setLoadRevision,
+    tenantId,
+    updateRevokeDraft,
+    user,
+  } = model;
+  return (
+    <>
+      <div className="user-access-identity">
+        <UserRound aria-hidden="true" />
+        <span>
+          <strong>{user.user.displayName}</strong>
+          <small>{user.user.email}</small>
+        </span>
+        <Badge variant="outline">{formatStatus(user.membershipStatus)}</Badge>
+        <Badge variant={user.user.active ? "secondary" : "outline"}>
+          {user.user.active ? "User active" : "User disabled"}
+        </Badge>
+      </div>
+      {grantState.kind === "loading" ? <UserListSkeleton /> : null}
+      {grantState.kind === "forbidden" ? (
+        <FocusedError
+          title="Grant history denied"
+          message="The server denied access to this user's direct role grants."
+        />
+      ) : null}
+      {grantState.kind === "error" ? (
+        <FocusedError message={grantState.message} />
+      ) : null}
+      {grantState.kind === "ready" && grantState.items.length === 0 ? (
+        <div className="grant-empty">
+          <ShieldCheck aria-hidden="true" />
+          <p>No direct role grants were returned for this user.</p>
+        </div>
+      ) : null}
+      {grantState.kind === "ready" && grantState.items.length > 0 ? (
+        <DirectGrantInventory
+          api={api}
+          canGrant={canGrant}
+          clearRevokeDraft={clearRevokeDraft}
+          csrfToken={csrfToken}
+          dialogMountedRef={dialogMountedRef}
+          grantRequestKey={grantRequestKey}
+          grantState={grantState}
+          isCurrentDialogRequest={isCurrentDialogRequest}
+          onAuthorityChanged={onAuthorityChanged}
+          refreshDirectGrant={refreshDirectGrant}
+          revokeDrafts={revokeDrafts}
+          setLoadRevision={setLoadRevision}
+          tenantId={tenantId}
+          updateRevokeDraft={updateRevokeDraft}
+          user={user}
+        />
+      ) : null}
+      {grantPaginationState.error ? (
+        <FocusedError
+          title="More grant history could not be loaded"
+          message={grantPaginationState.error}
+        />
+      ) : null}
+      <GrantHistoryPagination model={model} />
+      {effectiveGrants.some(
+        (grant) =>
+          grant.path.pathType === "group" && grant.path.group !== undefined,
+      ) ? (
+        <InheritedGroupPaths grants={effectiveGrants} />
+      ) : null}
+      <DialogFooter>
+        {canGrant && grantState.kind !== "forbidden" ? (
+          <Button type="button" onClick={() => setGrantingKey(dialogKey)}>
+            <Plus aria-hidden="true" /> Grant role
+          </Button>
+        ) : null}
+      </DialogFooter>
+    </>
+  );
+}
+
+function DirectGrantMetadata({
+  model,
+}: {
+  model: React.ComponentProps<typeof DirectGrantDetails>["model"];
+}): React.ReactNode {
+  const { authorityBlocker, grant, userActive, userMembershipStatus } = model;
+  return (
+    <dl>
+      <div>
+        <dt>Edge lifecycle</dt>
+        <dd>{formatStatus(grant.state)}</dd>
+      </div>
+      <div>
+        <dt>Effective authority</dt>
+        <dd>{authorityBlocker ? "Not contributing" : "Contributing"}</dd>
+      </div>
+      <div>
+        <dt>Membership state</dt>
+        <dd>{formatStatus(userMembershipStatus)}</dd>
+      </div>
+      <div>
+        <dt>User state</dt>
+        <dd>{userActive ? "Active" : "Disabled"}</dd>
+      </div>
+      <div>
+        <dt>Authority path</dt>
+        <dd>Direct</dd>
+      </div>
+      <div>
+        <dt>Source kind</dt>
+        <dd>{formatStatus(grant.provenance.sourceKind)}</dd>
+      </div>
+      <div>
+        <dt>Source type</dt>
+        <dd>{formatStatus(grant.provenance.sourceType)}</dd>
+      </div>
+      <div>
+        <dt>Source ID</dt>
+        <dd>{grant.provenance.sourceId}</dd>
+      </div>
+      <div>
+        <dt>Source mode</dt>
+        <dd>{grant.provenance.authoritative ? "Authoritative" : "Additive"}</dd>
+      </div>
+      <div>
+        <dt>Granted</dt>
+        <dd>{formatTimestamp(grant.provenance.grantedAt)}</dd>
+      </div>
+      <div>
+        <dt>Expires</dt>
+        <dd>
+          {grant.provenance.expiresAt
+            ? formatTimestamp(grant.provenance.expiresAt)
+            : "No scheduled expiry"}
+        </dd>
+      </div>
+      <div>
+        <dt>Source retirement</dt>
+        <dd>
+          {grant.provenance.retiredAt
+            ? formatTimestamp(grant.provenance.retiredAt)
+            : "Source active"}
+        </dd>
+      </div>
+      <div>
+        <dt>Role state</dt>
+        <dd>{grant.role.archived ? "Archived" : "Available"}</dd>
+      </div>
+      {grant.provenance.grantedByUserId ? (
+        <div>
+          <dt>Granted by</dt>
+          <dd>{grant.provenance.grantedByUserId}</dd>
+        </div>
+      ) : null}
+      {grant.state === "revoked" && grant.revokeReason ? (
+        <div>
+          <dt>Revocation reason</dt>
+          <dd>{grant.revokeReason}</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function DirectGrantRevokeAction({
+  model,
+}: {
+  model: React.ComponentProps<typeof DirectGrantDetails>["model"];
+}): React.ReactNode {
+  const {
+    canGrant,
+    draft,
+    grant,
+    id,
+    isSaving,
+    onCancel,
+    onDraftChange,
+    revoke,
+    roleTarget,
+    staleRefreshState,
+  } = model;
+  return canGrant && directGrantIsRevocable(grant) ? (
+    draft.open ? (
+      <div
+        className="revoke-grant-form"
+        role="group"
+        aria-labelledby={`${id}-revoke-title`}
+      >
+        <strong id={`${id}-revoke-title`}>
+          Revoke direct grant for {roleTarget}
+        </strong>
+        <FormField htmlFor={`${id}-revoke-reason`} label="Reason">
+          <Textarea
+            id={`${id}-revoke-reason`}
+            aria-label={`Reason for revoking direct grant for ${roleTarget}`}
+            value={draft.reason}
+            maxLength={500}
+            disabled={isSaving || staleRefreshState === "refreshing"}
+            onChange={(event) => {
+              const reason = event.currentTarget.value;
+              onDraftChange((current) => ({
+                ...current,
+                error: null,
+                notice: null,
+                reason,
+              }));
+            }}
+          />
+        </FormField>
+        <div>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={isSaving || staleRefreshState !== "idle"}
+            aria-label={`${isSaving ? "Revoking" : "Confirm revoke"} direct grant for ${roleTarget}`}
+            onClick={() => void revoke()}
+          >
+            <Trash2 aria-hidden="true" />
+            {isSaving ? "Revoking…" : "Confirm revoke"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isSaving || staleRefreshState === "refreshing"}
+            aria-label={`Keep grant for ${roleTarget}`}
+            onClick={onCancel}
+          >
+            Keep grant
+          </Button>
+        </div>
+      </div>
+    ) : (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        aria-label={`Revoke direct grant for ${roleTarget}`}
+        onClick={() =>
+          onDraftChange((current) => ({
+            ...current,
+            error: null,
+            notice: null,
+            open: true,
+          }))
+        }
+      >
+        <Trash2 aria-hidden="true" /> Revoke
+      </Button>
+    )
+  ) : null;
+}
+
+function RoleGrantFields({
+  model,
+}: {
+  model: React.ComponentProps<typeof RoleGrantEditor>["model"];
+}): React.ReactNode {
+  const { control, id, isSaving, register, roleState, selectedRole } = model;
+  return roleState.kind === "ready" && roleState.items.length > 0 ? (
+    <>
+      <FormField htmlFor={`${id}-grant-role`} label="Role">
+        <Controller
+          control={control}
+          name="roleId"
+          render={({ field }) => (
+            <Select
+              value={field.value}
+              onValueChange={field.onChange}
+              disabled={isSaving}
+            >
+              <SelectTrigger
+                id={`${id}-grant-role`}
+                className="grant-role-select"
+              >
+                <SelectValue placeholder="Select a role" />
+              </SelectTrigger>
+              <SelectContent>
+                {roleState.items.map((choice) => (
+                  <SelectItem key={choice.role.id} value={choice.role.id}>
+                    {choice.role.name} ({choice.role.key})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+      </FormField>
+      <FormField
+        htmlFor={`${id}-grant-expiry`}
+        label="Grant expiry"
+        optional={!selectedRole?.delegableUntil}
+        hint={
+          selectedRole?.delegableUntil
+            ? `Must be on or before ${formatTimestamp(selectedRole.delegableUntil)}.`
+            : "Leave empty only when the selected role has no effective delegation horizon."
+        }
+      >
+        <Input
+          id={`${id}-grant-expiry`}
+          aria-describedby={`${id}-grant-expiry-hint`}
+          type="datetime-local"
+          min={toLocalDateTime(new Date().toISOString())}
+          max={
+            selectedRole?.delegableUntil
+              ? toLocalDateTime(selectedRole.delegableUntil)
+              : undefined
+          }
+          step={1}
+          disabled={isSaving}
+          {...register("expiresAt")}
+        />
+      </FormField>
+      <FormField htmlFor={`${id}-grant-reason`} label="Reason">
+        <Textarea
+          id={`${id}-grant-reason`}
+          maxLength={500}
+          disabled={isSaving}
+          {...register("reason")}
+        />
+      </FormField>
+    </>
+  ) : null;
+}
+
+interface DirectGrantInventoryProps {
+  api: PhaseTwoApi;
+  canGrant: boolean;
+  clearRevokeDraft: (grantId: string) => void;
+  csrfToken: string;
+  dialogMountedRef: React.RefObject<boolean>;
+  grantRequestKey: string;
+  grantState: Extract<GrantListState, { kind: "ready" }>;
+  isCurrentDialogRequest: (expectedRequestKey: string) => boolean;
+  onAuthorityChanged: () => void;
+  refreshDirectGrant: (
+    rejectedEntry: DirectGrantEntry,
+  ) => Promise<DirectUserRoleGrantView | null>;
+  revokeDrafts: Readonly<Record<string, RevokeDraft>>;
+  setLoadRevision: React.Dispatch<React.SetStateAction<number>>;
+  tenantId: string;
+  updateRevokeDraft: (
+    grantId: string,
+    update: (draft: RevokeDraft) => RevokeDraft,
+  ) => void;
+  user: TenantUserSummaryView;
+}
+
+function DirectGrantInventory({
+  api,
+  canGrant,
+  clearRevokeDraft,
+  csrfToken,
+  dialogMountedRef,
+  grantRequestKey,
+  grantState,
+  isCurrentDialogRequest,
+  onAuthorityChanged,
+  refreshDirectGrant,
+  revokeDrafts,
+  setLoadRevision,
+  tenantId,
+  updateRevokeDraft,
+  user,
+}: DirectGrantInventoryProps): React.JSX.Element {
+  return (
+    <div className="grant-list">
+      {grantState.items.map((entry) => (
+        <DirectGrantCard
+          api={api}
+          canGrant={canGrant}
+          csrfToken={csrfToken}
+          draft={revokeDrafts[entry.grant.id] ?? emptyRevokeDraft}
+          entry={entry}
+          isDialogActive={() => dialogMountedRef.current}
+          isGrantViewCurrent={() => isCurrentDialogRequest(grantRequestKey)}
+          key={entry.grant.id}
+          onCancel={() => clearRevokeDraft(entry.grant.id)}
+          onDraftChange={(update) => updateRevokeDraft(entry.grant.id, update)}
+          onRevoked={() => {
+            if (!dialogMountedRef.current) {
+              return;
+            }
+            clearRevokeDraft(entry.grant.id);
+            onAuthorityChanged();
+            setLoadRevision((revision) => revision + 1);
+          }}
+          onRefreshStale={refreshDirectGrant}
+          tenantId={tenantId}
+          userActive={user.user.active}
+          userMembershipStatus={user.membershipStatus}
+        />
+      ))}
+    </div>
+  );
+}
+
+function GrantHistoryPagination({
+  model,
+}: {
+  model: React.ComponentProps<typeof UserGrantHistory>["model"];
+}): React.ReactNode {
+  const { grantPaginationState, grantState, loadMoreGrantHistory } = model;
+  return grantState.kind === "ready" && grantState.nextCursor ? (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={grantPaginationState.loading}
+      onClick={() => void loadMoreGrantHistory()}
+    >
+      <ArrowDown aria-hidden="true" />
+      {grantPaginationState.loading
+        ? "Loading grant history…"
+        : "Load more grant history"}
+    </Button>
+  ) : null;
 }

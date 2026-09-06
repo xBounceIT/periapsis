@@ -1,10 +1,8 @@
-import { hasControlCharacters } from "../lib/text-validation";
-import { canonicalizeServiceAccountCredentialNetworks } from "../lib/service-account-networks";
 import {
   describePhaseTwoError,
   PhaseTwoApiError,
-  type ServiceAccountCredentialSecretView,
   type ServiceAccountCredentialPageView,
+  type ServiceAccountCredentialSecretView,
   type ServiceAccountCredentialView,
   type ServiceAccountRoleGrantPageView,
   type ServiceAccountRoleGrantView,
@@ -13,6 +11,13 @@ import {
   type TenantRoleSummaryView,
   type VersionedView,
 } from "../lib/phase-two-types";
+import { canonicalizeServiceAccountCredentialNetworks } from "../lib/service-account-networks";
+import { hasControlCharacters } from "../lib/text-validation";
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 export type AccountListState =
   | { kind: "authority_error"; message: string }
@@ -320,10 +325,7 @@ export function toLocalDateTime(value: string): string {
 export function formatTimestamp(value: string): string {
   const instant = new Date(value);
   if (Number.isNaN(instant.valueOf())) return "Unavailable";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(instant);
+  return dateTimeFormatter.format(instant);
 }
 
 export function capitalize(value: string): string {

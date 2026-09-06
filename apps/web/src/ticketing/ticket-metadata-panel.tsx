@@ -76,7 +76,7 @@ interface NormalizedMetadataDraft {
   title: string;
 }
 
-export function TicketMetadataPanel({
+function useTicketMetadataPanelState({
   api,
   canEdit,
   csrfToken,
@@ -94,7 +94,7 @@ export function TicketMetadataPanel({
   sessionId: string;
   tenantId: string;
   ticket: VersionedTicket<OperatorTicketProjection>;
-}): React.JSX.Element {
+}) {
   const id = useId();
   const authorizationKey = `${sessionId}:${tenantId}:${kind}:${ticket.value.id}:${ticket.etag}:${ticket.value.version}:${canEdit}:${csrfToken}`;
   const [draft, setDraft] = useState(() => draftFromTicket(kind, ticket));
@@ -107,8 +107,8 @@ export function TicketMetadataPanel({
   const attempt = useRef<IdempotencyReference>({ current: null });
   const request = useRef<AbortController | null>(null);
   const authorizationEpoch = useRef({});
-  const resetSnapshot = useRef(draftFromTicket(kind, ticket));
-
+  const resetSnapshot = useRef(draft);
+  // react-doctor-disable-next-line react-doctor/no-derived-state-effect -- The committed authority/ETag boundary atomically aborts stale writes, rotates their epoch and resets the editable draft; mounted concurrent-render tests cover it.
   useLayoutEffect(() => {
     authorizationEpoch.current = {};
     const snapshot = draftFromTicket(kind, ticket);
@@ -130,7 +130,6 @@ export function TicketMetadataPanel({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- The key binds the committed ticket ETag/version, coordinates, authority, session, and CSRF context.
   }, [authorizationKey]);
   const draftIsCurrent = draftKey === authorizationKey;
-
   const startEditing = (): void => {
     if (!canEdit || !draftIsCurrent || reloadRequired || saving) return;
     setDraft(resetSnapshot.current);
@@ -139,7 +138,6 @@ export function TicketMetadataPanel({
     attempt.current.current = null;
     setEditing(true);
   };
-
   const cancelEditing = (): void => {
     request.current?.abort();
     request.current = null;
@@ -150,22 +148,40 @@ export function TicketMetadataPanel({
     attempt.current.current = null;
     setEditing(false);
   };
-
   const reload = async (): Promise<void> => {
     request.current?.abort();
-    request.current = null;
+    const controller = new AbortController();
+    request.current = controller;
     const token = authorizationEpoch.current;
-    const reloaded = await onReloadLatest();
-    if (authorizationEpoch.current !== token) return;
-    if (reloaded) {
-      setProblem(null);
-      setReloadRequired(false);
-    } else {
+    try {
+      const reloaded = await onReloadLatest();
+      if (
+        authorizationEpoch.current !== token ||
+        controller.signal.aborted ||
+        request.current !== controller
+      )
+        return;
+      if (reloaded) {
+        // react-doctor-disable-next-line react-doctor/no-unowned-async-error-clear -- The authorization epoch, abort signal, and current controller above own this completion; overlapping reload coverage keeps a newer failure visible.
+        setProblem(null);
+        setReloadRequired(false);
+      } else {
+        setProblem("The latest ticket snapshot could not be loaded.");
+        setReloadRequired(true);
+      }
+    } catch {
+      if (
+        authorizationEpoch.current !== token ||
+        controller.signal.aborted ||
+        request.current !== controller
+      )
+        return;
       setProblem("The latest ticket snapshot could not be loaded.");
       setReloadRequired(true);
+    } finally {
+      if (request.current === controller) request.current = null;
     }
   };
-
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (!canEdit || !draftIsCurrent || saving || reloadRequired) return;
@@ -232,11 +248,11 @@ export function TicketMetadataPanel({
         request.current === controller
       ) {
         request.current = null;
+        // react-doctor-disable-next-line react-doctor/no-loading-flag-reset-outside-finally -- This is the finally block; ownership must match so an older request cannot clear a newer request's busy state.
         setSaving(false);
       }
     }
   };
-
   const titleId = `${id}-title`;
   const summaryId = `${id}-summary`;
   const descriptionId = `${id}-description`;
@@ -246,6 +262,90 @@ export function TicketMetadataPanel({
   const classificationId = `${id}-classification`;
   const tagsId = `${id}-tags`;
   const visibleId = `${id}-customer-visible`;
+  return {
+    api,
+    canEdit,
+    csrfToken,
+    kind,
+    onReloadLatest,
+    sessionId,
+    tenantId,
+    ticket,
+    id,
+    authorizationKey,
+    draft,
+    setDraft,
+    draftKey,
+    setDraftKey,
+    editing,
+    setEditing,
+    errors,
+    setErrors,
+    problem,
+    setProblem,
+    reloadRequired,
+    setReloadRequired,
+    saving,
+    setSaving,
+    attempt,
+    request,
+    authorizationEpoch,
+    resetSnapshot,
+    draftIsCurrent,
+    startEditing,
+    cancelEditing,
+    reload,
+    save,
+    titleId,
+    summaryId,
+    descriptionId,
+    severityId,
+    priorityId,
+    categoryId,
+    classificationId,
+    tagsId,
+    visibleId,
+  };
+}
+
+export function TicketMetadataPanel(props: {
+  api: TicketMetadataApi;
+  canEdit: boolean;
+  csrfToken: string;
+  kind: TicketKind;
+  onReloadLatest: () => Promise<boolean>;
+  sessionId: string;
+  tenantId: string;
+  ticket: VersionedTicket<OperatorTicketProjection>;
+}): React.JSX.Element {
+  const state = useTicketMetadataPanelState(props);
+  const {
+    canEdit,
+    kind,
+    ticket,
+    id,
+    draft,
+    setDraft,
+    editing,
+    errors,
+    problem,
+    reloadRequired,
+    saving,
+    draftIsCurrent,
+    startEditing,
+    cancelEditing,
+    reload,
+    save,
+    titleId,
+    summaryId,
+    descriptionId,
+    severityId,
+    priorityId,
+    categoryId,
+    classificationId,
+    tagsId,
+    visibleId,
+  } = state;
 
   return (
     <section className="ticket-metadata" aria-labelledby={`${id}-heading`}>
@@ -294,218 +394,24 @@ export function TicketMetadataPanel({
       ) : null}
 
       {editing && canEdit && draftIsCurrent ? (
-        <form className="ticket-metadata__form" onSubmit={save} noValidate>
-          <FormField
-            {...optionalError(errors.title)}
-            htmlFor={titleId}
-            label="Title"
-          >
-            <Input
-              aria-describedby={fieldDescription(titleId, errors.title)}
-              aria-invalid={Boolean(errors.title)}
-              id={titleId}
-              maxLength={480}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  title: event.target.value,
-                }))
-              }
-              required
-              value={draft.title}
-            />
-          </FormField>
-          {kind === "case" ? (
-            <FormField
-              {...optionalError(errors.summary)}
-              htmlFor={summaryId}
-              label="Summary"
-              optional
-            >
-              <Textarea
-                aria-describedby={fieldDescription(summaryId, errors.summary)}
-                aria-invalid={Boolean(errors.summary)}
-                id={summaryId}
-                maxLength={4_000}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    summary: event.target.value,
-                  }))
-                }
-                rows={3}
-                value={draft.summary}
-              />
-            </FormField>
-          ) : null}
-          <div className="ticket-metadata__wide-field">
-            <FormField
-              {...optionalError(errors.description)}
-              htmlFor={descriptionId}
-              label="Description"
-              optional
-            >
-              <Textarea
-                aria-describedby={fieldDescription(
-                  descriptionId,
-                  errors.description,
-                )}
-                aria-invalid={Boolean(errors.description)}
-                id={descriptionId}
-                maxLength={kind === "alert" ? 20_000 : 40_000}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                rows={5}
-                value={draft.description}
-              />
-            </FormField>
-          </div>
-          <FormField htmlFor={severityId} label="Severity">
-            <Select
-              value={draft.severity}
-              onValueChange={(value: MetadataDraft["severity"]) =>
-                setDraft((current) => ({ ...current, severity: value }))
-              }
-            >
-              <SelectTrigger id={severityId} aria-label="Severity">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {["informational", "low", "medium", "high", "critical"].map(
-                  (value) => (
-                    <SelectItem key={value} value={value}>
-                      {sentenceCase(value)}
-                    </SelectItem>
-                  ),
-                )}
-              </SelectContent>
-            </Select>
-          </FormField>
-          <FormField htmlFor={priorityId} label="Priority">
-            <Select
-              value={draft.priority}
-              onValueChange={(value: MetadataDraft["priority"]) =>
-                setDraft((current) => ({ ...current, priority: value }))
-              }
-            >
-              <SelectTrigger id={priorityId} aria-label="Priority">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {["low", "medium", "high", "urgent", "critical"].map(
-                  (value) => (
-                    <SelectItem key={value} value={value}>
-                      {sentenceCase(value)}
-                    </SelectItem>
-                  ),
-                )}
-              </SelectContent>
-            </Select>
-          </FormField>
-          <FormField
-            {...optionalError(errors.category)}
-            htmlFor={categoryId}
-            label="Category"
-          >
-            <Input
-              aria-describedby={fieldDescription(categoryId, errors.category)}
-              aria-invalid={Boolean(errors.category)}
-              id={categoryId}
-              maxLength={240}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  category: event.target.value,
-                }))
-              }
-              required
-              value={draft.category}
-            />
-          </FormField>
-          <FormField
-            {...optionalError(errors.classification)}
-            hint="Leave blank to remove the classification."
-            htmlFor={classificationId}
-            label="Classification"
-            optional
-          >
-            <Input
-              aria-describedby={fieldDescription(
-                classificationId,
-                errors.classification,
-                true,
-              )}
-              aria-invalid={Boolean(errors.classification)}
-              id={classificationId}
-              maxLength={240}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  classification: event.target.value,
-                }))
-              }
-              value={draft.classification}
-            />
-          </FormField>
-          <div className="ticket-metadata__wide-field">
-            <FormField
-              {...optionalError(errors.tags)}
-              hint="Comma-separated canonical tags; order is normalized before save."
-              htmlFor={tagsId}
-              label="Tags"
-              optional
-            >
-              <Input
-                aria-describedby={fieldDescription(tagsId, errors.tags, true)}
-                aria-invalid={Boolean(errors.tags)}
-                id={tagsId}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    tags: event.target.value,
-                  }))
-                }
-                value={draft.tags}
-              />
-            </FormField>
-          </div>
-          <div className="ticket-metadata__visibility">
-            <Checkbox
-              checked={draft.customerVisible}
-              id={visibleId}
-              onCheckedChange={(checked) =>
-                setDraft((current) => ({
-                  ...current,
-                  customerVisible: checked === true,
-                }))
-              }
-            />
-            <span>
-              <Label htmlFor={visibleId}>Customer visible</Label>
-              <small>
-                Controls the ticket projection, not field-level authority.
-              </small>
-            </span>
-          </div>
-          <div className="ticket-metadata__actions">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={saving}
-              onClick={cancelEditing}
-            >
-              <X aria-hidden="true" /> Cancel
-            </Button>
-            <Button type="submit" disabled={saving}>
-              <Save aria-hidden="true" />
-              {saving ? "Saving core details…" : "Save core details"}
-            </Button>
-          </div>
-        </form>
+        <TicketMetadataEditor
+          cancelEditing={cancelEditing}
+          categoryId={categoryId}
+          classificationId={classificationId}
+          descriptionId={descriptionId}
+          draft={draft}
+          errors={errors}
+          kind={kind}
+          priorityId={priorityId}
+          save={save}
+          saving={saving}
+          setDraft={setDraft}
+          severityId={severityId}
+          summaryId={summaryId}
+          tagsId={tagsId}
+          titleId={titleId}
+          visibleId={visibleId}
+        />
       ) : null}
     </section>
   );
@@ -674,4 +580,255 @@ function optionalError(error: string | undefined): { error?: string } {
 
 function sentenceCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
+}
+
+interface TicketMetadataEditorProps {
+  cancelEditing: () => void;
+  categoryId: string;
+  classificationId: string;
+  descriptionId: string;
+  draft: MetadataDraft;
+  errors: Partial<Record<MetadataField, string>>;
+  kind: TicketKind;
+  priorityId: string;
+  save: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  saving: boolean;
+  setDraft: React.Dispatch<React.SetStateAction<MetadataDraft>>;
+  severityId: string;
+  summaryId: string;
+  tagsId: string;
+  titleId: string;
+  visibleId: string;
+}
+
+function TicketMetadataEditor({
+  cancelEditing,
+  categoryId,
+  classificationId,
+  descriptionId,
+  draft,
+  errors,
+  kind,
+  priorityId,
+  save,
+  saving,
+  setDraft,
+  severityId,
+  summaryId,
+  tagsId,
+  titleId,
+  visibleId,
+}: TicketMetadataEditorProps): React.JSX.Element {
+  return (
+    <form className="ticket-metadata__form" onSubmit={save} noValidate>
+      <FormField
+        {...optionalError(errors.title)}
+        htmlFor={titleId}
+        label="Title"
+      >
+        <Input
+          aria-describedby={fieldDescription(titleId, errors.title)}
+          aria-invalid={Boolean(errors.title)}
+          id={titleId}
+          maxLength={480}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              title: event.target.value,
+            }))
+          }
+          required
+          value={draft.title}
+        />
+      </FormField>
+      {kind === "case" ? (
+        <FormField
+          {...optionalError(errors.summary)}
+          htmlFor={summaryId}
+          label="Summary"
+          optional
+        >
+          <Textarea
+            aria-describedby={fieldDescription(summaryId, errors.summary)}
+            aria-invalid={Boolean(errors.summary)}
+            id={summaryId}
+            maxLength={4_000}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                summary: event.target.value,
+              }))
+            }
+            rows={3}
+            value={draft.summary}
+          />
+        </FormField>
+      ) : null}
+      <div className="ticket-metadata__wide-field">
+        <FormField
+          {...optionalError(errors.description)}
+          htmlFor={descriptionId}
+          label="Description"
+          optional
+        >
+          <Textarea
+            aria-describedby={fieldDescription(
+              descriptionId,
+              errors.description,
+            )}
+            aria-invalid={Boolean(errors.description)}
+            id={descriptionId}
+            maxLength={kind === "alert" ? 20_000 : 40_000}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                description: event.target.value,
+              }))
+            }
+            rows={5}
+            value={draft.description}
+          />
+        </FormField>
+      </div>
+      <FormField htmlFor={severityId} label="Severity">
+        <Select
+          value={draft.severity}
+          onValueChange={(value: MetadataDraft["severity"]) =>
+            setDraft((current) => ({ ...current, severity: value }))
+          }
+        >
+          <SelectTrigger id={severityId} aria-label="Severity">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {["informational", "low", "medium", "high", "critical"].map(
+              (value) => (
+                <SelectItem key={value} value={value}>
+                  {sentenceCase(value)}
+                </SelectItem>
+              ),
+            )}
+          </SelectContent>
+        </Select>
+      </FormField>
+      <FormField htmlFor={priorityId} label="Priority">
+        <Select
+          value={draft.priority}
+          onValueChange={(value: MetadataDraft["priority"]) =>
+            setDraft((current) => ({ ...current, priority: value }))
+          }
+        >
+          <SelectTrigger id={priorityId} aria-label="Priority">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {["low", "medium", "high", "urgent", "critical"].map((value) => (
+              <SelectItem key={value} value={value}>
+                {sentenceCase(value)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FormField>
+      <FormField
+        {...optionalError(errors.category)}
+        htmlFor={categoryId}
+        label="Category"
+      >
+        <Input
+          aria-describedby={fieldDescription(categoryId, errors.category)}
+          aria-invalid={Boolean(errors.category)}
+          id={categoryId}
+          maxLength={240}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              category: event.target.value,
+            }))
+          }
+          required
+          value={draft.category}
+        />
+      </FormField>
+      <FormField
+        {...optionalError(errors.classification)}
+        hint="Leave blank to remove the classification."
+        htmlFor={classificationId}
+        label="Classification"
+        optional
+      >
+        <Input
+          aria-describedby={fieldDescription(
+            classificationId,
+            errors.classification,
+            true,
+          )}
+          aria-invalid={Boolean(errors.classification)}
+          id={classificationId}
+          maxLength={240}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              classification: event.target.value,
+            }))
+          }
+          value={draft.classification}
+        />
+      </FormField>
+      <div className="ticket-metadata__wide-field">
+        <FormField
+          {...optionalError(errors.tags)}
+          hint="Comma-separated canonical tags; order is normalized before save."
+          htmlFor={tagsId}
+          label="Tags"
+          optional
+        >
+          <Input
+            aria-describedby={fieldDescription(tagsId, errors.tags, true)}
+            aria-invalid={Boolean(errors.tags)}
+            id={tagsId}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                tags: event.target.value,
+              }))
+            }
+            value={draft.tags}
+          />
+        </FormField>
+      </div>
+      <div className="ticket-metadata__visibility">
+        <Checkbox
+          checked={draft.customerVisible}
+          id={visibleId}
+          onCheckedChange={(checked) =>
+            setDraft((current) => ({
+              ...current,
+              customerVisible: checked === true,
+            }))
+          }
+        />
+        <span>
+          <Label htmlFor={visibleId}>Customer visible</Label>
+          <small>
+            Controls the ticket projection, not field-level authority.
+          </small>
+        </span>
+      </div>
+      <div className="ticket-metadata__actions">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={saving}
+          onClick={cancelEditing}
+        >
+          <X aria-hidden="true" /> Cancel
+        </Button>
+        <Button type="submit" disabled={saving}>
+          <Save aria-hidden="true" />
+          {saving ? "Saving core details…" : "Save core details"}
+        </Button>
+      </div>
+    </form>
+  );
 }

@@ -1,6 +1,7 @@
 import type { TicketExportJobRequest } from "@periapsis/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -35,6 +36,35 @@ const source = {
 afterEach(cleanup);
 
 describe("TicketExportControls", () => {
+  it("requires a new review after leaving and returning to the original source", () => {
+    const request = vi.fn(
+      async ({ body }: Parameters<TicketExportApi["request"]>[0]) => ({
+        job: succeededJob(body),
+        replayed: false,
+      }),
+    );
+    const api = createApi(request);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(controls(api, queryClient, false));
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    expect(screen.getByRole("button", { name: "Queue export" })).toBeVisible();
+
+    const otherSource = {
+      source: "inline",
+      spec: inlineSavedViewSpec(
+        { limit: 30, search: "another scope" },
+        defaultTicketTableColumns,
+      ),
+    } as const satisfies TicketExportJobRequest["source"];
+    view.rerender(controls(api, queryClient, false, otherSource));
+    expect(screen.queryByRole("button", { name: "Queue export" })).toBeNull();
+    view.rerender(controls(api, queryClient, false));
+    expect(screen.queryByRole("button", { name: "Queue export" })).toBeNull();
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it("removes a reviewed private-comment request when live authority is revoked", async () => {
     const request = vi.fn(
       async ({ body }: Parameters<TicketExportApi["request"]>[0]) => ({
@@ -148,6 +178,35 @@ describe("TicketExportControls", () => {
     expect(link).toHaveAttribute("rel", "noreferrer");
     expect(link).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(screen.queryByText(downloadUrl)).toBeNull();
+
+    const originalJob = succeededJob({
+      comments: "none",
+      kind: "alert",
+      source,
+    });
+    const queryKey = ["ticket-export-job", tenantId, "alert", jobId];
+    act(() => {
+      queryClient.setQueryData(queryKey, {
+        ...originalJob,
+        revision: originalJob.revision + 1,
+      });
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Download CSV" })).toBeNull(),
+    );
+    act(() => {
+      queryClient.setQueryData(queryKey, originalJob);
+    });
+    await screen.findByText(
+      new RegExp(`Revision ${originalJob.revision} · expires`),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Prepare download" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByRole("link", { name: "Download CSV" })).toBeNull();
+    expect(download).toHaveBeenCalledTimes(1);
   });
 
   it("removes any capability and reports a live authorization revocation", async () => {
@@ -186,6 +245,7 @@ function controls(
   api: TicketExportApi,
   queryClient: QueryClient,
   allowPrivateComments: boolean,
+  selectedSource: TicketExportJobRequest["source"] = source,
 ): React.JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
@@ -195,7 +255,7 @@ function controls(
           allowPublicComments
           csrfToken="csrf-memory-only-value"
           kind="alert"
-          source={source}
+          source={selectedSource}
           tenantId={tenantId}
         />
       </TicketExportApiProvider>

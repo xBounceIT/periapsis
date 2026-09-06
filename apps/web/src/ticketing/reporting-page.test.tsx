@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TicketExportJobRequest } from "@periapsis/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -13,7 +13,8 @@ import {
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AppShell, appRouteTitle } from "../app";
+import { AppShell } from "../app";
+import { appRouteTitle } from "../app-model";
 import { SessionContext } from "../auth/session-context";
 import {
   TenantAuthorityProvider,
@@ -23,17 +24,18 @@ import type {
   TenantAuthorityView,
   TenantPermissionKeyView,
 } from "../lib/phase-two-types";
+import { TenantDateTimeProvider } from "../lib/tenant-date-time-context";
 import type {
   TicketExportApi,
   TicketExportJobView,
 } from "../lib/ticket-export-api";
 import type { TicketingApi } from "../lib/ticketing-api";
-import { TenantDateTimeProvider } from "../lib/tenant-date-time-context";
 import { createPhaseTwoApi, sessionFixture } from "../test/phase-two-fixtures";
+import { reportingRouteDescriptor } from "./reporting-model";
+import { ReportingPage } from "./reporting-page";
+import { mergeReportSavedViewPages } from "./reporting-page-model";
 import { TicketExportApiProvider } from "./ticket-export-context";
 import { TicketingApiProvider } from "./ticketing-context";
-import { reportingRouteDescriptor } from "./reporting-model";
-import { mergeReportSavedViewPages, ReportingPage } from "./reporting-page";
 import {
   createTicketingApi,
   savedAlertView,

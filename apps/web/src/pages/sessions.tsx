@@ -15,8 +15,9 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { appendUniqueSessions } from "./sessions-model";
 
 import { useSession } from "../auth/session-context";
 import { FocusedError } from "../components/focused-error";
@@ -38,6 +39,11 @@ type SessionListState =
   | { kind: "loading" };
 
 export function SessionsPage(): React.JSX.Element {
+  const model = useSessionsPageModel();
+  return <SessionsPageView model={model.data} />;
+}
+
+function useSessionsPageModel() {
   const { api, clearSession, session } = useSession();
   const [listState, setListState] = useState<SessionListState>({
     kind: "loading",
@@ -50,7 +56,9 @@ export function SessionsPage(): React.JSX.Element {
   const [paginationError, setPaginationError] = useState<string | null>(null);
   const navigate = useNavigate();
   const sessionIdRef = useRef(session.id);
-  sessionIdRef.current = session.id;
+  useLayoutEffect(() => {
+    sessionIdRef.current = session.id;
+  }, [session]);
 
   useEffect(() => {
     setIsLoadingMore(false);
@@ -133,6 +141,7 @@ export function SessionsPage(): React.JSX.Element {
       );
     } finally {
       if (sessionIdRef.current === requestedSessionId) {
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally -- The owning request clears this flag in finally; the generation guard protects newer requests.
         setIsLoadingMore(false);
       }
     }
@@ -186,6 +195,47 @@ export function SessionsPage(): React.JSX.Element {
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      confirmingId,
+      isLoadingMore,
+      listState,
+      loadMore,
+      paginationError,
+      revoke,
+      revokeError,
+      revokingId,
+      session,
+      setConfirmingId,
+      setLoadAttempt,
+      setRevokeError,
+    },
+  };
+}
+
+function SessionsPageView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useSessionsPageModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    confirmingId,
+    isLoadingMore,
+    listState,
+    loadMore,
+    paginationError,
+    revoke,
+    revokeError,
+    revokingId,
+    session,
+    setConfirmingId,
+    setLoadAttempt,
+    setRevokeError,
+  } = model;
   return (
     <div className="content sessions-page">
       <section className="page-heading" aria-labelledby="sessions-page-title">
@@ -430,21 +480,4 @@ function formatAuthenticationMethod(value: AuthenticationMethod): string {
     default:
       return "Unknown authentication method";
   }
-}
-
-export function appendUniqueSessions(
-  current: readonly SessionSummaryView[],
-  incoming: readonly SessionSummaryView[],
-): readonly SessionSummaryView[] {
-  const seen = new Set(current.map((session) => session.id));
-  return [
-    ...current,
-    ...incoming.filter((session) => {
-      if (seen.has(session.id)) {
-        return false;
-      }
-      seen.add(session.id);
-      return true;
-    }),
-  ];
 }

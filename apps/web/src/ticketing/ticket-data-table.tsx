@@ -1,3 +1,16 @@
+import type { TicketBulkTargetPin } from "@periapsis/contracts";
+import { Badge } from "@periapsis/ui/components/ui/badge";
+import { Button } from "@periapsis/ui/components/ui/button";
+import { Checkbox } from "@periapsis/ui/components/ui/checkbox";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@periapsis/ui/components/ui/table";
 import {
   columnPinningFeature,
   columnResizingFeature,
@@ -14,19 +27,6 @@ import {
   type Header,
   type RowSelectionState,
 } from "@tanstack/react-table";
-import { Badge } from "@periapsis/ui/components/ui/badge";
-import { Button } from "@periapsis/ui/components/ui/button";
-import { Checkbox } from "@periapsis/ui/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@periapsis/ui/components/ui/table";
-import type { TicketBulkTargetPin } from "@periapsis/contracts";
 import {
   Columns3,
   LoaderCircle,
@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -50,8 +51,14 @@ import {
 import { Link, useNavigate } from "react-router";
 
 import { TenantInstant } from "../lib/tenant-date-time-context";
-import type { TicketKind, TicketProjection } from "../lib/ticketing-api";
 import type { TicketDynamicColumnCatalogItem } from "../lib/ticket-column-catalog-api";
+import type { TicketKind, TicketProjection } from "../lib/ticketing-api";
+import {
+  defaultTicketTableColumns,
+  savedViewColumnIdentity,
+  savedViewColumnLabel,
+  type TicketTableColumnSpec,
+} from "./saved-view-model";
 import {
   compactIdentifier,
   humanizeKey,
@@ -60,12 +67,6 @@ import {
   severityTone,
   ticketNumber,
 } from "./ticketing-model";
-import {
-  defaultTicketTableColumns,
-  savedViewColumnIdentity,
-  savedViewColumnLabel,
-  type TicketTableColumnSpec,
-} from "./saved-view-model";
 
 const ticketTableFeatures = tableFeatures({
   columnPinningFeature,
@@ -96,7 +97,14 @@ export interface TicketDataTableProps {
   selectionScope: string;
 }
 
-export function TicketDataTable({
+export function TicketDataTable(
+  props: TicketDataTableProps,
+): React.JSX.Element {
+  const model = useTicketDataTable(props);
+  return <TicketDataTableView model={model} />;
+}
+
+function useTicketDataTable({
   availableDynamicColumns = [],
   columnCatalogError,
   columnCatalogHasMore = false,
@@ -111,91 +119,117 @@ export function TicketDataTable({
   onSelectionChange,
   selectionResetToken = 0,
   selectionScope,
-}: TicketDataTableProps): React.JSX.Element {
+}: TicketDataTableProps) {
   const navigate = useNavigate();
-  const layoutColumnsRef = useRef(layoutColumns);
-  layoutColumnsRef.current = layoutColumns;
-  const [baselineColumns, setBaselineColumns] = useState(() =>
-    cloneColumns(layoutColumns),
+  const schemaSignature = layoutColumns.map(savedViewColumnIdentity).join("|");
+  const loadedIdSignature = items.map((item) => item.id).join("|");
+  const [savedLayout, setSavedLayout] = useState(() =>
+    tableLayoutSnapshot(layoutColumns, selectionScope, schemaSignature),
   );
-  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>(() =>
-    pinningFromColumns(layoutColumns),
-  );
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() =>
-    sizingFromColumns(layoutColumns),
-  );
-  const [columnVisibility, setColumnVisibility] =
-    useState<ColumnVisibilityState>(() => visibilityFromColumns(layoutColumns));
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [activeRowId, setActiveRowId] = useState<string | null>(null);
+  let layout = savedLayout;
+  if (
+    layout.selectionScope !== selectionScope ||
+    layout.schemaSignature !== schemaSignature
+  ) {
+    layout = tableLayoutSnapshot(
+      layoutColumns,
+      selectionScope,
+      schemaSignature,
+    );
+    setSavedLayout(layout);
+  }
+  const [savedInteraction, setSavedInteraction] =
+    useState<TableInteractionSnapshot>(() => ({
+      selectionScope,
+      selectionResetToken,
+      loadedIdSignature,
+      rowSelection: {},
+      activeRowId: null,
+    }));
+  let interaction = savedInteraction;
+  if (
+    interaction.selectionScope !== selectionScope ||
+    interaction.selectionResetToken !== selectionResetToken ||
+    interaction.loadedIdSignature !== loadedIdSignature
+  ) {
+    interaction = reconcileTableInteraction(
+      interaction,
+      selectionScope,
+      selectionResetToken,
+      loadedIdSignature,
+    );
+    setSavedInteraction(interaction);
+  }
+  const layoutRef = useRef(layout);
+  const interactionRef = useRef(interaction);
+  useLayoutEffect(() => {
+    layoutRef.current = layout;
+    interactionRef.current = interaction;
+  }, [layout, interaction]);
+  const { columnPinning, columnSizing, columnVisibility } = layout;
+  const { rowSelection, activeRowId } = interaction;
   const reportedSelectionRef = useRef("");
-  const loadedRowIdSignature = items.map((item) => item.id).join("|");
-  const layoutColumnIdentitySignature = layoutColumns
-    .map(savedViewColumnIdentity)
-    .join("|");
-
-  useEffect(() => {
-    const next = cloneColumns(layoutColumnsRef.current);
-    setBaselineColumns(next);
-    setColumnPinning(pinningFromColumns(next));
-    setColumnSizing(sizingFromColumns(next));
-    setColumnVisibility(visibilityFromColumns(next));
-    setActiveRowId(null);
-    setRowSelection({});
-  }, [selectionScope]);
-  useEffect(() => {
-    const next = cloneColumns(layoutColumnsRef.current);
-    setBaselineColumns(next);
-    setColumnPinning(pinningFromColumns(next));
-    setColumnSizing(sizingFromColumns(next));
-    setColumnVisibility(visibilityFromColumns(next));
-  }, [layoutColumnIdentitySignature]);
-  useEffect(() => {
-    onColumnsChange?.(
-      columnsFromTableState(
-        layoutColumnsRef.current,
-        columnPinning,
-        columnSizing,
-        columnVisibility,
-      ),
-    );
-  }, [
-    columnPinning,
-    columnSizing,
-    columnVisibility,
-    layoutColumnIdentitySignature,
-    onColumnsChange,
-  ]);
-  useEffect(() => {
-    const loaded = new Set(
-      loadedRowIdSignature === "" ? [] : loadedRowIdSignature.split("|"),
-    );
-    setRowSelection((current) => {
-      const next = Object.fromEntries(
-        Object.entries(current).filter(([id]) => loaded.has(id)),
-      );
-      return Object.keys(next).length === Object.keys(current).length
-        ? current
-        : next;
-    });
-    setActiveRowId((current) =>
-      current !== null && loaded.has(current) ? current : null,
-    );
-  }, [loadedRowIdSignature]);
-  useEffect(() => {
-    setRowSelection({});
-  }, [selectionResetToken]);
-  const selectedTargets = items
-    .filter((item) => rowSelection[item.id] === true)
-    .map((item) => ({ id: item.id, expectedVersion: item.version }));
+  const selectedTargets = useMemo(
+    () => selectedTicketTargets(items, rowSelection),
+    [items, rowSelection],
+  );
   const selectedTargetSignature = selectedTargets
     .map((target) => `${target.id}:${target.expectedVersion}`)
     .join("|");
+
+  // Server refreshes can change loaded rows and version pins without a selection event.
+  // Reconcile that external snapshot with the parent's reviewed bulk-action selection.
   useEffect(() => {
     if (reportedSelectionRef.current === selectedTargetSignature) return;
     reportedSelectionRef.current = selectedTargetSignature;
+    // eslint-disable-next-line react-doctor/no-pass-data-to-parent, react-doctor/no-pass-live-state-to-parent, react-doctor/no-prop-callback-in-effect -- Local selection events notify synchronously; this effect propagates only changed server row/version pins or an external reset.
     onSelectionChange?.(selectedTargets);
   }, [onSelectionChange, selectedTargetSignature, selectedTargets]);
+
+  function changeColumns<Key extends keyof TableColumnState>(
+    key: Key,
+    update: StateUpdater<TableColumnState[Key]>,
+  ): void {
+    const current = layoutRef.current;
+    const next = {
+      ...current,
+      [key]: resolveStateUpdate(update, current[key]),
+    };
+    layoutRef.current = next;
+    setSavedLayout(next);
+    onColumnsChange?.(
+      columnsFromTableState(
+        layoutColumns,
+        next.columnPinning,
+        next.columnSizing,
+        next.columnVisibility,
+      ),
+    );
+  }
+
+  function changeRowSelection(update: StateUpdater<RowSelectionState>): void {
+    const current = interactionRef.current;
+    const next = {
+      ...current,
+      rowSelection: resolveStateUpdate(update, current.rowSelection),
+    };
+    interactionRef.current = next;
+    setSavedInteraction(next);
+    const targets = selectedTicketTargets(items, next.rowSelection);
+    const signature = targets
+      .map((target) => `${target.id}:${target.expectedVersion}`)
+      .join("|");
+    if (reportedSelectionRef.current !== signature) {
+      reportedSelectionRef.current = signature;
+      onSelectionChange?.(targets);
+    }
+  }
+
+  function setActiveRowId(activeId: string): void {
+    const next = { ...interactionRef.current, activeRowId: activeId };
+    interactionRef.current = next;
+    setSavedInteraction(next);
+  }
 
   const columns = useMemo(
     () =>
@@ -275,10 +309,11 @@ export function TicketDataTable({
     enableSubRowSelection: false,
     features: ticketTableFeatures,
     getRowId: (row) => row.id,
-    onColumnPinningChange: setColumnPinning,
-    onColumnSizingChange: setColumnSizing,
-    onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
+    onColumnPinningChange: (update) => changeColumns("columnPinning", update),
+    onColumnSizingChange: (update) => changeColumns("columnSizing", update),
+    onColumnVisibilityChange: (update) =>
+      changeColumns("columnVisibility", update),
+    onRowSelectionChange: changeRowSelection,
     state: {
       columnPinning,
       columnSizing,
@@ -287,20 +322,33 @@ export function TicketDataTable({
     },
   });
   const selectedCount = table.getSelectedRowIds().length;
-  const activeDynamicColumnIdentities = new Set(
-    layoutColumns
-      .filter((column) => column.source !== "core")
-      .map(savedViewColumnIdentity),
-  );
+  const activeDynamicColumnIdentities = new Set<string>();
+  for (const column of layoutColumns) {
+    if (column.source !== "core")
+      activeDynamicColumnIdentities.add(savedViewColumnIdentity(column));
+  }
   const addableDynamicColumns = availableDynamicColumns.filter(
     (item) =>
       !activeDynamicColumnIdentities.has(`${item.source}:${item.definitionId}`),
   );
 
   function resetColumns(): void {
-    setColumnPinning(pinningFromColumns(baselineColumns));
-    setColumnSizing(sizingFromColumns(baselineColumns));
-    setColumnVisibility(visibilityFromColumns(baselineColumns));
+    const current = layoutRef.current;
+    const next = tableLayoutSnapshot(
+      current.baselineColumns,
+      current.selectionScope,
+      current.schemaSignature,
+    );
+    layoutRef.current = next;
+    setSavedLayout(next);
+    onColumnsChange?.(
+      columnsFromTableState(
+        layoutColumns,
+        next.columnPinning,
+        next.columnSizing,
+        next.columnVisibility,
+      ),
+    );
   }
 
   function addDynamicColumn(item: TicketDynamicColumnCatalogItem): void {
@@ -376,157 +424,46 @@ export function TicketDataTable({
     }
   }
 
+  return {
+    table,
+    columnLabels,
+    layoutColumns,
+    columnCatalogError,
+    columnCatalogHasMore,
+    columnCatalogLoading,
+    columnCatalogLoadingMore,
+    onColumnCatalogRequested,
+    onLoadMoreColumns,
+    onColumnsChange,
+    addableDynamicColumns,
+    addDynamicColumn,
+    removeDynamicColumn,
+    resetColumns,
+    selectedCount,
+    kind,
+    activeRowId,
+    setActiveRowId,
+    handleRowKeyDown,
+  };
+}
+
+function TicketDataTableView({
+  model,
+}: {
+  model: ReturnType<typeof useTicketDataTable>;
+}): React.JSX.Element {
+  const {
+    table,
+    columnLabels,
+    selectedCount,
+    kind,
+    activeRowId,
+    setActiveRowId,
+    handleRowKeyDown,
+  } = model;
   return (
     <div className="ticket-data-grid">
-      <div className="ticket-table-toolbar">
-        <details
-          className="ticket-column-menu"
-          onToggle={(event) => {
-            if (event.currentTarget.open) onColumnCatalogRequested?.();
-          }}
-        >
-          <summary>
-            <Columns3 aria-hidden="true" /> Columns
-          </summary>
-          <div aria-label="Ticket table columns">
-            {table
-              .getAllLeafColumns()
-              .filter((column) => column.id !== "selection")
-              .map((column) => (
-                <div key={column.id}>
-                  <Checkbox
-                    aria-label={`Show ${columnLabels[column.id] ?? columnLabel(column.id)} column`}
-                    checked={column.getIsVisible()}
-                    disabled={!column.getCanHide()}
-                    onCheckedChange={(checked) =>
-                      column.toggleVisibility(checked === true)
-                    }
-                  />
-                  <span>
-                    {columnLabels[column.id] ?? columnLabel(column.id)}
-                  </span>
-                  {column.getCanPin() ? (
-                    column.getIsPinned() ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Unpin ${columnLabels[column.id] ?? columnLabel(column.id)} column`}
-                        onClick={() => column.pin(false)}
-                      >
-                        <PinOff aria-hidden="true" />
-                      </Button>
-                    ) : (
-                      <span className="ticket-column-pin-actions">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Pin ${columnLabels[column.id] ?? columnLabel(column.id)} column to start`}
-                          onClick={() => column.pin("start")}
-                        >
-                          <Pin aria-hidden="true" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Pin ${columnLabels[column.id] ?? columnLabel(column.id)} column to end`}
-                          onClick={() => column.pin("end")}
-                        >
-                          <Pin aria-hidden="true" />
-                        </Button>
-                      </span>
-                    )
-                  ) : null}
-                  {layoutColumns.some(
-                    (candidate) =>
-                      candidate.source !== "core" &&
-                      savedViewColumnIdentity(candidate) === column.id,
-                  ) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Remove ${columnLabels[column.id] ?? columnLabel(column.id)} column`}
-                      onClick={() => removeDynamicColumn(column.id)}
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </Button>
-                  ) : null}
-                </div>
-              ))}
-            <div className="ticket-column-catalog" aria-live="polite">
-              <p>
-                <strong>Available dynamic columns</strong>
-                <small>Exact current custom-field and SLA revisions</small>
-              </p>
-              {columnCatalogLoading ? (
-                <span role="status">
-                  <LoaderCircle className="is-spinning" aria-hidden="true" />
-                  Loading column catalog…
-                </span>
-              ) : null}
-              {columnCatalogError ? (
-                <span role="alert">
-                  The authorized dynamic-column catalog could not be loaded.
-                </span>
-              ) : null}
-              {!columnCatalogLoading &&
-              !columnCatalogError &&
-              addableDynamicColumns.length === 0 ? (
-                <span>
-                  Every available dynamic column is already in this view.
-                </span>
-              ) : null}
-              {addableDynamicColumns.map((item) => (
-                <Button
-                  key={`${item.source}:${item.definitionId}:${item.definitionVersion}`}
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={!onColumnsChange || layoutColumns.length >= 64}
-                  aria-label={`Add ${item.definitionLabel} column`}
-                  onClick={() => addDynamicColumn(item)}
-                >
-                  <Plus aria-hidden="true" />
-                  <span>{item.definitionLabel}</span>
-                  <small>
-                    {item.source === "custom_field" ? "Custom field" : "SLA"} ·
-                    v{item.definitionVersion}
-                  </small>
-                </Button>
-              ))}
-              {columnCatalogHasMore ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={columnCatalogLoadingMore || !onLoadMoreColumns}
-                  onClick={onLoadMoreColumns}
-                >
-                  {columnCatalogLoadingMore ? (
-                    <LoaderCircle className="is-spinning" aria-hidden="true" />
-                  ) : null}
-                  Load more columns
-                </Button>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={resetColumns}
-            >
-              <RotateCcw aria-hidden="true" /> Reset columns
-            </Button>
-          </div>
-        </details>
-        <span className="ticket-table-toolbar__hint">
-          <Rows3 aria-hidden="true" /> Arrow keys move between rows; Enter
-          opens.
-        </span>
-      </div>
+      <TicketTableToolbar model={model} />
 
       {selectedCount > 0 ? (
         <div
@@ -853,17 +790,13 @@ function cloneColumns(
 function pinningFromColumns(
   columns: readonly TicketTableColumnSpec[],
 ): ColumnPinningState {
-  return {
-    start: [
-      "selection",
-      ...columns
-        .filter((column) => column.pin === "start")
-        .map(savedViewColumnIdentity),
-    ],
-    end: columns
-      .filter((column) => column.pin === "end")
-      .map(savedViewColumnIdentity),
-  };
+  const start = ["selection"];
+  const end: string[] = [];
+  for (const column of columns) {
+    if (column.pin === "start") start.push(savedViewColumnIdentity(column));
+    if (column.pin === "end") end.push(savedViewColumnIdentity(column));
+  }
+  return { start, end };
 }
 
 function sizingFromColumns(
@@ -911,4 +844,257 @@ function columnsFromTableState(
       width,
     };
   });
+}
+
+function TicketTableToolbar({
+  model,
+}: {
+  model: ReturnType<typeof useTicketDataTable>;
+}): React.JSX.Element {
+  const {
+    table,
+    columnLabels,
+    layoutColumns,
+    columnCatalogError,
+    columnCatalogHasMore,
+    columnCatalogLoading,
+    columnCatalogLoadingMore,
+    onColumnCatalogRequested,
+    onLoadMoreColumns,
+    onColumnsChange,
+    addableDynamicColumns,
+    addDynamicColumn,
+    removeDynamicColumn,
+    resetColumns,
+  } = model;
+  return (
+    <div className="ticket-table-toolbar">
+      <details
+        className="ticket-column-menu"
+        onToggle={(event) => {
+          if (event.currentTarget.open) onColumnCatalogRequested?.();
+        }}
+      >
+        <summary>
+          <Columns3 aria-hidden="true" /> Columns
+        </summary>
+        <div aria-label="Ticket table columns">
+          {table.getAllLeafColumns().map((column) =>
+            column.id === "selection" ? null : (
+              <div key={column.id}>
+                <Checkbox
+                  aria-label={`Show ${columnLabels[column.id] ?? columnLabel(column.id)} column`}
+                  checked={column.getIsVisible()}
+                  disabled={!column.getCanHide()}
+                  onCheckedChange={(checked) =>
+                    column.toggleVisibility(checked === true)
+                  }
+                />
+                <span>{columnLabels[column.id] ?? columnLabel(column.id)}</span>
+                {column.getCanPin() ? (
+                  column.getIsPinned() ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Unpin ${columnLabels[column.id] ?? columnLabel(column.id)} column`}
+                      onClick={() => column.pin(false)}
+                    >
+                      <PinOff aria-hidden="true" />
+                    </Button>
+                  ) : (
+                    <span className="ticket-column-pin-actions">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Pin ${columnLabels[column.id] ?? columnLabel(column.id)} column to start`}
+                        onClick={() => column.pin("start")}
+                      >
+                        <Pin aria-hidden="true" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Pin ${columnLabels[column.id] ?? columnLabel(column.id)} column to end`}
+                        onClick={() => column.pin("end")}
+                      >
+                        <Pin aria-hidden="true" />
+                      </Button>
+                    </span>
+                  )
+                ) : null}
+                {layoutColumns.some(
+                  (candidate) =>
+                    candidate.source !== "core" &&
+                    savedViewColumnIdentity(candidate) === column.id,
+                ) ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Remove ${columnLabels[column.id] ?? columnLabel(column.id)} column`}
+                    onClick={() => removeDynamicColumn(column.id)}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </div>
+            ),
+          )}
+          <div className="ticket-column-catalog" aria-live="polite">
+            <p>
+              <strong>Available dynamic columns</strong>
+              <small>Exact current custom-field and SLA revisions</small>
+            </p>
+            {columnCatalogLoading ? (
+              <span role="status">
+                <LoaderCircle className="is-spinning" aria-hidden="true" />
+                Loading column catalog…
+              </span>
+            ) : null}
+            {columnCatalogError ? (
+              <span role="alert">
+                The authorized dynamic-column catalog could not be loaded.
+              </span>
+            ) : null}
+            {!columnCatalogLoading &&
+            !columnCatalogError &&
+            addableDynamicColumns.length === 0 ? (
+              <span>
+                Every available dynamic column is already in this view.
+              </span>
+            ) : null}
+            {addableDynamicColumns.map((item) => (
+              <Button
+                key={`${item.source}:${item.definitionId}:${item.definitionVersion}`}
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={!onColumnsChange || layoutColumns.length >= 64}
+                aria-label={`Add ${item.definitionLabel} column`}
+                onClick={() => addDynamicColumn(item)}
+              >
+                <Plus aria-hidden="true" />
+                <span>{item.definitionLabel}</span>
+                <small>
+                  {item.source === "custom_field" ? "Custom field" : "SLA"} · v
+                  {item.definitionVersion}
+                </small>
+              </Button>
+            ))}
+            {columnCatalogHasMore ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={columnCatalogLoadingMore || !onLoadMoreColumns}
+                onClick={onLoadMoreColumns}
+              >
+                {columnCatalogLoadingMore ? (
+                  <LoaderCircle className="is-spinning" aria-hidden="true" />
+                ) : null}
+                Load more columns
+              </Button>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={resetColumns}
+          >
+            <RotateCcw aria-hidden="true" /> Reset columns
+          </Button>
+        </div>
+      </details>
+      <span className="ticket-table-toolbar__hint">
+        <Rows3 aria-hidden="true" /> Arrow keys move between rows; Enter opens.
+      </span>
+    </div>
+  );
+}
+
+type StateUpdater<T> = T | ((current: T) => T);
+interface TableColumnState {
+  columnPinning: ColumnPinningState;
+  columnSizing: ColumnSizingState;
+  columnVisibility: ColumnVisibilityState;
+}
+interface TableLayoutSnapshot extends TableColumnState {
+  baselineColumns: TicketTableColumnSpec[];
+  schemaSignature: string;
+  selectionScope: string;
+}
+interface TableInteractionSnapshot {
+  activeRowId: string | null;
+  loadedIdSignature: string;
+  rowSelection: RowSelectionState;
+  selectionResetToken: number;
+  selectionScope: string;
+}
+function resolveStateUpdate<T extends object>(
+  update: StateUpdater<T>,
+  current: T,
+): T {
+  return typeof update === "function" ? update(current) : update;
+}
+function tableLayoutSnapshot(
+  columns: readonly TicketTableColumnSpec[],
+  selectionScope: string,
+  schemaSignature: string,
+): TableLayoutSnapshot {
+  return {
+    baselineColumns: cloneColumns(columns),
+    columnPinning: pinningFromColumns(columns),
+    columnSizing: sizingFromColumns(columns),
+    columnVisibility: visibilityFromColumns(columns),
+    selectionScope,
+    schemaSignature,
+  };
+}
+function reconcileTableInteraction(
+  current: TableInteractionSnapshot,
+  selectionScope: string,
+  selectionResetToken: number,
+  loadedIdSignature: string,
+): TableInteractionSnapshot {
+  const loadedIds = new Set(
+    loadedIdSignature === "" ? [] : loadedIdSignature.split("|"),
+  );
+  const scopeChanged = current.selectionScope !== selectionScope;
+  const resetSelection =
+    scopeChanged || current.selectionResetToken !== selectionResetToken;
+  const rowSelection = resetSelection
+    ? {}
+    : Object.fromEntries(
+        Object.entries(current.rowSelection).filter(([id]) =>
+          loadedIds.has(id),
+        ),
+      );
+  const activeRowId =
+    !scopeChanged &&
+    current.activeRowId !== null &&
+    loadedIds.has(current.activeRowId)
+      ? current.activeRowId
+      : null;
+  return {
+    selectionScope,
+    selectionResetToken,
+    loadedIdSignature,
+    rowSelection,
+    activeRowId,
+  };
+}
+function selectedTicketTargets(
+  items: readonly TicketProjection[],
+  rowSelection: RowSelectionState,
+): TicketBulkTargetPin[] {
+  const targets: TicketBulkTargetPin[] = [];
+  for (const item of items) {
+    if (rowSelection[item.id] === true)
+      targets.push({ id: item.id, expectedVersion: item.version });
+  }
+  return targets;
 }

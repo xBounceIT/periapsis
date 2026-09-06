@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { startTransition, Suspense, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -17,6 +17,26 @@ import {
 afterEach(cleanup);
 
 describe("TenantAuthorityProvider request generation", () => {
+  it("keeps committed authority usable while a different tenant render is suspended", async () => {
+    const getTenantAuthority = vi.fn(async (tenantId: string) =>
+      authorityFixture(tenantId, "committed authority"),
+    );
+    const api = createPhaseTwoApi({ getTenantAuthority });
+    render(<SuspendedAuthorityHarness api={api} />);
+    expect(await screen.findByText("committed authority")).toBeVisible();
+    await act(async () =>
+      screen
+        .getByRole("button", { name: "Begin pending tenant switch" })
+        .click(),
+    );
+    expect(screen.getByText("committed authority")).toBeVisible();
+    fireReload();
+    await waitFor(() => expect(getTenantAuthority).toHaveBeenCalledTimes(2));
+    expect(getTenantAuthority.mock.calls[1]?.[0]).toBe(
+      "0198c97d-cf4f-7000-8000-000000000010",
+    );
+  });
+
   it("keys authority by session and tenant and suppresses a late old-tenant success", async () => {
     const requests: Array<{
       deferred: Deferred<TenantAuthorityView>;
@@ -292,4 +312,61 @@ function createDeferred<T>(): Deferred<T> {
     reject = promiseReject;
   });
   return { promise, reject, resolve };
+}
+
+const suspendedTenantRender = new Promise<void>(() => undefined);
+
+function SuspendedTenant({
+  tenantId,
+}: {
+  tenantId: string | undefined;
+}): React.JSX.Element | null {
+  if (tenantId === "0198c97d-cf4f-7000-8000-000000000011")
+    throw suspendedTenantRender;
+  return null;
+}
+
+function SuspendedAuthorityHarness({
+  api,
+}: {
+  api: ReturnType<typeof createPhaseTwoApi>;
+}): React.JSX.Element {
+  const [session, setSession] = useState<SessionView>({
+    ...sessionFixture,
+    activeTenantId: "0198c97d-cf4f-7000-8000-000000000010",
+  });
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          startTransition(() =>
+            setSession({
+              ...session,
+              activeTenantId: "0198c97d-cf4f-7000-8000-000000000011",
+            }),
+          )
+        }
+      >
+        Begin pending tenant switch
+      </button>
+      <Suspense fallback={<p>Tenant switch pending</p>}>
+        <SessionContext.Provider
+          value={{
+            api,
+            session,
+            clearSession: vi.fn(),
+            membershipRevision: 0,
+            refreshMemberships: vi.fn(),
+            updateSession: vi.fn(),
+          }}
+        >
+          <TenantAuthorityProvider>
+            <AuthorityProbe />
+            <SuspendedTenant tenantId={session.activeTenantId} />
+          </TenantAuthorityProvider>
+        </SessionContext.Provider>
+      </Suspense>
+    </>
+  );
 }

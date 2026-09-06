@@ -1,3 +1,4 @@
+import type { AuditExportJob, AuditRetentionState } from "@periapsis/contracts";
 import { Badge } from "@periapsis/ui/components/ui/badge";
 import { Button } from "@periapsis/ui/components/ui/button";
 import {
@@ -10,7 +11,6 @@ import {
 } from "@periapsis/ui/components/ui/dialog";
 import { Input } from "@periapsis/ui/components/ui/input";
 import { Label } from "@periapsis/ui/components/ui/label";
-import type { AuditExportJob, AuditRetentionState } from "@periapsis/contracts";
 import {
   Archive,
   Ban,
@@ -45,7 +45,15 @@ interface AuditOperationsProps {
 
 type DialogKind = "export" | "retention" | null;
 
-export function AuditOperations({
+export function AuditOperations(
+  props: AuditOperationsProps,
+): React.JSX.Element | null {
+  const model = useAuditOperationsModel(props);
+  if (model.kind === "content") return model.content;
+  return <AuditOperationsView model={model.data} />;
+}
+
+function useAuditOperationsModel({
   api = auditOperationsApi,
   canExport,
   canManageRetention,
@@ -53,7 +61,7 @@ export function AuditOperations({
   filters,
   onBoundaryError,
   scope,
-}: AuditOperationsProps): React.JSX.Element | null {
+}: AuditOperationsProps) {
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +77,8 @@ export function AuditOperations({
 
   useEffect(() => () => controller.current?.abort(), []);
 
-  if (!canExport && !canManageRetention) return null;
+  if (!canExport && !canManageRetention)
+    return { kind: "content" as const, content: null };
 
   function beginRequest(): AbortController {
     controller.current?.abort();
@@ -279,6 +288,79 @@ export function AuditOperations({
     job !== null &&
     ["pending", "running", "cancellation_requested"].includes(job.state);
 
+  return {
+    kind: "ready" as const,
+    data: {
+      busy,
+      canCancel,
+      canExport,
+      canManageRetention,
+      cancelExport,
+      cancelReason,
+      createExport,
+      dialog,
+      downloadExport,
+      error,
+      exportReason,
+      holdConfirmed,
+      job,
+      mutateHold,
+      openRetention,
+      refreshExport,
+      retention,
+      retentionDays,
+      retentionReason,
+      retentionSeconds,
+      setCancelReason,
+      setDialog,
+      setExportReason,
+      setHoldConfirmed,
+      setRetentionDays,
+      setRetentionReason,
+      setRetentionSeconds,
+      updateRetentionPolicy,
+    },
+  };
+}
+
+function AuditOperationsView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useAuditOperationsModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    busy,
+    canCancel,
+    canExport,
+    canManageRetention,
+    cancelExport,
+    cancelReason,
+    createExport,
+    dialog,
+    downloadExport,
+    error,
+    exportReason,
+    holdConfirmed,
+    job,
+    mutateHold,
+    openRetention,
+    refreshExport,
+    retention,
+    retentionDays,
+    retentionReason,
+    retentionSeconds,
+    setCancelReason,
+    setDialog,
+    setExportReason,
+    setHoldConfirmed,
+    setRetentionDays,
+    setRetentionReason,
+    setRetentionSeconds,
+    updateRetentionPolicy,
+  } = model;
   return (
     <section className="audit-custody" aria-labelledby="audit-custody-title">
       <div className="audit-custody__mark" aria-hidden="true">
@@ -322,257 +404,40 @@ export function AuditOperations({
         ) : null}
       </div>
 
-      <Dialog
-        open={dialog === "export"}
-        onOpenChange={(open) => setDialog(open ? "export" : null)}
-      >
-        <DialogContent className="audit-operation-dialog">
-          <DialogHeader>
-            <DialogTitle>Export the current redacted view</DialogTitle>
-            <DialogDescription>
-              The server snapshots these normalized filters, pins your live
-              authority, and builds a JSONL artifact asynchronously.
-            </DialogDescription>
-          </DialogHeader>
-          {job ? (
-            <ExportStatus job={job} />
-          ) : (
-            <form
-              id="audit-export-form"
-              className="audit-operation-form"
-              onSubmit={(event) => void createExport(event)}
-            >
-              <div className="audit-operation-form__field">
-                <Label htmlFor="audit-export-reason">Redacted reason</Label>
-                <Input
-                  id="audit-export-reason"
-                  value={exportReason}
-                  onChange={(event) =>
-                    setExportReason(event.currentTarget.value)
-                  }
-                  placeholder="Incident evidence review"
-                  autoComplete="off"
-                  maxLength={500}
-                  required
-                />
-                <p>No names, customer payloads, credentials, or tokens.</p>
-              </div>
-              <div className="audit-operation-form__field">
-                <Label htmlFor="audit-export-retention">
-                  Artifact lifetime
-                </Label>
-                <select
-                  id="audit-export-retention"
-                  value={retentionSeconds}
-                  onChange={(event) =>
-                    setRetentionSeconds(Number(event.currentTarget.value))
-                  }
-                >
-                  <option value={3_600}>1 hour</option>
-                  <option value={86_400}>24 hours</option>
-                  <option value={604_800}>7 days</option>
-                </select>
-              </div>
-            </form>
-          )}
-          {error ? (
-            <p className="audit-operation-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {job ? (
-            <div className="audit-operation-form">
-              {canCancel ? (
-                <div className="audit-operation-form__field">
-                  <Label htmlFor="audit-export-cancel-reason">
-                    Cancellation reason
-                  </Label>
-                  <Input
-                    id="audit-export-cancel-reason"
-                    value={cancelReason}
-                    onChange={(event) =>
-                      setCancelReason(event.currentTarget.value)
-                    }
-                    placeholder="Export no longer required"
-                    autoComplete="off"
-                    maxLength={500}
-                  />
-                </div>
-              ) : null}
-              <div className="audit-operation-inline-actions">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void refreshExport()}
-                >
-                  <RefreshCw aria-hidden="true" /> Refresh status
-                </Button>
-                {canCancel ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={busy || !cancelReason.trim()}
-                    onClick={() => void cancelExport()}
-                  >
-                    <Ban aria-hidden="true" /> Cancel export
-                  </Button>
-                ) : null}
-                {job.state === "succeeded" ? (
-                  <Button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void downloadExport()}
-                  >
-                    <Download aria-hidden="true" /> Download via API
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDialog(null)}
-            >
-              Close
-            </Button>
-            {!job ? (
-              <Button
-                type="submit"
-                form="audit-export-form"
-                disabled={busy || !exportReason.trim()}
-              >
-                {busy ? (
-                  <LoaderCircle className="is-spinning" aria-hidden="true" />
-                ) : (
-                  <FileDown aria-hidden="true" />
-                )}
-                Queue export
-              </Button>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AuditExportDialog
+        busy={busy}
+        canCancel={canCancel}
+        cancelExport={cancelExport}
+        cancelReason={cancelReason}
+        createExport={createExport}
+        dialog={dialog}
+        downloadExport={downloadExport}
+        error={error}
+        exportReason={exportReason}
+        job={job}
+        refreshExport={refreshExport}
+        retentionSeconds={retentionSeconds}
+        setCancelReason={setCancelReason}
+        setDialog={setDialog}
+        setExportReason={setExportReason}
+        setRetentionSeconds={setRetentionSeconds}
+      />
 
-      <Dialog
-        open={dialog === "retention"}
-        onOpenChange={(open) => setDialog(open ? "retention" : null)}
-      >
-        <DialogContent className="audit-operation-dialog">
-          <DialogHeader>
-            <DialogTitle>Retention boundary & legal hold</DialogTitle>
-            <DialogDescription>
-              Pruning remains worker-only and is blocked until a closed segment
-              is signed, preserved, verified, and covered by the protected
-              anchor.
-            </DialogDescription>
-          </DialogHeader>
-          {busy && !retention ? (
-            <p className="audit-operation-loading">
-              <LoaderCircle className="is-spinning" aria-hidden="true" />{" "}
-              Loading governed state
-            </p>
-          ) : null}
-          {retention ? (
-            <form
-              id="audit-retention-form"
-              className="audit-operation-form"
-              onSubmit={(event) => void updateRetentionPolicy(event)}
-            >
-              <RetentionSummary state={retention} />
-              <div className="audit-operation-form__field">
-                <Label htmlFor="audit-retention-days">Retention days</Label>
-                <Input
-                  id="audit-retention-days"
-                  type="number"
-                  min={30}
-                  max={3_650}
-                  step={1}
-                  value={retentionDays}
-                  onChange={(event) =>
-                    setRetentionDays(Number(event.currentTarget.value))
-                  }
-                  required
-                />
-              </div>
-              <div className="audit-operation-form__field">
-                <Label htmlFor="audit-retention-reason">
-                  Redacted change reason
-                </Label>
-                <Input
-                  id="audit-retention-reason"
-                  value={retentionReason}
-                  onChange={(event) =>
-                    setRetentionReason(event.currentTarget.value)
-                  }
-                  placeholder="Policy review approved"
-                  autoComplete="off"
-                  maxLength={500}
-                  required
-                />
-              </div>
-              <label className="audit-operation-confirmation">
-                <input
-                  type="checkbox"
-                  checked={holdConfirmed}
-                  onChange={(event) =>
-                    setHoldConfirmed(event.currentTarget.checked)
-                  }
-                />
-                <span>
-                  I confirm this{" "}
-                  {retention.activeLegalHold ? "release" : "hold"} is authorized
-                  and the reason contains no protected data.
-                </span>
-              </label>
-            </form>
-          ) : null}
-          {error ? (
-            <p className="audit-operation-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDialog(null)}
-            >
-              Close
-            </Button>
-            {retention ? (
-              <>
-                <Button
-                  type="button"
-                  variant={
-                    retention.activeLegalHold ? "destructive" : "outline"
-                  }
-                  disabled={busy || !holdConfirmed || !retentionReason.trim()}
-                  onClick={() => void mutateHold()}
-                >
-                  {retention.activeLegalHold ? (
-                    <ShieldOff aria-hidden="true" />
-                  ) : (
-                    <ShieldAlert aria-hidden="true" />
-                  )}
-                  {retention.activeLegalHold
-                    ? "Release legal hold"
-                    : "Place legal hold"}
-                </Button>
-                <Button
-                  type="submit"
-                  form="audit-retention-form"
-                  disabled={busy || !retentionReason.trim()}
-                >
-                  Save retention policy
-                </Button>
-              </>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RetentionPolicyDialog
+        busy={busy}
+        dialog={dialog}
+        error={error}
+        holdConfirmed={holdConfirmed}
+        mutateHold={mutateHold}
+        retention={retention}
+        retentionDays={retentionDays}
+        retentionReason={retentionReason}
+        setDialog={setDialog}
+        setHoldConfirmed={setHoldConfirmed}
+        setRetentionDays={setRetentionDays}
+        setRetentionReason={setRetentionReason}
+        updateRetentionPolicy={updateRetentionPolicy}
+      />
     </section>
   );
 }
@@ -657,4 +522,322 @@ function formatBytes(value: number): string {
   if (value < 1_024) return `${value} B`;
   if (value < 1_048_576) return `${Math.ceil(value / 1_024)} KiB`;
   return `${Math.ceil(value / 1_048_576)} MiB`;
+}
+
+interface RetentionPolicyDialogProps {
+  busy: boolean;
+  dialog: DialogKind;
+  error: string | null;
+  holdConfirmed: boolean;
+  mutateHold: () => Promise<void>;
+  retention: AuditRetentionState | null;
+  retentionDays: number;
+  retentionReason: string;
+  setDialog: React.Dispatch<React.SetStateAction<DialogKind>>;
+  setHoldConfirmed: React.Dispatch<React.SetStateAction<boolean>>;
+  setRetentionDays: React.Dispatch<React.SetStateAction<number>>;
+  setRetentionReason: React.Dispatch<React.SetStateAction<string>>;
+  updateRetentionPolicy: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}
+
+function RetentionPolicyDialog({
+  busy,
+  dialog,
+  error,
+  holdConfirmed,
+  mutateHold,
+  retention,
+  retentionDays,
+  retentionReason,
+  setDialog,
+  setHoldConfirmed,
+  setRetentionDays,
+  setRetentionReason,
+  updateRetentionPolicy,
+}: RetentionPolicyDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open={dialog === "retention"}
+      onOpenChange={(open) => setDialog(open ? "retention" : null)}
+    >
+      <DialogContent className="audit-operation-dialog">
+        <DialogHeader>
+          <DialogTitle>Retention boundary & legal hold</DialogTitle>
+          <DialogDescription>
+            Pruning remains worker-only and is blocked until a closed segment is
+            signed, preserved, verified, and covered by the protected anchor.
+          </DialogDescription>
+        </DialogHeader>
+        {busy && !retention ? (
+          <p className="audit-operation-loading">
+            <LoaderCircle className="is-spinning" aria-hidden="true" /> Loading
+            governed state
+          </p>
+        ) : null}
+        {retention ? (
+          <form
+            id="audit-retention-form"
+            className="audit-operation-form"
+            onSubmit={(event) => void updateRetentionPolicy(event)}
+          >
+            <RetentionSummary state={retention} />
+            <div className="audit-operation-form__field">
+              <Label htmlFor="audit-retention-days">Retention days</Label>
+              <Input
+                id="audit-retention-days"
+                type="number"
+                min={30}
+                max={3_650}
+                step={1}
+                value={retentionDays}
+                onChange={(event) =>
+                  setRetentionDays(Number(event.currentTarget.value))
+                }
+                required
+              />
+            </div>
+            <div className="audit-operation-form__field">
+              <Label htmlFor="audit-retention-reason">
+                Redacted change reason
+              </Label>
+              <Input
+                id="audit-retention-reason"
+                value={retentionReason}
+                onChange={(event) =>
+                  setRetentionReason(event.currentTarget.value)
+                }
+                placeholder="Policy review approved"
+                autoComplete="off"
+                maxLength={500}
+                required
+              />
+            </div>
+            <label className="audit-operation-confirmation">
+              <input
+                type="checkbox"
+                checked={holdConfirmed}
+                onChange={(event) =>
+                  setHoldConfirmed(event.currentTarget.checked)
+                }
+              />
+              <span>
+                I confirm this {retention.activeLegalHold ? "release" : "hold"}{" "}
+                is authorized and the reason contains no protected data.
+              </span>
+            </label>
+          </form>
+        ) : null}
+        {error ? (
+          <p className="audit-operation-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDialog(null)}
+          >
+            Close
+          </Button>
+          {retention ? (
+            <>
+              <Button
+                type="button"
+                variant={retention.activeLegalHold ? "destructive" : "outline"}
+                disabled={busy || !holdConfirmed || !retentionReason.trim()}
+                onClick={() => void mutateHold()}
+              >
+                {retention.activeLegalHold ? (
+                  <ShieldOff aria-hidden="true" />
+                ) : (
+                  <ShieldAlert aria-hidden="true" />
+                )}
+                {retention.activeLegalHold
+                  ? "Release legal hold"
+                  : "Place legal hold"}
+              </Button>
+              <Button
+                type="submit"
+                form="audit-retention-form"
+                disabled={busy || !retentionReason.trim()}
+              >
+                Save retention policy
+              </Button>
+            </>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface AuditExportDialogProps {
+  busy: boolean;
+  canCancel: boolean;
+  cancelExport: () => Promise<void>;
+  cancelReason: string;
+  createExport: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  dialog: DialogKind;
+  downloadExport: () => Promise<void>;
+  error: string | null;
+  exportReason: string;
+  job: AuditExportJob | null;
+  refreshExport: () => Promise<void>;
+  retentionSeconds: number;
+  setCancelReason: React.Dispatch<React.SetStateAction<string>>;
+  setDialog: React.Dispatch<React.SetStateAction<DialogKind>>;
+  setExportReason: React.Dispatch<React.SetStateAction<string>>;
+  setRetentionSeconds: React.Dispatch<React.SetStateAction<number>>;
+}
+
+function AuditExportDialog({
+  busy,
+  canCancel,
+  cancelExport,
+  cancelReason,
+  createExport,
+  dialog,
+  downloadExport,
+  error,
+  exportReason,
+  job,
+  refreshExport,
+  retentionSeconds,
+  setCancelReason,
+  setDialog,
+  setExportReason,
+  setRetentionSeconds,
+}: AuditExportDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open={dialog === "export"}
+      onOpenChange={(open) => setDialog(open ? "export" : null)}
+    >
+      <DialogContent className="audit-operation-dialog">
+        <DialogHeader>
+          <DialogTitle>Export the current redacted view</DialogTitle>
+          <DialogDescription>
+            The server snapshots these normalized filters, pins your live
+            authority, and builds a JSONL artifact asynchronously.
+          </DialogDescription>
+        </DialogHeader>
+        {job ? (
+          <ExportStatus job={job} />
+        ) : (
+          <form
+            id="audit-export-form"
+            className="audit-operation-form"
+            onSubmit={(event) => void createExport(event)}
+          >
+            <div className="audit-operation-form__field">
+              <Label htmlFor="audit-export-reason">Redacted reason</Label>
+              <Input
+                id="audit-export-reason"
+                value={exportReason}
+                onChange={(event) => setExportReason(event.currentTarget.value)}
+                placeholder="Incident evidence review"
+                autoComplete="off"
+                maxLength={500}
+                required
+              />
+              <p>No names, customer payloads, credentials, or tokens.</p>
+            </div>
+            <div className="audit-operation-form__field">
+              <Label htmlFor="audit-export-retention">Artifact lifetime</Label>
+              <select
+                id="audit-export-retention"
+                value={retentionSeconds}
+                onChange={(event) =>
+                  setRetentionSeconds(Number(event.currentTarget.value))
+                }
+              >
+                <option value={3_600}>1 hour</option>
+                <option value={86_400}>24 hours</option>
+                <option value={604_800}>7 days</option>
+              </select>
+            </div>
+          </form>
+        )}
+        {error ? (
+          <p className="audit-operation-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {job ? (
+          <div className="audit-operation-form">
+            {canCancel ? (
+              <div className="audit-operation-form__field">
+                <Label htmlFor="audit-export-cancel-reason">
+                  Cancellation reason
+                </Label>
+                <Input
+                  id="audit-export-cancel-reason"
+                  value={cancelReason}
+                  onChange={(event) =>
+                    setCancelReason(event.currentTarget.value)
+                  }
+                  placeholder="Export no longer required"
+                  autoComplete="off"
+                  maxLength={500}
+                />
+              </div>
+            ) : null}
+            <div className="audit-operation-inline-actions">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void refreshExport()}
+              >
+                <RefreshCw aria-hidden="true" /> Refresh status
+              </Button>
+              {canCancel ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={busy || !cancelReason.trim()}
+                  onClick={() => void cancelExport()}
+                >
+                  <Ban aria-hidden="true" /> Cancel export
+                </Button>
+              ) : null}
+              {job.state === "succeeded" ? (
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void downloadExport()}
+                >
+                  <Download aria-hidden="true" /> Download via API
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDialog(null)}
+          >
+            Close
+          </Button>
+          {!job ? (
+            <Button
+              type="submit"
+              form="audit-export-form"
+              disabled={busy || !exportReason.trim()}
+            >
+              {busy ? (
+                <LoaderCircle className="is-spinning" aria-hidden="true" />
+              ) : (
+                <FileDown aria-hidden="true" />
+              )}
+              Queue export
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

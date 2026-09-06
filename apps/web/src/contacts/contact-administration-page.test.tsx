@@ -88,10 +88,10 @@ function renderWorkspace(
     <QueryClientProvider client={queryClient}>
       <ContactAdministrationWorkspace
         api={api}
-        canManageContacts={canManageContacts}
-        canManageGroups={false}
-        canReadContacts
-        canReadGroups={false}
+        permissions={{
+          contacts: { read: true, manage: canManageContacts },
+          groups: { read: false, manage: false },
+        }}
         csrfToken="csrf-memory-only"
         tenantId={contactTenantId}
       />

@@ -11,16 +11,14 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@periapsis/ui/components/ui/table";
 import { Textarea } from "@periapsis/ui/components/ui/textarea";
 import { KeyRound, PencilLine, Plus, Send } from "lucide-react";
 import { useCallback, useRef, useState, type FormEvent } from "react";
+import { TableColumnHeaders } from "../components/table-column-headers";
 
 import { FormField } from "../components/form-field";
-import type { NotificationAdminApi, Versioned } from "./notification-api";
 import {
   bindMutationAttempt,
   bindOpaqueMutationAttempt,
@@ -32,6 +30,7 @@ import {
   type MutationAttemptReference,
   type OpaqueMutationAttemptReference,
 } from "./model";
+import type { NotificationAdminApi, Versioned } from "./notification-api";
 import {
   EditorActions,
   InventoryHeading,
@@ -39,7 +38,10 @@ import {
   NotificationError,
   NotificationLoading,
 } from "./notification-primitives";
-import { useCursorInventory } from "./use-cursor-inventory";
+import {
+  useCursorInventory,
+  type CursorInventory,
+} from "./use-cursor-inventory";
 
 interface WebhookDraft {
   audience: NotificationAudience;
@@ -85,7 +87,12 @@ const notificationEventTypeSet: ReadonlySet<string> = new Set(
   notificationEventTypes,
 );
 
-export function WebhooksPanel({
+export function WebhooksPanel(props: WebhooksPanelProps) {
+  const model = useWebhooksPanelModel(props);
+  return <WebhooksPanelView model={model.data} />;
+}
+
+function useWebhooksPanelModel({
   api,
   csrfToken,
   tenantId,
@@ -214,339 +221,88 @@ export function WebhooksPanel({
     }
   }
 
+  return {
+    kind: "ready" as const,
+    data: {
+      busy,
+      createWebhook,
+      draft,
+      editWebhook,
+      editing,
+      error,
+      inventory,
+      notice,
+      reason,
+      save,
+      sendTest,
+      setEditing,
+      setReason,
+      setTestContext,
+      setTestEvent,
+      testAttempt,
+      testContext,
+      testEvent,
+      updateDraft,
+    },
+  };
+}
+
+function WebhooksPanelView({
+  model,
+}: {
+  model: Extract<
+    ReturnType<typeof useWebhooksPanelModel>,
+    { kind: "ready" }
+  >["data"];
+}): React.JSX.Element {
+  const {
+    busy,
+    createWebhook,
+    draft,
+    editWebhook,
+    editing,
+    error,
+    inventory,
+    notice,
+    reason,
+    save,
+    sendTest,
+    setEditing,
+    setReason,
+    setTestContext,
+    setTestEvent,
+    testAttempt,
+    testContext,
+    testEvent,
+    updateDraft,
+  } = model;
   return (
     <div className="notification-panel-grid">
-      <section
-        className="notification-inventory"
-        aria-busy={inventory.kind === "loading"}
-      >
-        <InventoryHeading
-          busy={inventory.kind === "loading"}
-          count={inventory.items.length}
-          label="Signed webhooks"
-          onRefresh={inventory.refresh}
-        />
-        {inventory.kind === "loading" ? (
-          <NotificationLoading label="Loading webhook configurations" />
-        ) : null}
-        {inventory.error ? (
-          <NotificationError
-            error={inventory.error}
-            fallback="Webhook configurations could not be loaded."
-          />
-        ) : null}
-        {inventory.kind === "ready" && inventory.items.length === 0 ? (
-          <NotificationEmpty
-            title="No webhooks"
-            detail="Create an HTTPS endpoint with a write-only signing key."
-            action={
-              <Button type="button" onClick={createWebhook}>
-                <Plus aria-hidden="true" /> Create webhook
-              </Button>
-            }
-          />
-        ) : null}
-        {inventory.items.length > 0 ? (
-          <div className="notification-table-wrap">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Endpoint</TableHead>
-                  <TableHead>Audience</TableHead>
-                  <TableHead>Current</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inventory.items.map((webhook) => (
-                  <TableRow key={webhook.id}>
-                    <TableCell>
-                      <strong>{webhook.name}</strong>
-                      <small className="notification-endpoint">
-                        {webhook.endpointUrl}
-                      </small>
-                    </TableCell>
-                    <TableCell>
-                      {webhook.audience}
-                      <small>{webhook.eventTypes.length} events</small>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={webhook.enabled ? "secondary" : "outline"}
-                      >
-                        {webhook.enabled ? "Enabled" : "Paused"}
-                      </Badge>
-                      <small>
-                        v{webhook.version} · key v{webhook.signingKeyVersion}
-                      </small>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy !== null}
-                        onClick={() => void editWebhook(webhook.id)}
-                      >
-                        <PencilLine aria-hidden="true" /> Version
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : null}
-        {inventory.nextCursor ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={inventory.loadingMore}
-            onClick={() => void inventory.loadMore()}
-          >
-            Load more webhooks
-          </Button>
-        ) : null}
-        {inventory.items.length > 0 ? (
-          <Button type="button" variant="outline" onClick={createWebhook}>
-            <Plus aria-hidden="true" /> New webhook
-          </Button>
-        ) : null}
-      </section>
+      <WebhookInventory
+        busy={busy}
+        createWebhook={createWebhook}
+        editWebhook={editWebhook}
+        inventory={inventory}
+      />
 
-      <aside
-        className="notification-editor"
-        aria-label="Webhook configuration editor"
-      >
-        {!editing ? (
-          <NotificationEmpty
-            title="Select a webhook"
-            detail="Open a sanitized endpoint to append a version or run a signed test."
-          />
-        ) : (
-          <form onSubmit={(event) => void save(event)}>
-            <header>
-              <div>
-                <p className="section-label">
-                  {editing === "new"
-                    ? "New endpoint"
-                    : `Webhook ${editing.value.id}`}
-                </p>
-                <h2>
-                  {editing === "new"
-                    ? "Create signed webhook"
-                    : `Append version ${editing.value.version + 1}`}
-                </h2>
-              </div>
-              {editing !== "new" ? (
-                <Badge variant="outline">{editing.etag}</Badge>
-              ) : null}
-            </header>
-            <p className="notification-secret-note">
-              <KeyRound aria-hidden="true" /> Signing keys are write-only. Blank
-              retains the encrypted key on versioning.
-            </p>
-            {error ? (
-              <NotificationError
-                error={error}
-                fallback="The webhook action could not be completed."
-              />
-            ) : null}
-            {notice ? (
-              <p className="notification-notice" role="status">
-                {notice}
-              </p>
-            ) : null}
-            <div className="notification-form-grid">
-              <FormField htmlFor="webhook-name" label="Name">
-                <Input
-                  id="webhook-name"
-                  required
-                  maxLength={160}
-                  value={draft.name}
-                  onChange={(event) =>
-                    updateDraft((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField htmlFor="webhook-url" label="HTTPS endpoint">
-                <Input
-                  id="webhook-url"
-                  required
-                  type="url"
-                  maxLength={2048}
-                  value={draft.endpointUrl}
-                  onChange={(event) =>
-                    updateDraft((current) => ({
-                      ...current,
-                      endpointUrl: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="webhook-events"
-                label="Event types"
-                hint="Comma-separated closed event names"
-              >
-                <Input
-                  id="webhook-events"
-                  required
-                  value={draft.eventTypes}
-                  onChange={(event) =>
-                    updateDraft((current) => ({
-                      ...current,
-                      eventTypes: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <label>
-                Audience
-                <select
-                  value={draft.audience}
-                  onChange={(event) => {
-                    const audience = parseAudience(event.target.value);
-                    if (audience) {
-                      updateDraft((current) => ({ ...current, audience }));
-                    }
-                  }}
-                >
-                  <option value="operator">operator</option>
-                  <option value="customer">customer</option>
-                </select>
-              </label>
-              <FormField htmlFor="webhook-timeout" label="Timeout (ms)">
-                <Input
-                  id="webhook-timeout"
-                  required
-                  type="number"
-                  min={100}
-                  value={draft.timeoutMs}
-                  onChange={(event) =>
-                    updateDraft((current) => ({
-                      ...current,
-                      timeoutMs: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-              <FormField
-                htmlFor="webhook-key"
-                label="New signing key"
-                optional
-                hint="Never returned by the API"
-              >
-                <Input
-                  id="webhook-key"
-                  type="password"
-                  autoComplete="new-password"
-                  value={draft.signingKey}
-                  onChange={(event) =>
-                    updateDraft((current) => ({
-                      ...current,
-                      signingKey: event.target.value,
-                    }))
-                  }
-                />
-              </FormField>
-            </div>
-            <label className="notification-check">
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    enabled: event.target.checked,
-                  }))
-                }
-              />{" "}
-              Endpoint enabled
-            </label>
-            <EditorActions
-              busy={busy === "save"}
-              submitLabel={
-                editing === "new" ? "Create webhook" : "Append version"
-              }
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setEditing(null)}
-              >
-                Close
-              </Button>
-            </EditorActions>
-            {editing !== "new" ? (
-              <section className="notification-toolbox">
-                <h3>Signed test event</h3>
-                <div className="notification-form-grid">
-                  <FormField htmlFor="webhook-test-event" label="Event type">
-                    <select
-                      id="webhook-test-event"
-                      value={testEvent}
-                      onChange={(event) => {
-                        const eventType = parseEventType(event.target.value);
-                        if (eventType) {
-                          setTestEvent(eventType);
-                          resetMutationAttempt(testAttempt.current);
-                        }
-                      }}
-                    >
-                      {notificationEventTypes.map((eventType) => (
-                        <option key={eventType} value={eventType}>
-                          {eventType}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField
-                    htmlFor="webhook-test-reason"
-                    label="Audited reason"
-                  >
-                    <Input
-                      id="webhook-test-reason"
-                      value={reason}
-                      onChange={(event) => {
-                        setReason(event.target.value);
-                        resetMutationAttempt(testAttempt.current);
-                      }}
-                    />
-                  </FormField>
-                  <FormField
-                    htmlFor="webhook-test-context"
-                    label="Context JSON"
-                  >
-                    <Textarea
-                      id="webhook-test-context"
-                      rows={4}
-                      value={testContext}
-                      onChange={(event) => {
-                        setTestContext(event.target.value);
-                        resetMutationAttempt(testAttempt.current);
-                      }}
-                    />
-                  </FormField>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy !== null || !reason.trim()}
-                  onClick={() => void sendTest()}
-                >
-                  <Send aria-hidden="true" /> Queue signed test
-                </Button>
-              </section>
-            ) : null}
-          </form>
-        )}
-      </aside>
+      <WebhookEditor
+        busy={busy}
+        draft={draft}
+        editing={editing}
+        error={error}
+        notice={notice}
+        reason={reason}
+        save={save}
+        sendTest={sendTest}
+        setEditing={setEditing}
+        setReason={setReason}
+        setTestContext={setTestContext}
+        setTestEvent={setTestEvent}
+        testAttempt={testAttempt}
+        testContext={testContext}
+        testEvent={testEvent}
+        updateDraft={updateDraft}
+      />
     </div>
   );
 }
@@ -598,4 +354,418 @@ function parseEventType(value: string): NotificationEventType | undefined {
 
 function isEventType(value: string): value is NotificationEventType {
   return notificationEventTypeSet.has(value);
+}
+
+interface WebhookEditorProps {
+  busy: "save" | "test" | null;
+  draft: WebhookDraft;
+  editing: Versioned<WebhookConfiguration> | "new" | null;
+  error: unknown;
+  notice: string | null;
+  reason: string;
+  save: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  sendTest: () => Promise<void>;
+  setEditing: React.Dispatch<
+    React.SetStateAction<Versioned<WebhookConfiguration> | "new" | null>
+  >;
+  setReason: React.Dispatch<React.SetStateAction<string>>;
+  setTestContext: React.Dispatch<React.SetStateAction<string>>;
+  setTestEvent: React.Dispatch<React.SetStateAction<NotificationEventType>>;
+  testAttempt: React.RefObject<MutationAttemptReference>;
+  testContext: string;
+  testEvent: NotificationEventType;
+  updateDraft: (change: (current: WebhookDraft) => WebhookDraft) => void;
+}
+
+function WebhookEditor({
+  busy,
+  draft,
+  editing,
+  error,
+  notice,
+  reason,
+  save,
+  sendTest,
+  setEditing,
+  setReason,
+  setTestContext,
+  setTestEvent,
+  testAttempt,
+  testContext,
+  testEvent,
+  updateDraft,
+}: WebhookEditorProps): React.JSX.Element {
+  return (
+    <aside
+      className="notification-editor"
+      aria-label="Webhook configuration editor"
+    >
+      {!editing ? (
+        <NotificationEmpty
+          title="Select a webhook"
+          detail="Open a sanitized endpoint to append a version or run a signed test."
+        />
+      ) : (
+        <form onSubmit={(event) => void save(event)}>
+          <header>
+            <div>
+              <p className="section-label">
+                {editing === "new"
+                  ? "New endpoint"
+                  : `Webhook ${editing.value.id}`}
+              </p>
+              <h2>
+                {editing === "new"
+                  ? "Create signed webhook"
+                  : `Append version ${editing.value.version + 1}`}
+              </h2>
+            </div>
+            {editing !== "new" ? (
+              <Badge variant="outline">{editing.etag}</Badge>
+            ) : null}
+          </header>
+          <p className="notification-secret-note">
+            <KeyRound aria-hidden="true" /> Signing keys are write-only. Blank
+            retains the encrypted key on versioning.
+          </p>
+          {error ? (
+            <NotificationError
+              error={error}
+              fallback="The webhook action could not be completed."
+            />
+          ) : null}
+          {notice ? (
+            <p className="notification-notice" role="status">
+              {notice}
+            </p>
+          ) : null}
+          <div className="notification-form-grid">
+            <FormField htmlFor="webhook-name" label="Name">
+              <Input
+                id="webhook-name"
+                required
+                maxLength={160}
+                value={draft.name}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField htmlFor="webhook-url" label="HTTPS endpoint">
+              <Input
+                id="webhook-url"
+                required
+                type="url"
+                maxLength={2048}
+                value={draft.endpointUrl}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    endpointUrl: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField
+              htmlFor="webhook-events"
+              label="Event types"
+              hint="Comma-separated closed event names"
+            >
+              <Input
+                id="webhook-events"
+                required
+                value={draft.eventTypes}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    eventTypes: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <label>
+              Audience
+              <select
+                value={draft.audience}
+                onChange={(event) => {
+                  const audience = parseAudience(event.target.value);
+                  if (audience) {
+                    updateDraft((current) => ({ ...current, audience }));
+                  }
+                }}
+              >
+                <option value="operator">operator</option>
+                <option value="customer">customer</option>
+              </select>
+            </label>
+            <FormField htmlFor="webhook-timeout" label="Timeout (ms)">
+              <Input
+                id="webhook-timeout"
+                required
+                type="number"
+                min={100}
+                value={draft.timeoutMs}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    timeoutMs: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+            <FormField
+              htmlFor="webhook-key"
+              label="New signing key"
+              optional
+              hint="Never returned by the API"
+            >
+              <Input
+                id="webhook-key"
+                type="password"
+                autoComplete="new-password"
+                value={draft.signingKey}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    signingKey: event.target.value,
+                  }))
+                }
+              />
+            </FormField>
+          </div>
+          <label className="notification-check">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  enabled: event.target.checked,
+                }))
+              }
+            />{" "}
+            Endpoint enabled
+          </label>
+          <EditorActions
+            busy={busy === "save"}
+            submitLabel={
+              editing === "new" ? "Create webhook" : "Append version"
+            }
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setEditing(null)}
+            >
+              Close
+            </Button>
+          </EditorActions>
+          {editing !== "new" ? (
+            <WebhookDeliveryTest
+              busy={busy}
+              reason={reason}
+              sendTest={sendTest}
+              setReason={setReason}
+              setTestContext={setTestContext}
+              setTestEvent={setTestEvent}
+              testAttempt={testAttempt}
+              testContext={testContext}
+              testEvent={testEvent}
+            />
+          ) : null}
+        </form>
+      )}
+    </aside>
+  );
+}
+
+interface WebhookInventoryProps {
+  busy: "save" | "test" | null;
+  createWebhook: () => void;
+  editWebhook: (id: string) => Promise<void>;
+  inventory: CursorInventory<WebhookConfiguration>;
+}
+
+function WebhookInventory({
+  busy,
+  createWebhook,
+  editWebhook,
+  inventory,
+}: WebhookInventoryProps): React.JSX.Element {
+  return (
+    <section
+      className="notification-inventory"
+      aria-busy={inventory.kind === "loading"}
+    >
+      <InventoryHeading
+        busy={inventory.kind === "loading"}
+        count={inventory.items.length}
+        label="Signed webhooks"
+        onRefresh={inventory.refresh}
+      />
+      {inventory.kind === "loading" ? (
+        <NotificationLoading label="Loading webhook configurations" />
+      ) : null}
+      {inventory.error ? (
+        <NotificationError
+          error={inventory.error}
+          fallback="Webhook configurations could not be loaded."
+        />
+      ) : null}
+      {inventory.kind === "ready" && inventory.items.length === 0 ? (
+        <NotificationEmpty
+          title="No webhooks"
+          detail="Create an HTTPS endpoint with a write-only signing key."
+          action={
+            <Button type="button" onClick={createWebhook}>
+              <Plus aria-hidden="true" /> Create webhook
+            </Button>
+          }
+        />
+      ) : null}
+      {inventory.items.length > 0 ? (
+        <div className="notification-table-wrap">
+          <Table>
+            <TableColumnHeaders
+              columns={["Endpoint", "Audience", "Current"]}
+              actionLabel="Actions"
+            />
+            <TableBody>
+              {inventory.items.map((webhook) => (
+                <TableRow key={webhook.id}>
+                  <TableCell>
+                    <strong>{webhook.name}</strong>
+                    <small className="notification-endpoint">
+                      {webhook.endpointUrl}
+                    </small>
+                  </TableCell>
+                  <TableCell>
+                    {webhook.audience}
+                    <small>{webhook.eventTypes.length} events</small>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={webhook.enabled ? "secondary" : "outline"}>
+                      {webhook.enabled ? "Enabled" : "Paused"}
+                    </Badge>
+                    <small>
+                      v{webhook.version} · key v{webhook.signingKeyVersion}
+                    </small>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy !== null}
+                      onClick={() => void editWebhook(webhook.id)}
+                    >
+                      <PencilLine aria-hidden="true" /> Version
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+      {inventory.nextCursor ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={inventory.loadingMore}
+          onClick={() => void inventory.loadMore()}
+        >
+          Load more webhooks
+        </Button>
+      ) : null}
+      {inventory.items.length > 0 ? (
+        <Button type="button" variant="outline" onClick={createWebhook}>
+          <Plus aria-hidden="true" /> New webhook
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+interface WebhookDeliveryTestProps {
+  busy: "save" | "test" | null;
+  reason: string;
+  sendTest: () => Promise<void>;
+  setReason: React.Dispatch<React.SetStateAction<string>>;
+  setTestContext: React.Dispatch<React.SetStateAction<string>>;
+  setTestEvent: React.Dispatch<React.SetStateAction<NotificationEventType>>;
+  testAttempt: React.RefObject<MutationAttemptReference>;
+  testContext: string;
+  testEvent: NotificationEventType;
+}
+
+function WebhookDeliveryTest({
+  busy,
+  reason,
+  sendTest,
+  setReason,
+  setTestContext,
+  setTestEvent,
+  testAttempt,
+  testContext,
+  testEvent,
+}: WebhookDeliveryTestProps): React.JSX.Element {
+  return (
+    <section className="notification-toolbox">
+      <h3>Signed test event</h3>
+      <div className="notification-form-grid">
+        <FormField htmlFor="webhook-test-event" label="Event type">
+          <select
+            id="webhook-test-event"
+            value={testEvent}
+            onChange={(event) => {
+              const eventType = parseEventType(event.target.value);
+              if (eventType) {
+                setTestEvent(eventType);
+                resetMutationAttempt(testAttempt.current);
+              }
+            }}
+          >
+            {notificationEventTypes.map((eventType) => (
+              <option key={eventType} value={eventType}>
+                {eventType}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField htmlFor="webhook-test-reason" label="Audited reason">
+          <Input
+            id="webhook-test-reason"
+            value={reason}
+            onChange={(event) => {
+              setReason(event.target.value);
+              resetMutationAttempt(testAttempt.current);
+            }}
+          />
+        </FormField>
+        <FormField htmlFor="webhook-test-context" label="Context JSON">
+          <Textarea
+            id="webhook-test-context"
+            rows={4}
+            value={testContext}
+            onChange={(event) => {
+              setTestContext(event.target.value);
+              resetMutationAttempt(testAttempt.current);
+            }}
+          />
+        </FormField>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={busy !== null || !reason.trim()}
+        onClick={() => void sendTest()}
+      >
+        <Send aria-hidden="true" /> Queue signed test
+      </Button>
+    </section>
+  );
 }
