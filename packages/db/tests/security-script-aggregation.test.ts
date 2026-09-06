@@ -86,7 +86,11 @@ describe("database security script aggregation", () => {
       const occurrences = aggregateScripts.filter(
         (entry) => entry === script,
       ).length;
-      if (file === "seed-audit.ts" || file.endsWith("-upgrade.ts")) {
+      if (
+        file === "seed-audit.ts" ||
+        file === "schema-compatibility-v49-runtime.ts" ||
+        file.endsWith("-upgrade.ts")
+      ) {
         expect(
           occurrences,
           `${script} must remain outside the fresh runtime aggregate`,
@@ -98,5 +102,39 @@ describe("database security script aggregation", () => {
         ).toBe(1);
       }
     }
+  });
+
+  it("retains V49 predecessor coverage and runs V50 on its dedicated fresh database", async () => {
+    const manifest = await loadManifest();
+    const workflow = await readFile(
+      resolve(packageRoot, "../../.github/workflows/ci.yml"),
+      "utf8",
+    );
+    const runtime = await readFile(
+      resolve(
+        packageRoot,
+        "tests/security/schema-compatibility-v50-runtime.ts",
+      ),
+      "utf8",
+    );
+    expect(manifest.scripts["test:security:schema-compatibility-v49"]).toBe(
+      "tsx tests/security/schema-compatibility-v49-runtime.ts",
+    );
+    expect(
+      manifest.scripts["test:security:schema-compatibility-v49-upgrade"],
+    ).toBe("tsx tests/security/schema-compatibility-v49-upgrade.ts");
+    expect(manifest.scripts["test:security:schema-compatibility-v50"]).toBe(
+      "tsx tests/security/schema-compatibility-v50-runtime.ts",
+    );
+    expect(workflow).toMatch(
+      /script: test:security:schema-compatibility-v49-upgrade\s+database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V49_UPGRADE_TEST_DATABASE_URL/u,
+    );
+    expect(runtime).toContain(
+      "process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V50_SECURITY_TEST_DATABASE_URL",
+    );
+    expect(workflow).toMatch(
+      /^\s+PERIAPSIS_SCHEMA_COMPATIBILITY_V50_SECURITY_TEST_DATABASE_URL: postgresql:\/\/[^\r\n]+@127\.0\.0\.1:5432\/periapsis_schema_compatibility_v50\?sslmode=disable$/mu,
+    );
+    expect(workflow).toMatch(/^\s+periapsis_schema_compatibility_v50 \\$/mu);
   });
 });

@@ -188,7 +188,7 @@ type SAMLDataViolations = {
   invalid_application_materials: number;
 };
 
-// V49 attests the current catalog/ACL graph; these five data checks retain the
+// V50 attests the current catalog/ACL graph; these five data checks retain the
 // material-lineage guarantees of the superseded V30 readiness implementation.
 async function assertSAMLDataInvariants(
   label: string,
@@ -727,7 +727,7 @@ async function seedUpstreamFixture(
             authentication_method,last_seen_at,idle_expires_at,absolute_expires_at,created_at
           ) SELECT ${fixture.session}::uuid,user_id,rotation_family_id,${fixture.tenant}::uuid,
               ${Buffer.from((fixture.sequence + 90).toString(16).repeat(32), "hex")},csrf_secret_digest,
-              authentication_method,last_seen_at,idle_expires_at,absolute_expires_at,transaction_timestamp()
+              authentication_method,transaction_timestamp(),idle_expires_at,absolute_expires_at,transaction_timestamp()
             FROM public.auth_sessions WHERE id=${fixture.ownerSession}::uuid
         `;
         await transaction`
@@ -1082,7 +1082,7 @@ try {
   });
 
   const [ready] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(ready, { ready: true });
   await assertSAMLDataInvariants("seeded SAML material lineage");
@@ -1327,7 +1327,7 @@ try {
     `;
   });
   const [afterRotation] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(afterRotation, { ready: true });
   await assertSAMLDataInvariants("rotation retains the original material ID");
@@ -1362,7 +1362,7 @@ try {
     `;
   });
   const [afterStepUp] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(afterStepUp, { ready: true });
   await assertSAMLDataInvariants(
@@ -1424,7 +1424,7 @@ try {
     `;
   });
   const [afterPromotion] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(afterPromotion, { ready: true });
   await assertSAMLDataInvariants("promotion retains the original material ID");
@@ -1444,7 +1444,7 @@ try {
     `;
   });
   const [ambiguousLegacy] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(ambiguousLegacy, { ready: true });
   await assertSAMLDataInvariants("orphaned legacy material is detected", {
@@ -1464,7 +1464,7 @@ try {
     `;
   });
   const [driftedApplication] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(driftedApplication, { ready: true });
   await assertSAMLDataInvariants("application material ID drift is detected", {
@@ -1482,7 +1482,7 @@ try {
     `;
   });
   const [restoredReadiness] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(restoredReadiness, { ready: true });
   await assertSAMLDataInvariants("application material ID restored");
@@ -1516,7 +1516,7 @@ try {
         `CREATE TRIGGER ${trigger.name} BEFORE ${trigger.events} ON public.tenants FOR EACH ROW EXECUTE FUNCTION ${trigger.functionName}`,
       );
       const [spoofed] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
     `;
       assert.deepEqual(spoofed, { ready: false });
       await sql.unsafe(`DROP TRIGGER ${trigger.name} ON public.tenants`);
@@ -1530,7 +1530,7 @@ try {
         `CREATE TRIGGER ${trigger.name} BEFORE ${trigger.events} ON public.${trigger.relation} FOR EACH ROW WHEN (false) EXECUTE FUNCTION ${trigger.functionName}`,
       );
       const [conditional] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
     `;
       assert.deepEqual(conditional, { ready: false });
       await sql.unsafe(
@@ -1542,7 +1542,7 @@ try {
     },
   );
   const [exactTriggersRestored] = await sql<{ ready: boolean }[]>`
-    SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+    SELECT app.private_release_runtime_schema_readiness_v50() AS ready
   `;
   assert.deepEqual(exactTriggersRestored, { ready: true });
 
@@ -1588,12 +1588,12 @@ try {
     async (unexpectedGrant) => {
       await sql.unsafe(unexpectedGrant.grant);
       const [overGranted] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
     `;
       assert.deepEqual(overGranted, { ready: false });
       await sql.unsafe(unexpectedGrant.revoke);
       const [grantRevoked] = await sql<{ ready: boolean }[]>`
-      SELECT app.private_release_runtime_schema_readiness_v49() AS ready
+      SELECT app.private_release_runtime_schema_readiness_v50() AS ready
     `;
       assert.deepEqual(grantRevoked, { ready: true });
     },

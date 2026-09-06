@@ -21,7 +21,7 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 		mutate    func(*stubSchemaRow)
 		wantReady bool
 	}{
-		{name: "exact v49 state", wantReady: true},
+		{name: "exact v50 state", wantReady: true},
 		{name: "identity keyring mismatch", mutate: func(row *stubSchemaRow) {
 			row.keyringReady = false
 		}},
@@ -75,7 +75,7 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 	}
 }
 
-func TestHealthCheckerRequiresEveryV49RuntimeAndTrustedRoot(t *testing.T) {
+func TestHealthCheckerRequiresEveryV50RuntimeAndTrustedRoot(t *testing.T) {
 	for index := range 5 {
 		t.Run(fmt.Sprintf("runtime_%02d", index+1), func(t *testing.T) {
 			row := exactStubSchemaRow()
@@ -119,14 +119,14 @@ func TestHealthCheckerPassesKeyringEvidenceAndExpectedMigrationFingerprint(t *te
 	}
 }
 
-func TestSchemaCompatibilityQuerySealsV49TrustedSet(t *testing.T) {
+func TestSchemaCompatibilityQuerySealsV50TrustedSet(t *testing.T) {
 	if len(expectedTrustedFunctionSourceHashes) != 12 {
 		t.Fatalf("trusted source hash count = %d, want 12", len(expectedTrustedFunctionSourceHashes))
 	}
 	for _, required := range []string{
-		"from app.schema_compatibility_v49()",
+		"from app.schema_compatibility_v50()",
 		"'app.schema_compatibility_fingerprint=' || $4::text",
-		"(2, 'retired', 'app.schema_compatibility_v48()'",
+		"(2, 'retired', 'app.schema_compatibility_v49()'",
 		"'app.schema_compatibility_fingerprint=RETIRED'",
 		"'journal'",
 		"'latest_rows',",
@@ -163,10 +163,10 @@ func TestSchemaCompatibilityQuerySealsV49TrustedSet(t *testing.T) {
 		"count(*) = 12 and coalesce(bool_and(catalog_ready), false)",
 		trustedWorkerACL,
 		trustedSLARotationACL,
-		"app.sla_trigger_action_runtime_schema_readiness_v49()",
-		"app.sla_object_event_ingress_schema_readiness_v49()",
-		"app.ticket_bulk_runtime_schema_readiness_v49()",
-		"app.ticket_export_runtime_schema_readiness_v49()",
+		"app.sla_trigger_action_runtime_schema_readiness_v50()",
+		"app.sla_object_event_ingress_schema_readiness_v50()",
+		"app.ticket_bulk_runtime_schema_readiness_v50()",
+		"app.ticket_export_runtime_schema_readiness_v50()",
 		"app.private_rotate_sla_readiness_v48()",
 	} {
 		if !strings.Contains(schemaCompatibilityQuery, required) {
@@ -193,17 +193,17 @@ func TestSchemaCompatibilityQuerySealsV49TrustedSet(t *testing.T) {
 		name  string
 		count int
 	}{
-		{"app.schema_compatibility_v48()", 1},
-		{"app.schema_compatibility_v49()", 2},
+		{"app.schema_compatibility_v49()", 1},
+		{"app.schema_compatibility_v50()", 2},
 		{"app.private_v47_migration_convergence_schema_readiness_v1()", 1},
-		{"app.private_schema_compatibility_journal_v49()", 1},
-		{"app.private_release_runtime_dependency_surface_hash_v49()", 1},
-		{"app.private_release_runtime_schema_readiness_v49()", 1},
-		{"app.release_runtime_schema_readiness_v49()", 2},
-		{"app.sla_trigger_action_runtime_schema_readiness_v49()", 2},
-		{"app.sla_object_event_ingress_schema_readiness_v49()", 2},
-		{"app.ticket_bulk_runtime_schema_readiness_v49()", 2},
-		{"app.ticket_export_runtime_schema_readiness_v49()", 2},
+		{"app.private_schema_compatibility_journal_v50()", 1},
+		{"app.private_release_runtime_dependency_surface_hash_v50()", 1},
+		{"app.private_release_runtime_schema_readiness_v50()", 1},
+		{"app.release_runtime_schema_readiness_v50()", 2},
+		{"app.sla_trigger_action_runtime_schema_readiness_v50()", 2},
+		{"app.sla_object_event_ingress_schema_readiness_v50()", 2},
+		{"app.ticket_bulk_runtime_schema_readiness_v50()", 2},
+		{"app.ticket_export_runtime_schema_readiness_v50()", 2},
 		{"app.private_rotate_sla_readiness_v48()", 1},
 	}
 	for _, root := range roots {
@@ -211,8 +211,8 @@ func TestSchemaCompatibilityQuerySealsV49TrustedSet(t *testing.T) {
 			t.Fatalf("%s reference count = %d, want %d", root.name, got, root.count)
 		}
 	}
-	if strings.Contains(schemaCompatibilityQuery, "from app.schema_compatibility_v48()") {
-		t.Fatal("health query directly calls retired schema compatibility v48")
+	if strings.Contains(schemaCompatibilityQuery, "from app.schema_compatibility_v49()") {
+		t.Fatal("health query directly calls retired schema compatibility v49")
 	}
 	for _, stale := range []string{
 		"app.platform_identity_runtime_schema_readiness_v13()",

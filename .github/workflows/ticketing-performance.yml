@@ -25,18 +25,18 @@ jobs:
         run: >-
           docker build
           --file deploy/performance/Dockerfile
-          --build-arg REVISION=${GITHUB_SHA}
-          --tag periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          --build-arg "REVISION=${GITHUB_SHA}"
+          --tag "periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           .
 
       - name: Run hot paths against a fresh database
         run: |
           mkdir -p tmp/performance
           docker run --rm --init --stop-timeout 120 \
-            --name periapsis-performance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT} \
+            --name "periapsis-performance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --env PERIAPSIS_PERFORMANCE_CI_ACKNOWLEDGEMENT=disposable-container-postgres-18.6 \
             --volume "${GITHUB_WORKSPACE}/tmp/performance:/workspace/tmp/performance" \
-            periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+            "periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
       - name: Retain immutable performance evidence
         if: ${{ always() }}

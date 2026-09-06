@@ -18,6 +18,20 @@ function triggerBlock(workflow) {
   return normalized.slice(start, end);
 }
 
+test("type-aware lint builds exported contracts before checking their consumers", async () => {
+  const manifest = JSON.parse(
+    await readFile(resolve(root, "package.json"), "utf8"),
+  );
+  const contracts = JSON.parse(
+    await readFile(resolve(root, "packages/contracts/package.json"), "utf8"),
+  );
+  assert.equal(contracts.exports["."].types, "./dist/index.d.ts");
+  assert.deepEqual(manifest.scripts.lint.split(" && "), [
+    "corepack pnpm --filter @periapsis/contracts build",
+    "corepack pnpm -r --if-present lint",
+  ]);
+});
+
 test("canonical SLA fixture generation and checks run in Go-pinned gates", async () => {
   const manifest = JSON.parse(
     await readFile(resolve(root, "package.json"), "utf8"),
@@ -225,7 +239,7 @@ test("pull requests use fast checks while main, tags, and releases keep the full
     "process.getuid()",
     "aquasecurity/trivy-action@",
     "anchore/sbom-action@",
-    "gitleaks detect",
+    '"${RUNNER_TEMP}/gitleaks" detect',
     "kustomize build",
     "kubeconform -strict",
   ]) {
@@ -308,7 +322,28 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
     "rolling-upgrade suites require isolated predecessor databases",
   );
 
-  const standalone = new Set(["test:security:seed-audit"]);
+  // Retain the previous release's source corpus as a historical reference. Its
+  // predecessor is exercised by the isolated upgrade job, never on V50 clones.
+  const historical = new Set(["test:security:schema-compatibility-v49"]);
+  const standalone = new Set(["test:security:seed-audit", ...historical]);
+  for (const name of historical) {
+    assert.equal(
+      scripts[name],
+      "tsx tests/security/schema-compatibility-v49-runtime.ts",
+    );
+    assert.doesNotMatch(
+      aggregate,
+      new RegExp(`(?:^|\\s)run ${escapeRegExp(name)}(?:\\s|$)`, "u"),
+    );
+    assert.match(
+      workflow,
+      /script: test:security:schema-compatibility-v49-upgrade\s+database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V49_UPGRADE_TEST_DATABASE_URL/u,
+    );
+  }
+  assert.match(
+    aggregate,
+    /(?:^|\s)run test:security:schema-compatibility-v50(?:\s|$)/u,
+  );
   const securityScripts = Object.entries(scripts).filter(([name]) =>
     name.startsWith("test:security:"),
   );

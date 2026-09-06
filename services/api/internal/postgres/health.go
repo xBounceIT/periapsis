@@ -36,13 +36,13 @@ with expected_trusted_function(
   expected_config, expected_result, expected_acl_roles
 ) as (
   values
-    (1, 'compatibility', 'app.schema_compatibility_v49()', 'plpgsql', array[
+    (1, 'compatibility', 'app.schema_compatibility_v50()', 'plpgsql', array[
        'search_path=pg_catalog',
        'app.schema_compatibility_fingerprint=' || $1::text
      ]::text[],
      'TABLE(applied_count bigint, latest_created_at bigint, latest_hash text, migration_fingerprint text)',
      ` + trustedRuntimeACL + `),
-    (2, 'retired', 'app.schema_compatibility_v48()', 'plpgsql', array[
+    (2, 'retired', 'app.schema_compatibility_v49()', 'plpgsql', array[
        'search_path=pg_catalog',
        'app.schema_compatibility_fingerprint=RETIRED'
      ]::text[],
@@ -52,41 +52,41 @@ with expected_trusted_function(
      'app.private_v47_migration_convergence_schema_readiness_v1()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedOwnerACL + `),
-    (4, 'journal', 'app.private_schema_compatibility_journal_v49()',
+    (4, 'journal', 'app.private_schema_compatibility_journal_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'TABLE(applied_count bigint, latest_created_at bigint, latest_rows bigint, latest_hash text, migration_fingerprint text)',
      ` + trustedOwnerACL + `),
     (5, 'dependency',
-     'app.private_release_runtime_dependency_surface_hash_v49()',
+     'app.private_release_runtime_dependency_surface_hash_v50()',
      'sql', ` + trustedRuntimeConfig + `, 'text', ` + trustedOwnerACL + `),
     (6, 'private_release',
-     'app.private_release_runtime_schema_readiness_v49()',
+     'app.private_release_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedOwnerACL + `),
-    (7, 'release', 'app.release_runtime_schema_readiness_v49()',
+    (7, 'release', 'app.release_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedReleaseACL + `),
-    (8, 'federated', 'app.federated_authentication_schema_readiness_v49()',
+    (8, 'federated', 'app.federated_authentication_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
-    (9, 'oidc', 'app.platform_oidc_direct_runtime_schema_readiness_v49()',
+    (9, 'oidc', 'app.platform_oidc_direct_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
-    (10, 'saml', 'app.platform_saml_direct_runtime_schema_readiness_v49()',
+    (10, 'saml', 'app.platform_saml_direct_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
     (11, 'local_account',
-     'app.platform_local_account_runtime_schema_readiness_v49()',
+     'app.platform_local_account_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
-    (12, 'ticket_bulk', 'app.ticket_bulk_runtime_schema_readiness_v49()',
+    (12, 'ticket_bulk', 'app.ticket_bulk_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedRuntimeACL + `),
-    (13, 'ticket_export', 'app.ticket_export_runtime_schema_readiness_v49()',
+    (13, 'ticket_export', 'app.ticket_export_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedRuntimeACL + `),
     (14, 'ticket_metadata',
-     'app.ticket_metadata_runtime_schema_readiness_v49()',
+     'app.ticket_metadata_runtime_schema_readiness_v50()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
     (15, 'sla_rotation', 'app.private_rotate_sla_readiness_v48()',
@@ -200,36 +200,36 @@ trusted_function_state as (
 )
 select applied_count, latest_created_at, latest_hash, migration_fingerprint,
        ARRAY[
-         app.release_runtime_schema_readiness_v49(),
-         app.federated_authentication_schema_readiness_v49(),
-         app.platform_oidc_direct_runtime_schema_readiness_v49(),
-         app.platform_saml_direct_runtime_schema_readiness_v49(),
-         app.platform_local_account_runtime_schema_readiness_v49(),
-         app.ticket_bulk_runtime_schema_readiness_v49(),
-         app.ticket_export_runtime_schema_readiness_v49(),
-         app.ticket_metadata_runtime_schema_readiness_v49()
+         app.release_runtime_schema_readiness_v50(),
+         app.federated_authentication_schema_readiness_v50(),
+         app.platform_oidc_direct_runtime_schema_readiness_v50(),
+         app.platform_saml_direct_runtime_schema_readiness_v50(),
+         app.platform_local_account_runtime_schema_readiness_v50(),
+         app.ticket_bulk_runtime_schema_readiness_v50(),
+         app.ticket_export_runtime_schema_readiness_v50(),
+         app.ticket_metadata_runtime_schema_readiness_v50()
        ]::boolean[],
        trusted.source_hashes,
        trusted.catalog_ready
-from app.schema_compatibility_v49()
+from app.schema_compatibility_v50()
 cross join trusted_function_state as trusted
 `
 
 var expectedTrustedFunctionSourceHashes = [...]string{
-	expectedSchemaCompatibilityV49SourceHash,
-	expectedRetiredSchemaCompatibilityV48SourceHash,
+	expectedSchemaCompatibilityV50SourceHash,
+	expectedRetiredSchemaCompatibilityV49SourceHash,
 	expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash,
-	expectedPrivateSchemaCompatibilityJournalV49SourceHash,
-	expectedPrivateReleaseRuntimeDependencySurfaceHashV49SourceHash,
-	expectedPrivateReleaseRuntimeReadinessV49SourceHash,
-	expectedReleaseRuntimeReadinessV49SourceHash,
-	expectedFederatedAuthenticationReadinessV49SourceHash,
-	expectedPlatformOIDCDirectRuntimeReadinessV49SourceHash,
-	expectedPlatformSAMLDirectRuntimeReadinessV49SourceHash,
-	expectedPlatformLocalAccountRuntimeReadinessV49SourceHash,
-	expectedTicketBulkRuntimeReadinessV49SourceHash,
-	expectedTicketExportRuntimeReadinessV49SourceHash,
-	expectedTicketMetadataRuntimeReadinessV49SourceHash,
+	expectedPrivateSchemaCompatibilityJournalV50SourceHash,
+	expectedPrivateReleaseRuntimeDependencySurfaceHashV50SourceHash,
+	expectedPrivateReleaseRuntimeReadinessV50SourceHash,
+	expectedReleaseRuntimeReadinessV50SourceHash,
+	expectedFederatedAuthenticationReadinessV50SourceHash,
+	expectedPlatformOIDCDirectRuntimeReadinessV50SourceHash,
+	expectedPlatformSAMLDirectRuntimeReadinessV50SourceHash,
+	expectedPlatformLocalAccountRuntimeReadinessV50SourceHash,
+	expectedTicketBulkRuntimeReadinessV50SourceHash,
+	expectedTicketExportRuntimeReadinessV50SourceHash,
+	expectedTicketMetadataRuntimeReadinessV50SourceHash,
 	expectedPrivateRotateSLAReadinessV48SourceHash,
 }
 

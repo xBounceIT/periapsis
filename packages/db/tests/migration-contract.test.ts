@@ -269,6 +269,8 @@ describe("PostgreSQL migration chain", () => {
       "0227_tenant_webhook_url_policy.sql",
       "0228_tenant_federation_administration.sql",
       "0229_v49_compatibility.sql",
+      "0230_session_logout_nullable_tenant.sql",
+      "0231_v50_compatibility.sql",
     ]);
   });
 

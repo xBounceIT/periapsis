@@ -163,31 +163,6 @@ function readToRegprocedureValues(
 }
 
 describe("schema compatibility V49 manifest", () => {
-  it("keeps the current migration bundle and serving consumers on V49", () => {
-    expect(manifest.expectedMigrationCount).toBe(v49MigrationCount);
-    expect(manifest.expectedMigrations).toHaveLength(v49MigrationCount);
-    expect(manifest.expectedMigrations.at(-1)?.tag).toBe(v49Tag);
-    for (const path of [
-      "services/api/internal/postgres/health.go",
-      "services/worker/internal/postgres/health.go",
-    ]) {
-      const source = readFileSync(resolve(repositoryRoot, path), "utf8");
-      expect(source).toContain("from app.schema_compatibility_v49()");
-      expect(source).toContain("expectedSchemaCompatibilityV49SourceHash");
-      expect(source).toContain(
-        "expectedRetiredSchemaCompatibilityV48SourceHash",
-      );
-      expect(source).not.toMatch(/schema_compatibility_v50|ReadinessV50/u);
-    }
-    const runner = readFileSync(
-      resolve(repositoryRoot, "packages/db/src/admin/schema-migration.ts"),
-      "utf8",
-    );
-    expect(runner).toContain(
-      "expectedSealSchemaCompatibilityManifestV49SourceHash",
-    );
-  });
-
   it("pins the immutable complete 0000-0229 prefix inside the current bundle", () => {
     const journal = readJournal(resolve(metaRoot, "_journal.json"));
     const sqlFiles = readdirSync(migrationsRoot)

@@ -487,7 +487,7 @@ async function main(): Promise<void> {
   const [readiness] = await primary<
     Array<{ watcher_ready: boolean; convergence_ready: boolean }>
   >`
-    SELECT app.release_runtime_schema_readiness_v49() AS watcher_ready,
+    SELECT app.release_runtime_schema_readiness_v50() AS watcher_ready,
            app.private_v47_migration_convergence_schema_readiness_v1()
              AS convergence_ready
   `;
@@ -562,12 +562,12 @@ async function main(): Promise<void> {
         $function$;
       `);
       const [tampered] = await transaction<Array<{ ready: boolean }>>`
-        SELECT app.release_runtime_schema_readiness_v49() AS ready
+        SELECT app.release_runtime_schema_readiness_v50() AS ready
       `;
       assert.equal(
         tampered?.ready,
         false,
-        "V49 release readiness accepted a helper without Unicode edge whitespace",
+        "V50 release readiness accepted a helper without Unicode edge whitespace",
       );
       throw unicodeWhitespaceTamperRollback;
     }),
@@ -576,7 +576,7 @@ async function main(): Promise<void> {
   const [afterUnicodeWhitespaceTamper] = await primary<
     Array<{ ready: boolean }>
   >`
-    SELECT app.release_runtime_schema_readiness_v49() AS ready
+    SELECT app.release_runtime_schema_readiness_v50() AS ready
   `;
   assert.equal(afterUnicodeWhitespaceTamper?.ready, true);
 
@@ -591,12 +591,12 @@ async function main(): Promise<void> {
         CHECK (display_name_snapshot !~ '[[:cntrl:]]')
     `;
     const [tampered] = await transaction<Array<{ ready: boolean }>>`
-      SELECT app.release_runtime_schema_readiness_v49() AS ready
+      SELECT app.release_runtime_schema_readiness_v50() AS ready
     `;
     assert.equal(
       tampered?.ready,
       false,
-      "V49 release readiness accepted a watcher snapshot constraint without bidi controls",
+      "V50 release readiness accepted a watcher snapshot constraint without bidi controls",
     );
     await transaction`
       ALTER TABLE public.ticket_watcher_events
@@ -617,7 +617,7 @@ async function main(): Promise<void> {
       ) TO periapsis_auditor
     `;
     const [tampered] = await transaction<Array<{ ready: boolean }>>`
-      SELECT app.release_runtime_schema_readiness_v49() AS ready
+      SELECT app.release_runtime_schema_readiness_v50() AS ready
     `;
     assert.equal(
       tampered?.ready,

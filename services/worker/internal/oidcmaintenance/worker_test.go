@@ -21,6 +21,7 @@ import (
 )
 
 func TestWorkerRefreshesPreclaimedSnapshotAcrossAuthorityScopes(t *testing.T) {
+	const claimBookkeepingDelay = 2 * time.Millisecond
 	for _, authority := range []string{"tenant", "admitted_platform", "direct_platform"} {
 		t.Run(authority, func(t *testing.T) {
 			now := oidcMaintenanceTestNow()
@@ -29,6 +30,7 @@ func TestWorkerRefreshesPreclaimedSnapshotAcrossAuthorityScopes(t *testing.T) {
 			repository := &oidcMaintenanceFakeRepository{}
 			repository.claim = onceOIDCWork(KindRefresh, &Work{Kind: KindRefresh, Refresh: &claim})
 			repository.load = encryptedOIDCSecretLoader(t, keyring, []byte("historical-client-secret"))
+			var runStarted time.Time
 			upstream := &oidcMaintenanceFakeUpstream{refresh: func(
 				_ context.Context,
 				request federatedoidc.StoredRefreshExchangeRequest,
@@ -36,15 +38,29 @@ func TestWorkerRefreshesPreclaimedSnapshotAcrossAuthorityScopes(t *testing.T) {
 			) (RefreshResult, error) {
 				if request.EndpointURL != claim.Endpoint || request.ClientAuthentication != claim.ClientAuthentication ||
 					request.ClientID != claim.ClientID || string(request.ClientSecret) != "historical-client-secret" ||
-					string(request.RefreshToken) != "claimed-refresh-token" || !requestNow.Equal(now) {
+					string(request.RefreshToken) != "claimed-refresh-token" {
 					t.Fatalf("unexpected refresh request: %s", request.String())
+				}
+				// The DB instant advances by actual claim/bookkeeping elapsed time,
+				// bounded above by this entire RunOnce interval, not a fixed tolerance.
+				if requestNow.Before(now.Add(claimBookkeepingDelay)) ||
+					requestNow.After(now.Add(time.Since(runStarted))) ||
+					requestNow.Location() != time.UTC ||
+					!requestNow.Equal(requestNow.Truncate(time.Microsecond)) {
+					t.Fatalf("refresh time %s is outside the observed DB-clock interval", requestNow)
 				}
 				return RefreshResult{
 					RefreshToken: []byte("rotated-refresh-token"), AccessExpiresAt: now.Add(2 * time.Hour),
 				}, nil
 			}}
 			worker := oidcMaintenanceTestWorker(t, repository, upstream, keyring, now, 3)
+			worker.tracer = &oidcMaintenanceRecordingTracer{finishHook: func(name string) {
+				if name == "oidc.maintenance.claim."+string(KindRefresh) {
+					time.Sleep(claimBookkeepingDelay)
+				}
+			}}
 
+			runStarted = time.Now()
 			summary, err := worker.RunOnce(context.Background())
 			if err != nil {
 				t.Fatalf("RunOnce() error = %v", err)

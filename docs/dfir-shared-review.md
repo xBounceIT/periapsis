@@ -1,6 +1,6 @@
 # Shared DFIR review ledger
 
-Last updated: 2026-09-05. This is an in-flight implementation ledger, not release
+Last updated: 2026-09-06. This is an in-flight implementation ledger, not release
 acceptance. The complete objective and release gates remain in `TASKS.md` and
 `release-acceptance.md`.
 
@@ -23,9 +23,9 @@ acceptance. The complete objective and release gates remain in `TASKS.md` and
   passes IOC and asset replacement through both Case and Alert, with one resource linked
   to two Cases and one Alert. It checks exact redacted activity on all three roots,
   immutable historical replay after later writes, stale CAS, independent loss of a
-  non-path root's manage permission, unchanged 16-table denial snapshots and restoration.
-  Evidence: `.tmp/periapsis_dfir_shared_content_be02d97a6a7f4fc3acc3929782d4644e.log`
-  and `-proof.json`; source hashes and the 230-migration template stayed stable, and the
+  non-path root's manage permission, unchanged 18-table denial snapshots and restoration.
+  Repeated on V50: `.tmp/v50-go-5a6d0dfd9ab94f2c8011b15cf5191520.log`
+  and `-proof.json`; source hashes and the 232-migration template stayed stable, and the
   exact clone was dropped. This is native PostgreSQL evidence, not container acceptance.
   The earlier RED clones exposed three production adapter defects: omitted tags/MAC
   lists were sent as SQL NULL; asset readback compared equivalent nil/empty tags as
@@ -58,10 +58,13 @@ acceptance. The complete objective and release gates remain in `TASKS.md` and
   permitted SLO positive per supported origin: create the continuation using the public
   local-revoke ABI, claim the exact pinned SAML material/configuration through the public
   claim ABI, and reject a second claim. The new tenant-origin positive passes after the
-  Go actor-context correction; direct platform is RED because the SQL envelope rejects
-  the required `tenantId:null`. See the current logout regression and retained proof in
-  `release-acceptance.md`. Full three-origin closure needs a forward migration/seal and
-  rerun, independently of the external IdP/browser gate.
+  Go actor-context correction. V50 fixes the `tenantId:null` envelope and the matrix
+  reaches its third origin, tenant admission through a platform SAML provider. That
+  origin remains RED: its fixture needs complete identity/binding/epoch/grant rows, and
+  the inherited typed-provenance constraint is OIDC-only despite the real SAML switch
+  writer. Full three-origin closure and first session revalidation still need a forward
+  repair and runtime proof, independently of the external IdP/browser gate. See the
+  current evidence and exact retained failure in `release-acceptance.md`.
 - IOC/asset receipt and request-boundary closure (2026-09-05): both Case and Alert web
   replacements now require the receipt revision to equal the originally requested
   revision plus one, without consulting later resource state. The 24-case matrix covers

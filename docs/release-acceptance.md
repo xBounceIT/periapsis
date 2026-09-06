@@ -1,6 +1,6 @@
 # Release acceptance evidence
 
-Last audited: 2026-09-05
+Last audited: 2026-09-06
 
 This matrix maps the 13 required end-to-end scenarios to source, focused tests, and the
 remaining proof boundary. The open source items in [`TASKS.md`](../TASKS.md) remain release
@@ -45,6 +45,51 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+The current V50 candidate has 232 migrations, ending at 0231, with catalog digest
+`e68c7797c4f72188d1ddd4d133e5adff3f099004578fa77ad9f6472027fea9f8`.
+Migration 0230 fixes the explicit-null tenant coordinate for platform logout while
+preserving required-coordinate validation, actor/tenant authorization and transactional
+audit. Migration 0231 retires runtime access to all 12 V49 roots. No historical SQL was
+hotpatched or rewritten; the Git attribute correction for 0198 restores its canonical
+bytes rather than changing its deployed source.
+
+Verified on isolated native PostgreSQL 18.6 UTF8/C databases:
+
+- Fresh normal migration and a second normal runner call agree on all 232 hashes,
+  readiness and catalog digest. Normal runtime-role provisioning preserves that digest.
+- The real Go/PostgreSQL logout test passes tenant A, tenant B and platform-local on a
+  reused connection, including credential denials, immutable replay and cancelled audit
+  rollback. The IOC/asset replacement test passes all four Case/Alert cells and 18-table
+  denial snapshots. Proof: `.tmp/v50-go-5a6d0dfd9ab94f2c8011b15cf5191520-proof.json`.
+- Historical V49 upgrade and the new V50 230→231→232 upgrade pass. They retain exact
+  predecessor sealing, NOLOGIN rejection, unavailable intermediate readiness, immutable
+  tenant receipts, nullable platform logout, one audit and normal-runner restart.
+  Proofs: `.tmp/schema-upgrade-V49-14aef6997af64314bd3a9aca25ce99e6-proof.json` and
+  `.tmp/schema-upgrade-V50-c81fb4cb39784f43ab97529498d22f95-proof.json`.
+
+The full current aggregate is **not green**. The expanded three-origin SAML test reaches
+tenant admission through a platform SAML provider and fails its deferred typed-provenance
+constraint. The production switch writer in 0186 emits SAML provenance, but the inherited
+0165 constraint (renamed in 0207 and delegated to by 0210) accepts OIDC only. The new
+fixture also needs complete identity/binding/epoch/grant rows. Neither relabelling SAML
+as OIDC nor disabling triggers is an acceptable repair. Retained failure:
+`.tmp/v50-saml-d3084f1a1c4f4ffb9692011b600c66cd-proof.json`.
+
+The complete V50 catalog tamper corpus passes after normal least-privileged login
+provisioning, including all retained scenarios and the new retired-V49 mutations.
+Proof: `.tmp/v50-catalog-86fc00ad064b4daba83bbbc0d97b4264-proof.json`; the clone was
+dropped and source/template pins stayed unchanged. Complete repository verification
+passes (`.tmp/verify-v50-candidate-formatted-20260906.log`): web 2,152, DB 627,
+notifier 175 with one conditional Mailpit skip, operations 52, generated drift, builds,
+Go vet and Go tests. The MFA35 upgrade additionally passes real TCP SCRAM, including
+wrong-password rejection and the non-drained-session guard; proof:
+`.tmp/mfa35-scram-79787bed140846c4aeab45db07cf642b-proof.json`.
+The earlier 58-suite/19-upgrade results below are historical V49 evidence, not current
+V50 acceptance. Native loopback `trust` tests do not prove TCP SCRAM authentication,
+Docker startup, production deployment or external IdP/browser flows.
+
+## Historical V49 database evidence
 
 The post-SR-17 candidate completed the local database gates on 2026-09-05. Fresh raw
 derivation and a separate empty database using the normal `db:migrate` runner both applied

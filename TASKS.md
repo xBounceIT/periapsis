@@ -1,6 +1,6 @@
 # Release evidence backlog
 
-Last audited: 2026-09-05
+Last audited: 2026-09-06
 
 This is the authoritative release backlog. A checked item means the implementation and a
 focused repository gate exist; it does not mean every database-runtime gate is green for
@@ -87,10 +87,10 @@ final-journal database gates and the remaining release boundaries.
       Track validated closing findings in `docs/dfir-shared-review.md`.
       The actual Go/PostgreSQL replacement matrix now passes IOC/asset through both Case
       and Alert across three shared roots: exact activity, historical replay, stale CAS,
-      non-path permission revocation, 16-table denial snapshots and restored positive
+      non-path permission revocation, 18-table denial snapshots and restored positive
       controls. It exposed and corrected nil-array SQL mapping, asset empty-tag readback
       comparison and the Alert legacy revision-collision error category; SQL is unchanged.
-      Evidence: `.tmp/periapsis_dfir_shared_content_be02d97a6a7f4fc3acc3929782d4644e.log`
+      Repeated on V50: `.tmp/v50-go-5a6d0dfd9ab94f2c8011b15cf5191520.log`
       and its proof JSON. The remaining native integration gap is authorized workspace
       loading with hidden roots, capability differences, revocation and cross-tenant
       denial; lower-level attachment reads do not replace that projection test.
@@ -165,30 +165,57 @@ final-journal database gates and the remaining release boundaries.
       adapter now installs the verified actor/tenant in its own short transaction;
       17 unit scenarios and a fresh-connection Go/PostgreSQL proof pass for two tenants,
       exact replay, rejected credentials, context isolation and cancellation during a
-      locked audit write. A second defect remains: the current public SQL envelope
-      rejects the explicit `tenantId:null` required by platform logout. Both direct SAML
-      and the real Go platform-local case reproduce it. A forward SQL repair and new
-      compatibility seal, followed by all affected gates, are required; no hotpatch was
-      applied. All diagnostic clones were dropped with stable canonical template pins.
-- [x] Rebuild the final compatibility seal on the stable journal, then run the fresh full
+      locked audit write. Forward migration 0230 now permits explicit `tenantId:null`
+      for platform logout without accepting an omitted tenant coordinate; 0231 seals
+      the 232-migration V50 journal. The complete Go logout matrix passes both tenants,
+      platform-local, invalid credentials, exact replay and cancellation. Fresh normal
+      migration/restart and isolated V49/V50 upgrades pass with unchanged data/audit.
+      The expanded SAML matrix now reaches its third origin but remains RED: the
+      inherited typed-primary-provenance constraint accepts only OIDC platform-provider
+      sessions, conflicting with the real SAML tenant-switch writer. Its synthetic third
+      origin also needs complete identity/binding/epoch/access-grant fixture rows.
+      Repair both without weakening provenance, then repeat all three origins. Evidence:
+      `.tmp/v50-saml-d3084f1a1c4f4ffb9692011b600c66cd.log`; no SQL hotpatch was applied.
+- [ ] Rebuild the final compatibility seal on the stable journal, then run the fresh full
       PostgreSQL 18.6 `test:security` aggregate and complete upgrade/compatibility matrix,
       replacing all pre-seal database evidence.
-      The post-SR-17 seal `048078bb2a5c69057ec356857e323d55d0b97a43a5894e620140eab1f758414e`
+      Historical V49 seal `048078bb2a5c69057ec356857e323d55d0b97a43a5894e620140eab1f758414e`
       passed all 58 security suites in one aggregate, RLS, repeated seed/audit, the expanded
       13-test Go CI selection and all 19 upgrade entries with stable source hashes.
       These are native PostgreSQL 18.6 Windows/loopback `trust` results, not Docker or SCRAM
       authentication evidence. Exact source hashes and proof locations are recorded in
-      `docs/release-acceptance.md`; older candidate results remain historical only.
+      `docs/release-acceptance.md`; these results do not cover current V50. Repeat the
+      current 58-suite aggregate, RLS, seed/audit and 20-entry upgrade matrix after the
+      SAML provenance correction; isolated V49/V50 upgrade proofs already pass.
 - [x] Repeat the complete `pnpm verify` command after the final frontend/SR-18 changes.
-      The post-real-worker/preset-event command passed with exit 0: web 155 files/
-      1,993 tests, DB 71 files/616 tests, notifier 174 with conditional Mailpit skipped,
-      operations 44, generated drift (including permission catalog and canonical SLA
-      fixtures), builds, Go vet/tests including the new performance CLI.
-      All 90 performance tests pass separately, including real child-process invocation.
-      Evidence: `.tmp/verify-performance-real-worker-final-20260905.log` and
-      `.tmp/performance-real-worker-contract-final-timed-20260905.log`. The earlier
-      timeout/race failures are retained as historical diagnostics, not current results.
+      V50 verification passed with exit 0: web 155 files/2,152 tests, DB 73 files/627
+      tests, notifier 175 with conditional Mailpit skipped, operations 52, generated
+      drift (including permission catalog and canonical SLA fixtures), builds, Go
+      vet/tests. Evidence: `.tmp/verify-v50-candidate-formatted-20260906.log`.
+      Subsequent current-upgrade assertions also pass DB unit/typecheck/lint; MFA35's
+      complete upgrade passes actual TCP SCRAM with wrong-password rejection and
+      verified session-drain fencing. Proof:
+      `.tmp/mfa35-scram-79787bed140846c4aeab45db07cf642b-proof.json`.
+      The earlier performance and V49 gates are retained as historical evidence.
       Further source edits still require affected gates; this is not release acceptance.
+
+## GitHub CI repair evidence
+
+- [x] Create the private `xBounceIT/periapsis` repository and publish `main`; preserve
+      subsequent user-authored README edits when integrating local work.
+- [x] Restore the canonical historical bytes of migration 0198 in Git with an exact-path
+      `-text` attribute. Its one embedded CRLF is part of its deployed SHA256; do not
+      rewrite its SQL or normalize that file. Real Git tests pass with all three
+      `core.autocrlf` modes; every other migration retains the normal LF policy.
+- [x] Build exported contracts before type-aware lint, correct the worker elapsed-clock
+      assertion and MFA35 fixture credentials, update pinned x/crypto and gRPC patches,
+      quote workflow shell arguments and export the selected Docker daemon to scanners.
+      DB unit tests: 627 PASS; operations: 52 PASS; actionlint plus ShellCheck: PASS.
+      Local checks are not a successful rerun of the affected remote container jobs.
+- [ ] Obtain green remote CI for the candidate. Gitleaks fixture/generated-source
+      false positives, the disposable performance image's root wrapper, web multi-arch
+      timeout, actual image vulnerability scans/SBOM, and composed acceptance still need
+      verified resolution/evidence. Do not add broad scanner suppressions.
 
 ## Release evidence to obtain
 

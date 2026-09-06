@@ -233,7 +233,7 @@ describe("tenant LDAP identity-mapping protected ABI", () => {
     );
   });
 
-  it("seals exact v9 readiness while runtime advances to v10", () => {
+  it("preserves exact v9 readiness while runtime uses v50", () => {
     expect(readiness).toContain(
       "CREATE FUNCTION app.schema_compatibility_v9()",
     );
@@ -243,8 +243,10 @@ describe("tenant LDAP identity-mapping protected ABI", () => {
     expect(readiness).toContain("schema compatibility v7 must be retired");
     expect(readiness).toContain("relation.relforcerowsecurity");
     expect(readiness).toContain("source.kind = 'identity_mapping'");
-    expect(apiHealth).toContain("from app.schema_compatibility_v49()");
-    expect(workerHealth).toContain("from app.schema_compatibility_v49()");
+    expect(apiHealth).toContain("from app.schema_compatibility_v50()");
+    expect(workerHealth).toContain("from app.schema_compatibility_v50()");
+    expect(apiHealth).not.toContain("from app.schema_compatibility_v49()");
+    expect(workerHealth).not.toContain("from app.schema_compatibility_v49()");
     expect(apiHealth).not.toContain("from app.schema_compatibility_v47()");
     expect(workerHealth).not.toContain("from app.schema_compatibility_v47()");
     expect(workerHealth).toContain("app.verify_identity_keyring_v3(");

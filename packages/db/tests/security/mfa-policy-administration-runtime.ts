@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 
 import postgres from "postgres";
 
+import {
+  expectedMigrationCount,
+  expectedMigrationCreatedAt,
+} from "../../src/admin/schema-compatibility-manifest.gen.js";
+
 type ErrorWithCode = Error & { code?: string };
 type JsonObject = Record<string, postgres.JSONValue>;
 
@@ -291,15 +296,15 @@ try {
     SELECT count(*)::integer AS count,max(created_at)::text AS latest
     FROM drizzle.__drizzle_migrations
   `;
-  assert.equal(journal?.count, 230);
-  assert.equal(journal?.latest, "1788520217531");
+  assert.equal(journal?.count, expectedMigrationCount);
+  assert.equal(journal?.latest, String(expectedMigrationCreatedAt));
 
   await Promise.all(
     (["periapsis_api", "periapsis_worker"] as const).map(async (role) => {
       const [ready] = await sql.begin(async (transaction) => {
         await transaction.unsafe(`SET LOCAL ROLE "${role}"`);
         return transaction<{ value: boolean }[]>`
-          SELECT app.release_runtime_schema_readiness_v49() AS value
+          SELECT app.release_runtime_schema_readiness_v50() AS value
         `;
       });
       assert.equal(ready?.value, true);

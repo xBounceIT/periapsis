@@ -1509,25 +1509,26 @@ describe("direct platform OIDC v39 database contract", () => {
     );
   });
 
-  it("binds API and worker health to the current V49 release roots", () => {
+  it("binds API and worker health to the current V50 release roots", () => {
     for (const health of [apiHealth, workerHealth]) {
       for (const root of [
+        "app.schema_compatibility_v50()",
         "app.schema_compatibility_v49()",
-        "app.schema_compatibility_v48()",
         "app.private_v47_migration_convergence_schema_readiness_v1()",
-        "app.private_schema_compatibility_journal_v49()",
-        "app.private_release_runtime_dependency_surface_hash_v49()",
-        "app.private_release_runtime_schema_readiness_v49()",
-        "app.release_runtime_schema_readiness_v49()",
-        "app.ticket_bulk_runtime_schema_readiness_v49()",
-        "app.ticket_export_runtime_schema_readiness_v49()",
+        "app.private_schema_compatibility_journal_v50()",
+        "app.private_release_runtime_dependency_surface_hash_v50()",
+        "app.private_release_runtime_schema_readiness_v50()",
+        "app.release_runtime_schema_readiness_v50()",
+        "app.ticket_bulk_runtime_schema_readiness_v50()",
+        "app.ticket_export_runtime_schema_readiness_v50()",
         "app.private_rotate_sla_readiness_v48()",
       ]) {
         expect(health).toContain(root);
       }
       expect(health).toContain(
-        "expectedRetiredSchemaCompatibilityV48SourceHash",
+        "expectedRetiredSchemaCompatibilityV49SourceHash",
       );
+      expect(health).not.toContain("from app.schema_compatibility_v49()");
       expect(health).not.toContain("from app.schema_compatibility_v48()");
       expect(health).not.toContain(
         "app.platform_identity_runtime_schema_readiness_v13()",

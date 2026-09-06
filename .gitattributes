@@ -1,1 +1,4 @@
 packages/db/migrations/*.sql text eol=lf
+# V45's deployed source contains one embedded CRLF. Its historical byte checksum
+# is part of the immutable compatibility chain; never normalize this file.
+packages/db/migrations/0198_v45_compatibility.sql -text

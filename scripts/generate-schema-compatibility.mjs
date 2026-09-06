@@ -2863,6 +2863,100 @@ if (migrationFiles.includes("0229_v49_compatibility.sql")) {
   );
 }
 
+// Register the new release alongside, never in place of, its immutable V49
+// predecessor. The retired root retains the exact historical source hash.
+if (migrationFiles.includes("0231_v50_compatibility.sql")) {
+  functionSourceDefinitions.push(
+    {
+      constant: "SchemaCompatibilityV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "schema_compatibility_v50",
+    },
+    {
+      constant: "RetiredSchemaCompatibilityV49",
+      name: "schema_compatibility_v49",
+      sourceConstant: "SchemaCompatibilityV49",
+    },
+    {
+      constant: "PrivateSchemaCompatibilityJournalV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "private_schema_compatibility_journal_v50",
+    },
+    {
+      constant: "PrivateReleaseRuntimeDependencySurfaceHashV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "private_release_runtime_dependency_surface_hash_v50",
+    },
+    {
+      constant: "PrivateReleaseRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "private_release_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "ReleaseRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "release_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "FederatedAuthenticationReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "federated_authentication_schema_readiness_v50",
+    },
+    {
+      constant: "PlatformOIDCDirectRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "platform_oidc_direct_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "PlatformSAMLDirectRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "platform_saml_direct_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "PlatformLocalAccountRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "platform_local_account_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "SLATriggerActionRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "sla_trigger_action_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "SLAObjectEventIngressReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "sla_object_event_ingress_schema_readiness_v50",
+    },
+    {
+      constant: "TicketBulkRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "ticket_bulk_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "TicketExportRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "ticket_export_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "TicketMetadataRuntimeReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "ticket_metadata_runtime_schema_readiness_v50",
+    },
+    {
+      constant: "NotificationDispatchReadinessV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "notification_dispatch_readiness_v50",
+    },
+    {
+      constant: "SealSchemaCompatibilityManifestV50",
+      migration: "0231_v50_compatibility.sql",
+      name: "seal_schema_compatibility_manifest",
+      hasArguments: true,
+      runtime: false,
+    },
+  );
+}
+
 if (
   new Set(functionSourceDefinitions.map(({ constant }) => constant)).size !==
   functionSourceDefinitions.length
@@ -2982,17 +3076,17 @@ writeFileSync(
 );
 
 const notifierSourceConstants = new Set([
-  "SchemaCompatibilityV49",
-  "PrivateReleaseRuntimeDependencySurfaceHashV49",
-  "PrivateReleaseRuntimeReadinessV49",
-  "ReleaseRuntimeReadinessV49",
-  "NotificationDispatchReadinessV49",
+  "SchemaCompatibilityV50",
+  "PrivateReleaseRuntimeDependencySurfaceHashV50",
+  "PrivateReleaseRuntimeReadinessV50",
+  "ReleaseRuntimeReadinessV50",
+  "NotificationDispatchReadinessV50",
 ]);
 const notifierFunctionSourceHashes = functionSourceHashes.filter(
   ({ constant }) => notifierSourceConstants.has(constant),
 );
 if (notifierFunctionSourceHashes.length !== notifierSourceConstants.size) {
-  throw new Error("Missing a trusted V49 notifier function source");
+  throw new Error("Missing a trusted V50 notifier function source");
 }
 const notifierTypescriptTarget = resolve(
   repositoryRoot,

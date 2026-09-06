@@ -1611,6 +1611,20 @@
       "when": 1788520217531,
       "tag": "0229_v49_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1788650088779,
+      "tag": "0230_session_logout_nullable_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1788650095675,
+      "tag": "0231_v50_compatibility",
+      "breakpoints": true
     }
   ]
 }

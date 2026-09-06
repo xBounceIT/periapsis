@@ -132,7 +132,7 @@ const stageRoot = await mkdtemp(
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
 const writerSql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
 
-async function enableScramLogin(login: string): Promise<void> {
+async function enableScramLogin(login: string): Promise<string> {
   const password = randomBytes(32).toString("base64url");
   const [command] = await sql<{ statement: string }[]>`
     SELECT pg_catalog.format(
@@ -143,6 +143,7 @@ async function enableScramLogin(login: string): Promise<void> {
   `;
   assert(command, `could not build SCRAM provisioning command for ${login}`);
   await sql.unsafe(command.statement);
+  return password;
 }
 
 async function writeStage(entries: readonly JournalEntry[]): Promise<void> {
@@ -398,6 +399,8 @@ try {
       "NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS " +
       "CONNECTION LIMIT 40",
   );
+  await sql.unsafe("SET password_encryption = 'scram-sha-256'");
+  const pausedRuntimePassword = await enableScramLogin("periapsis_api_login");
   await assert.rejects(
     migrate(drizzle(sql), { migrationsFolder: stageRoot }),
     (error: unknown) => {
@@ -412,6 +415,7 @@ try {
     max: 1,
     onnotice: () => undefined,
     username: "periapsis_api_login",
+    password: pausedRuntimePassword,
   });
   try {
     await pausedRuntime`SELECT pg_backend_pid()`;
@@ -588,15 +592,23 @@ try {
     }[]
   >`
     SELECT
-      app.private_release_runtime_dependency_surface_hash_v49()
+      app.private_release_runtime_dependency_surface_hash_v50()
         AS "dependencyHash",
-      app.private_release_runtime_schema_readiness_v49()
+      app.private_release_runtime_schema_readiness_v50()
         AS "privateReady",
-      app.release_runtime_schema_readiness_v49()
+      app.release_runtime_schema_readiness_v50()
         AS "publicReady"
   `;
-  assert.equal(quiescedReadiness?.privateReady, true);
-  assert.equal(quiescedReadiness?.publicReady, true);
+  assert.equal(
+    quiescedReadiness?.privateReady,
+    true,
+    "quiesced current V50 private readiness",
+  );
+  assert.equal(
+    quiescedReadiness?.publicReady,
+    true,
+    "quiesced current V50 public readiness",
+  );
 
   await sql.unsafe("SET password_encryption = 'scram-sha-256'");
   await enableScramLogin("periapsis_api_login");
@@ -611,11 +623,11 @@ try {
     }[]
   >`
     SELECT
-      app.private_release_runtime_dependency_surface_hash_v49()
+      app.private_release_runtime_dependency_surface_hash_v50()
         AS "dependencyHash",
-      app.private_release_runtime_schema_readiness_v49()
+      app.private_release_runtime_schema_readiness_v50()
         AS "privateReady",
-      app.release_runtime_schema_readiness_v49()
+      app.release_runtime_schema_readiness_v50()
         AS "publicReady"
   `;
   assert.deepEqual(provisionedReadiness, {

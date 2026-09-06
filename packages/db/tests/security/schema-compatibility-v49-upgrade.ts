@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   copyFile,
   mkdir,
@@ -15,14 +16,10 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import {
-  expectedMigrationCount,
-  expectedMigrationCreatedAt,
-  expectedMigrationFingerprint,
-  expectedMigrationHash,
   expectedMigrations,
   expectedSealSchemaCompatibilityManifestV48SourceHash,
+  expectedSealSchemaCompatibilityManifestV49SourceHash,
 } from "../../src/admin/schema-compatibility-manifest.gen.js";
-import { migrateSchema } from "../../src/admin/schema-migration.js";
 
 type CompatibilityRow = {
   applied_count: number | string;
@@ -102,10 +99,17 @@ assert.deepEqual(v48Latest, {
   hash: "d6a20868f2707d3ff199cccbb2f6c1afc66d068f8f9bc41660482c010317a50a",
   tag: "0218_v48_compatibility",
 });
-assert.equal(journal.entries.length, 230);
-assert.equal(journal.entries.at(-1)?.tag, "0229_v49_compatibility");
-assert.equal(expectedMigrationCount, 230);
-assert.equal(expectedMigrations.length, expectedMigrationCount);
+const v49MigrationCount = 230;
+const v49Entries = journal.entries.slice(0, v49MigrationCount);
+const v49Manifest = expectedMigrations.slice(0, v49MigrationCount);
+const v49Latest = v49Manifest.at(-1);
+assert.equal(v49Entries.length, v49MigrationCount);
+assert.equal(v49Entries.at(-1)?.tag, "0229_v49_compatibility");
+assert(v49Latest);
+assert.equal(v49Latest.tag, "0229_v49_compatibility");
+const v49Fingerprint = v49Manifest
+  .map((migration) => `${migration.createdAt}@${migration.hash}`)
+  .join(":");
 
 const v48Fingerprint = v48Manifest
   .map((migration) => `${migration.createdAt}@${migration.hash}`)
@@ -127,6 +131,31 @@ const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-schema-v49-rolling-v48-"),
 );
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+
+async function stagePrefix(entries: JournalEntry[]): Promise<void> {
+  await mkdir(resolve(stageRoot, "meta"), { recursive: true });
+  await writeFile(
+    resolve(stageRoot, "meta/_journal.json"),
+    `${JSON.stringify({ ...journal, entries }, null, 2)}\n`,
+  );
+  await Promise.all(
+    entries.map(async (entry, index) => {
+      const expected = expectedMigrations[index];
+      assert(expected);
+      assert.equal(entry.idx, index);
+      assert.equal(entry.tag, expected.tag);
+      assert.equal(entry.when, expected.createdAt);
+      const path = resolve(migrationsRoot, `${entry.tag}.sql`);
+      assert.equal(
+        createHash("sha256")
+          .update(await readFile(path))
+          .digest("hex"),
+        expected.hash,
+      );
+      await copyFile(path, resolve(stageRoot, `${entry.tag}.sql`));
+    }),
+  );
+}
 
 try {
   const [server] = await sql<
@@ -154,19 +183,7 @@ try {
     version_num: 180_006,
   });
 
-  await mkdir(resolve(stageRoot, "meta"));
-  await writeFile(
-    resolve(stageRoot, "meta/_journal.json"),
-    `${JSON.stringify({ ...journal, entries: v48Entries }, null, 2)}\n`,
-  );
-  await Promise.all(
-    v48Entries.map((entry) =>
-      copyFile(
-        resolve(migrationsRoot, `${entry.tag}.sql`),
-        resolve(stageRoot, `${entry.tag}.sql`),
-      ),
-    ),
-  );
+  await stagePrefix(v48Entries);
   await migrate(drizzle(sql), { migrationsFolder: stageRoot });
 
   const [unsealedV48] = await sql<CompatibilityRow[]>`
@@ -179,7 +196,18 @@ try {
     migration_fingerprint: "UNSUPPORTED",
   });
 
-  const [v48SealerAttestation] = await sql<{ value: boolean }[]>`
+  async function sealHistoricalManifest(
+    count: number,
+    sourceHash: string,
+  ): Promise<void> {
+    const manifest = expectedMigrations.slice(0, count);
+    const latest = manifest.at(-1);
+    assert(latest);
+    assert.equal(manifest.length, count);
+    const fingerprint = manifest
+      .map((entry) => `${entry.createdAt}@${entry.hash}`)
+      .join(":");
+    const [sealerAttestation] = await sql<{ value: boolean }[]>`
     SELECT count(*) = 1 AND coalesce(bool_and(
       owner.rolname = 'periapsis_migrator'
       AND language.lanname = 'plpgsql'
@@ -202,7 +230,7 @@ try {
       AND procedure.proconfig IS NOT DISTINCT FROM
         ARRAY['search_path=pg_catalog, public, app']::text[]
       AND encode(sha256(convert_to(procedure.prosrc, 'UTF8')), 'hex') =
-        ${expectedSealSchemaCompatibilityManifestV48SourceHash}
+        ${sourceHash}
       AND (
         SELECT count(*) = 1 AND coalesce(bool_and(
           privilege.grantor = procedure.proowner
@@ -223,24 +251,29 @@ try {
       'app.seal_schema_compatibility_manifest(bigint,bigint,text,text)'
     )
   `;
-  assert.equal(v48SealerAttestation?.value, true);
+    assert.equal(sealerAttestation?.value, true);
 
-  await sql`
+    await sql`
     SELECT app.seal_schema_compatibility_manifest(
-      ${v48MigrationCount}::bigint,
-      ${v48Latest.createdAt}::bigint,
-      ${v48Latest.hash}::text,
-      ${v48Fingerprint}::text
+      ${count}::bigint,
+      ${latest.createdAt}::bigint,
+      ${latest.hash}::text,
+      ${fingerprint}::text
     )
   `;
-  await sql`
+    await sql`
     SELECT app.seal_schema_compatibility_manifest(
-      ${v48MigrationCount}::bigint,
-      ${v48Latest.createdAt}::bigint,
-      ${v48Latest.hash}::text,
-      ${v48Fingerprint}::text
+      ${count}::bigint,
+      ${latest.createdAt}::bigint,
+      ${latest.hash}::text,
+      ${fingerprint}::text
     )
   `;
+  }
+  await sealHistoricalManifest(
+    v48MigrationCount,
+    expectedSealSchemaCompatibilityManifestV48SourceHash,
+  );
   const [sealedV48] = await sql<
     (CompatibilityRow & {
       catalog_digest: string;
@@ -263,7 +296,12 @@ try {
     release_ready: true,
   });
 
-  await migrateSchema(sql, migrationsRoot);
+  await stagePrefix(v49Entries);
+  await migrate(drizzle(sql), { migrationsFolder: stageRoot });
+  await sealHistoricalManifest(
+    v49MigrationCount,
+    expectedSealSchemaCompatibilityManifestV49SourceHash,
+  );
 
   const [sealedV49] = await sql<
     (CompatibilityRow & {
@@ -330,12 +368,12 @@ try {
     WHERE retired.oid = 'app.schema_compatibility_v48()'::regprocedure
   `;
   assert.deepEqual(sealedV49, {
-    applied_count: String(expectedMigrationCount),
+    applied_count: String(v49MigrationCount),
     alert_dfir_ready: true,
     catalog_digest: expectedV49CatalogDigest,
-    latest_created_at: String(expectedMigrationCreatedAt),
-    latest_hash: expectedMigrationHash,
-    migration_fingerprint: expectedMigrationFingerprint,
+    latest_created_at: String(v49Latest.createdAt),
+    latest_hash: v49Latest.hash,
+    migration_fingerprint: v49Fingerprint,
     notification_schema_ready: true,
     notification_v4_runtime_grants: 0,
     release_ready: true,
@@ -406,7 +444,11 @@ try {
   `;
   assert.deepEqual(onlineLoginState, absentLoginState);
 
-  await migrateSchema(sql, migrationsRoot);
+  await migrate(drizzle(sql), { migrationsFolder: stageRoot });
+  await sealHistoricalManifest(
+    v49MigrationCount,
+    expectedSealSchemaCompatibilityManifestV49SourceHash,
+  );
   const [restart] = await sql<
     (CompatibilityRow & { catalog_digest: string; release_ready: boolean })[]
   >`
@@ -417,11 +459,11 @@ try {
     FROM app.schema_compatibility_v49() AS compatibility
   `;
   assert.deepEqual(restart, {
-    applied_count: String(expectedMigrationCount),
+    applied_count: String(v49MigrationCount),
     catalog_digest: expectedV49CatalogDigest,
-    latest_created_at: String(expectedMigrationCreatedAt),
-    latest_hash: expectedMigrationHash,
-    migration_fingerprint: expectedMigrationFingerprint,
+    latest_created_at: String(v49Latest.createdAt),
+    latest_hash: v49Latest.hash,
+    migration_fingerprint: v49Fingerprint,
     release_ready: true,
   });
 } finally {
