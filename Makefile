@@ -22,7 +22,7 @@ typecheck:
 
 test:
 	$(PNPM) test
-	go test ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
+	go test -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
 
 test-integration:
 	$(PNPM) test:integration

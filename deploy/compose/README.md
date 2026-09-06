@@ -292,6 +292,14 @@ The test uses only the loopback SMTP and HTTP bindings, validates the exact heal
 delivers a customer-projected rendered message, and checks Mailpit without logging message
 contents or recipients.
 
+Mailpit also joins its own non-internal `mailpit-host` bridge: Docker does not activate
+published host ports for a container connected only to internal networks. Only this
+optional local fixture joins that bridge; `integrations` remains internal, and both host
+ports remain bound exclusively to `127.0.0.1`. The bridge also permits outbound routing
+from Mailpit, so it is not a fully isolated capture appliance. No other service receives
+that route, and no SMTP relay or forwarding destination is configured. The CI acceptance
+checks Docker's actual loopback port bindings before probing and delivering.
+
 Startup realm import deliberately skips an existing realm. A `keycloak_data` volume
 created by the former HTTP profile therefore retains its old client redirects; update both
 test clients through the admin console or remove only that disposable volume while the

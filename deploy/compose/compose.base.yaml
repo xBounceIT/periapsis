@@ -534,6 +534,7 @@ services:
       start_period: 5s
     networks:
       - integrations
+      - mailpit-host
 
   minio:
     profiles: *runtime-profiles
@@ -811,6 +812,9 @@ networks:
         - subnet: 172.30.241.0/28
   integrations:
     internal: true
+  # Docker does not publish ports for a container attached only to internal
+  # networks. Only the local Mailpit fixture joins this host-access bridge.
+  mailpit-host: {}
   notification-preview:
     internal: true
   storage:

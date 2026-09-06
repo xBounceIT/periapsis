@@ -171,6 +171,7 @@ function resolved(result) {
 }
 
 function assertApplicationHardening(model) {
+  assertMailpitHostPublication(model);
   for (const name of [
     "api",
     "worker",
@@ -233,6 +234,57 @@ function assertApplicationHardening(model) {
       (secret) => typeof secret.file === "string" && !secret.environment,
     ),
   );
+}
+
+function assertMailpitHostPublication(model) {
+  const mailpit = model.services.mailpit;
+  if (!mailpit) return;
+  assert.equal(model.networks.integrations.internal, true);
+  assert.ok(
+    model.networks["mailpit-host"],
+    "Mailpit needs a host-publication bridge",
+  );
+  assert.notEqual(model.networks["mailpit-host"].internal, true);
+  assert.deepEqual(Object.keys(mailpit.networks).toSorted(), [
+    "integrations",
+    "mailpit-host",
+  ]);
+  assert.deepEqual(
+    Object.entries(model.services)
+      .filter(([, service]) =>
+        Object.hasOwn(service.networks ?? {}, "mailpit-host"),
+      )
+      .map(([name]) => name),
+    ["mailpit"],
+    "only the local SMTP fixture may join the host-publication bridge",
+  );
+  assert.deepEqual(
+    mailpit.ports
+      .map(({ host_ip, target, published, protocol }) => ({
+        host_ip,
+        target,
+        published,
+        protocol,
+      }))
+      .toSorted((left, right) => left.target - right.target),
+    [
+      {
+        host_ip: "127.0.0.1",
+        target: 1025,
+        published: "11025",
+        protocol: "tcp",
+      },
+      {
+        host_ip: "127.0.0.1",
+        target: 8025,
+        published: "18025",
+        protocol: "tcp",
+      },
+    ],
+  );
+  assert.equal(mailpit.user, "10001:10001");
+  assert.equal(mailpit.read_only, true);
+  assert.equal(mailpit.environment.MP_SMTP_AUTH_ACCEPT_ANY, "false");
 }
 
 function mount(service, target) {

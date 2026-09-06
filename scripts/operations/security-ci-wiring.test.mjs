@@ -6,6 +6,31 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
+test("Go verification reruns source contracts outside module directories", async () => {
+  const manifest = JSON.parse(
+    await readFile(resolve(root, "package.json"), "utf8"),
+  );
+  for (const name of ["go:test", "go:test:race"]) {
+    assert.match(manifest.scripts[name], /^go test (?:-race )?-count=1 /u);
+    assert.ok(manifest.scripts[name].includes("./services/worker/..."));
+  }
+  const makefile = await readFile(resolve(root, "Makefile"), "utf8");
+  assert.match(
+    makefile,
+    /^\tgo test -count=1 .*\.\/services\/worker\/\.\.\./mu,
+  );
+  for (const path of [
+    ".github/workflows/ci.yml",
+    ".github/workflows/pull-request-fast.yml",
+  ]) {
+    const workflow = await readFile(resolve(root, path), "utf8");
+    assert.match(
+      workflow,
+      /run: go test (?:-race )?-count=1 .*\.\/services\/worker\/\.\.\./u,
+    );
+  }
+});
+
 test("certificate-free proxy deployment keeps runtime and real-model gates wired", async () => {
   const ignore = await readFile(resolve(root, ".gitignore"), "utf8");
   assert.match(ignore, /^!deploy\/compose\/\.env\.reverse-proxy\.example$/mu);

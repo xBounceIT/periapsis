@@ -56,6 +56,35 @@ final-journal database gates and the remaining release boundaries.
       `go test ./internal/config -run TestOIDCMaintenanceConfigurationIsWiredAcrossDeployments -count=1`
       from `services/worker` reproduced the same failure locally on `de3b093`.
 
+## Compose and SMTP CI follow-up (2026-09-06)
+
+- [x] Repair the OIDC deployment source contract for the actual ordered
+      include/base/TLS and certificate-free HTTP layouts without removing CA,
+      HTTPS/SSRF, numeric identity, Swarm or Kubernetes checks. Cover 14 invalid
+      layer-graph variants. Focused Go tests and race tests pass with `-count=1`;
+      vet and 14 real Compose configuration-model checks pass.
+- [x] Give only the optional Mailpit fixture a non-internal `mailpit-host` bridge
+      while retaining the internal integrations network and loopback-only SMTP/UI
+      ports. Docker 28.0.4 on the failed runner skips external-connectivity setup
+      for internal-only endpoints. Add resolved-model assertions and CI checks of
+      actual Docker port mappings before acceptance, with seven executable Bash
+      regression cases. No application SMTP code or authentication policy changes.
+- [x] Run the unchanged acceptance against checksum-verified native Mailpit 1.30.3:
+      one test passes without skips, including the health probe, customer-safe
+      delivery and captured-message assertions. The owned processes/listeners and
+      temporary captured-message database were removed. This does not substitute
+      for the Docker/Linux publication gate. Evidence: `.tmp/mailpit-native-16070c541b7044ebb75e0e48f5398a2f/REPORT.md`.
+- [x] Disable Go test-result caching in repository verification, Make and both CI
+      workflows (`-count=1`) because deployment contracts read files outside their
+      module directories. Keep compiled-build caching and all test selections/race
+      checks unchanged. Wiring and real Bash regression checks pass (27/27).
+- [x] Pass root `pnpm verify` with uncached Go tests: format, lint, types, web
+      2214, notifier 180 plus its conditional skip, DB 663, UI 2, contracts 48,
+      operations 191, generated drift, build and Go vet/tests. Separate real native
+      Mailpit acceptance passes without skips. Log: `.tmp/verify-ci-followup-20260906.log`.
+- [ ] Publish to `main` and confirm the repaired Go/race and real Compose/Mailpit
+      CI jobs on the new commit.
+
 ## Remote reverse-proxy deployment slice (2026-09-06)
 
 - [x] Add an opt-in certificate-free HTTP application origin for a trusted TLS proxy on

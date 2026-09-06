@@ -80,7 +80,7 @@ jobs:
       - name: Vet shell-free healthcheck
         run: go vet ./deploy/compose/healthcheck.go
       - name: Test without the release race detector
-        run: go test ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
+        run: go test -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
 
   generated:
     name: Fast generated and schema drift

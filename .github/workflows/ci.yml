@@ -105,6 +105,13 @@ jobs:
         run: pnpm install --frozen-lockfile --filter @periapsis/notifier...
       - name: Start the full-profile SMTP fixture
         run: docker compose --file deploy/compose/compose.yaml --profile full up --detach --wait mailpit
+      - name: Verify loopback SMTP and HTTP publication
+        run: |
+          set -euo pipefail
+          smtp_binding=$(docker compose --file deploy/compose/compose.yaml --profile full port mailpit 1025)
+          http_binding=$(docker compose --file deploy/compose/compose.yaml --profile full port mailpit 8025)
+          test "$smtp_binding" = "127.0.0.1:${PERIAPSIS_MAILPIT_SMTP_PORT}"
+          test "$http_binding" = "127.0.0.1:${PERIAPSIS_MAILPIT_PORT}"
       - name: Probe, deliver, and inspect the captured message
         run: pnpm --filter @periapsis/notifier test:mailpit
       - name: Stop the SMTP fixture
@@ -136,7 +143,7 @@ jobs:
       - name: Vet shell-free healthcheck
         run: go vet ./deploy/compose/healthcheck.go
       - name: Test with race detector
-        run: go test -race ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
+        run: go test -race -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
 
   generated:
     name: Generated and schema drift

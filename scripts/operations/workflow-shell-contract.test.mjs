@@ -101,6 +101,71 @@ const bashPath = (path) =>
     .replaceAll("\\", "/")
     .replace(/^([A-Za-z]):/u, (_, drive) => `/${drive.toLowerCase()}`);
 
+test("Mailpit publication preflight requires both actual loopback bindings before delivery", () => {
+  const smtpJob = job(ci, "smtp-mailpit-acceptance");
+  const preflight = script(
+    step(smtpJob, "Verify loopback SMTP and HTTP publication"),
+  );
+  assert.ok(
+    smtpJob.indexOf("Verify loopback SMTP and HTTP publication") <
+      smtpJob.indexOf("Probe, deliver, and inspect the captured message"),
+  );
+  assert.ok(
+    smtpJob.indexOf("Start the full-profile SMTP fixture") <
+      smtpJob.indexOf("Verify loopback SMTP and HTTP publication"),
+  );
+  const dockerFixture = `
+docker() {
+  if [[ "$*" == 'compose --file deploy/compose/compose.yaml --profile full port mailpit 1025' ]]; then
+    [[ "\${FAIL_SMTP:-0}" == 0 ]] || return 17
+    printf '%s\\n' "$SMTP_BINDING"
+  elif [[ "$*" == 'compose --file deploy/compose/compose.yaml --profile full port mailpit 8025' ]]; then
+    printf '%s\\n' "$HTTP_BINDING"
+  else
+    return 19
+  fi
+}
+`;
+  for (const [name, extra, success] of [
+    ["exact overridden loopback ports", {}, true],
+    ["SMTP not published", { SMTP_BINDING: "" }, false],
+    ["HTTP not published", { HTTP_BINDING: "" }, false],
+    ["SMTP wildcard bind", { SMTP_BINDING: "0.0.0.0:21025" }, false],
+    ["HTTP wildcard bind", { HTTP_BINDING: "0.0.0.0:28025" }, false],
+    ["wrong SMTP port", { SMTP_BINDING: "127.0.0.1:11025" }, false],
+    ["Docker command failed", { FAIL_SMTP: "1" }, false],
+  ]) {
+    const result = spawnSync(
+      bash,
+      ["--noprofile", "--norc", "-c", `${dockerFixture}\n${preflight}`],
+      {
+        encoding: "utf8",
+        timeout: 5000,
+        killSignal: "SIGKILL",
+        windowsHide: true,
+        maxBuffer: 8192,
+        env: {
+          PATH:
+            process.platform === "win32" ? "/usr/bin:/bin" : process.env.PATH,
+          SystemRoot: process.env.SystemRoot,
+          BASH_ENV: "",
+          ENV: "",
+          PERIAPSIS_MAILPIT_SMTP_PORT: "21025",
+          PERIAPSIS_MAILPIT_PORT: "28025",
+          SMTP_BINDING: "127.0.0.1:21025",
+          HTTP_BINDING: "127.0.0.1:28025",
+          ...extra,
+        },
+      },
+    );
+    assert.equal(result.error, undefined, name);
+    assert.equal(result.signal, null, name);
+    assert.equal(result.status === 0, success, name);
+    assert.equal(result.stdout, "", name);
+    assert.equal(result.stderr, "", name);
+  }
+});
+
 // Execute the actual Bash functions. Observe printf at the call boundary so a
 // removed or late mask fails before the corresponding environment line is written.
 const orderedMaskHarness = `
