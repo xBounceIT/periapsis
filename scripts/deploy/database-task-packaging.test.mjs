@@ -375,7 +375,10 @@ test("Node-only deployment driver retains fail-closed production configuration",
     PERIAPSIS_ENV: "production",
   });
   assert.equal(result.status, 1);
-  assert.equal(JSON.parse(result.stderr).code, "DATABASE_URL_FILE_REQUIRED");
+  const envelope = JSON.parse(result.stderr);
+  assert.equal(envelope.code, "DATABASE_URL_FILE_REQUIRED");
+  assert.equal(envelope.mode, "migrate");
+  assert.equal(envelope.phase, "configuration");
   assert.equal(result.stdout, "");
 });
 

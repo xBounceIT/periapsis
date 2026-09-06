@@ -22,6 +22,19 @@ const states = new Set([
   "dead",
 ]);
 const healthStates = new Set([null, "starting", "healthy", "unhealthy"]);
+const databasePhases = new Set([
+  "configuration",
+  "migration",
+  "runtime_credentials",
+  "runtime_provision",
+  "seed",
+]);
+const databaseModes = new Set([
+  "migrate",
+  "provision-notifier",
+  "seed",
+  "unsupported",
+]);
 const databaseCodes = new Set([
   "DATABASE_TASK_FAILED",
   "UNSUPPORTED_TASK",
@@ -56,6 +69,7 @@ const databaseCodes = new Set([
   "28P01",
   "42501",
   "42702",
+  "42P18",
   "42P01",
   "57014",
   "55P03",
@@ -114,8 +128,12 @@ function databaseEvent(line) {
       entry?.service === "database-task" &&
       entry.event === "database_task_failed"
     ) {
-      const code = knownDatabaseCode(entry.code);
-      return code ? { kind: "database_driver", code } : null;
+      return {
+        kind: "database_driver",
+        code: knownDatabaseCode(entry.code) ?? "UNCLASSIFIED",
+        mode: databaseModes.has(entry.mode) ? entry.mode : "unknown",
+        phase: databasePhases.has(entry.phase) ? entry.phase : "unknown",
+      };
     }
   } catch {
     // Native Node error properties are considered separately; never print the error.

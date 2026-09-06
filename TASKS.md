@@ -306,8 +306,9 @@ final-journal database gates and the remaining release boundaries.
 
 ## GitHub CI repair evidence
 
-- [x] Create the private `xBounceIT/periapsis` repository and publish `main`; preserve
+- [x] Create the `xBounceIT/periapsis` repository and publish `main`; preserve
       subsequent user-authored README edits when integrating local work.
+      The live repository is PUBLIC; its visibility is left unchanged.
 - [x] Restore the canonical historical bytes of migration 0198 in Git with an exact-path
       `-text` attribute. Its one embedded CRLF is part of its deployed SHA256; do not
       rewrite its SQL or normalize that file. Real Git tests pass with all three
@@ -522,9 +523,43 @@ final-journal database gates and the remaining release boundaries.
       both seed runs and seed audit. Sources/templates/roles remain pinned and both owned
       clusters are stopped. The separate RLS/Go selection, all22 upgrade paths, exact
       candidate CI and composed acceptance remain independent gates;
-      V51 evidence does not automatically certify V52. Read-only follow-up diagnosis
-      identifies redundant rendering of the shared 999-event custody history and loss of
-      unclassified migration-phase diagnostics; neither follow-up change is included here.
+      V51 evidence does not automatically certify V52. At this checkpoint, follow-up
+      diagnosis identified redundant rendering of the shared 999-event custody history
+      and loss of unclassified migration-phase diagnostics; those follow-ups were not
+      included in the preceding full-verification result.
+- [ ] Close the published `95695121a0aa01301bad6a43ccc81a0398c08dd3` CI continuation
+      without treating partial evidence as complete deployment acceptance. The native
+      V52 extras now pass the separate RLS SQL and exact 15 Go integration selections,
+      with no skips, stable source/template/role pins, clone cleanup, owned-cluster
+      shutdown and generated password-file removal. All 22 actual upgrade steps pass in
+      CI run `34045177859`. Deployment-security run `34045177868` succeeds, including
+      real Linux Caddy CORS, authentication-provider smoke and all five application-image
+      jobs; provider smoke is not a browser SSO journey. Journal 236 and the V52 seal
+      remain unchanged. Detailed proof paths are in `docs/release-acceptance.md`.
+      The JS job has four timeouts: the original mention-picker regression passes,
+      two custody timeouts have local fixes with 47 focused tests passing, and two new
+      mention regressions remain open. The Compose startup migration failure still has
+      no recovered historical inner cause. A real PostgreSQL 18.6 read-only proof of the
+      actual `configureLogin` bodies reproduces baseline `42P18`; six explicit parameter
+      casts let the candidate complete four real SELECTs and generate three exact,
+      safely quoted DDL statements that are intercepted and never executed. Catalog,
+      roles and sources remain unchanged; the owned server is stopped and its password
+      file removed. This proves neither actual role DDL nor full Compose startup, and
+      does not attribute the earlier CI failure. Finite mode/phase/code diagnostics and
+      packaging pass 40 focused tests; pre-try `require("postgres")` and inherited child
+      stdio remain outside that structured diagnostic boundary. Both workflows now mask
+      ephemeral credentials before publication/use, including all 21 CI values and three
+      keyring components; 41 focused shell/secret-preparation tests pass. All 88 workflow
+      Bash scripts pass standalone ShellCheck and both workflows pass actionlint's other
+      rules; the integrated actionlint/ShellCheck adapter hangs locally on ci.yml, so
+      those checks were run separately without changing the CI gate. Complete local
+      verification now passes for the follow-up: DB663, web2163, notifier175 plus the
+      conditional Mailpit skip, operations183 with actual Gitleaks and no operations
+      skips, generated drift/build/Go gates. Evidence:
+      `.tmp/verify-v52-publish-followup-20260906.log`.
+      At the 2026-09-06 16:42 UTC snapshot, the CI PostgreSQL job is still on
+      `Prove atomic protected-configuration binding`, Mailpit is skipped, and performance
+      run `34045643918` remains on `Run hot paths against a fresh database`.
 
 ## Release evidence to obtain
 

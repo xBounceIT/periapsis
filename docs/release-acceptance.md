@@ -106,6 +106,77 @@ lint, TypeScript/E2E checks, generated drift, builds, Go vet and Go tests pass. 
 The separate RLS/Go selection, complete upgrade matrix, current CI and composed
 acceptance remain independent gates; this local verification is not production approval.
 
+### Published V52 continuation: 9569512
+
+The subsequent published candidate is
+`95695121a0aa01301bad6a43ccc81a0398c08dd3`. Its 236-entry journal and V52 seal are
+unchanged. The repository is PUBLIC; no visibility change is part of this continuation.
+The complete local verification recorded above predates the follow-up changes below
+and must not be counted as their verification.
+
+The separate native PostgreSQL 18.6 UTF8/C, TCP-SCRAM extras pass the RLS SQL and
+exact 15 Go integration selections, with no skips. Normal migration/provisioning,
+source/template/role pins and clone cleanup pass; the owned server is stopped and
+the generated password files are removed. Proof:
+`C:\Users\dange\AppData\Local\Temp\periapsis-v52-extra-owned-f736a61233e04bb2a5e8a96ba2d411fd\proof.json`.
+This is native database evidence, not Docker or browser acceptance.
+
+All 22 actual upgrade steps pass in
+[CI run 34045177859](https://github.com/xBounceIT/periapsis/actions/runs/34045177859).
+[Deployment-security run 34045177868](https://github.com/xBounceIT/periapsis/actions/runs/34045177868)
+completes successfully, including the real Linux Caddy CORS gate, authentication-provider
+smoke, all five application-image jobs and secret scanning. The external notifier-image
+job is intentionally skipped. Provider startup/metadata smoke does not prove the full
+application browser SSO journey, and the CORS fixture is not actual MinIO signature
+validation.
+
+The same CI run's JavaScript job has four timeouts. The original mounted mention-picker
+regression passes; two custody timeouts have local fixes with 47 focused tests passing,
+while two new mention regressions remain open. The Compose startup migration job fails,
+but its historical inner exception is still unavailable. Neither adjacent provider
+success nor the local SQL proof below identifies that lost exception.
+
+A separate fresh owned PostgreSQL 18.6 probe executes the actual AST-extracted
+`configureLogin` function from the published wrapper and the corrected candidate.
+The baseline fails with `42P18`; six explicit parameter casts across three `format`
+queries let the candidate complete four real SELECTs. Three exact, safely quoted
+ALTER/RESET/GRANT statements are intercepted and never executed. The transactions are
+read-only, and catalog, roles and source hashes remain unchanged. The owned cluster
+is stopped and its administrator password file removed. Proof:
+`C:\Users\dange\AppData\Local\Temp\periapsis-compose-format-owned-159a20c5b05e4be9ade400759ec1076e\proof.json`.
+This does not prove role-DDL application, runtime-login provisioning, full Compose
+startup or the historical CI cause.
+
+The local finite mode/phase/code diagnostic and packaging checks pass 40 focused tests.
+Unknown errors retain a fixed `UNCLASSIFIED` event without exposing driver messages,
+SQL, parameters or credentials. The module's pre-try `require("postgres")` and inherited
+child stdio remain outside this structured diagnostic boundary.
+
+Both workflows now mask generated ephemeral credentials before publication/use. The
+main CI masks all 21 secret values and the three raw keyring components before writing
+`GITHUB_ENV`; the deployment workflow masks its two generated S3 values. Existing
+credential bytes, file mounts, preparation rollback and teardown are preserved. All 41
+focused shell/secret-preparation tests pass, including real Bash order checks and
+sanitized failure assertions. This change does not retroactively redact earlier logs.
+Both workflows pass actionlint's internal rules with its ShellCheck adapter decoupled;
+all 88 actual Bash scripts pass standalone ShellCheck with the adapter's standard flags.
+The integrated adapter stalls locally on `ci.yml` and its bounded attempts were stopped;
+no source workaround or CI gate relaxation was applied.
+
+Complete local `pnpm verify` subsequently passes for these follow-up code and workflow
+changes: 663 DB tests, 2,163 web tests, 175 notifier tests plus one conditional Mailpit
+skip, and all 183 operations tests with the actual Gitleaks scanner and no operations
+skips. Formatting, lint, TypeScript/E2E checks, generated drift, builds, Go vet and Go
+tests pass. Evidence: `.tmp/verify-v52-publish-followup-20260906.log`. This is local
+verification, not proof that the new composed stack or remote CI passes.
+
+At the retained **2026-09-06 16:42 UTC** snapshot, the CI PostgreSQL job is still running
+`Prove atomic protected-configuration binding`; Mailpit is skipped.
+[Performance run 34045643918](https://github.com/xBounceIT/periapsis/actions/runs/34045643918)
+is still running `Run hot paths against a fresh database`. These are pending gates,
+not successful results. Full Compose acceptance and the open JavaScript regressions
+remain release blockers.
+
 ### Published V51 evidence
 
 The published V51 database baseline is `cad3fdf8a8887b865f620eb209025312ba03b83e` on

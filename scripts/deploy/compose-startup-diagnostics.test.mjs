@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   collectComposeStartupDiagnostics,
@@ -30,6 +32,18 @@ function driver(code, extra = {}) {
   });
 }
 
+function databaseDriver(code, mode = "unknown", phase = "unknown") {
+  return { kind: "database_driver", code, mode, phase };
+}
+
+function codeList(source) {
+  const body = /const databaseCodes = new Set\(\[([\s\S]*?)\]\);/u.exec(
+    source,
+  )?.[1];
+  assert.ok(body);
+  return [...body.matchAll(/"([A-Z0-9_]+)"/gu)].map((entry) => entry[1]);
+}
+
 test("migration diagnostics retain only reviewed driver and native error codes", () => {
   const result = redactComposeStartupLogs(
     "migration",
@@ -55,18 +69,375 @@ test("migration diagnostics retain only reviewed driver and native error codes",
     ].join("\n"),
   );
   assert.deepEqual(result.events, [
-    { kind: "database_driver", code: "EXIT_1" },
+    databaseDriver("EXIT_1"),
     { kind: "database_error_property", code: "42702" },
     { kind: "database_error_property", code: "MIGRATION_SEALER_DIVERGED" },
-    { kind: "database_driver", code: "EACCES" },
-    { kind: "database_driver", code: "SIGNAL_SIGILL" },
-    { kind: "database_driver", code: "28P01" },
+    databaseDriver("EACCES"),
+    databaseDriver("SIGNAL_SIGILL"),
+    databaseDriver("28P01"),
+    ...Array.from({ length: 4 }, () => databaseDriver("UNCLASSIFIED")),
   ]);
-  assert.equal(result.redactedLines, 8);
+  assert.equal(result.redactedLines, 4);
   assert.doesNotMatch(
     JSON.stringify(result),
     /private|password|postgresql|ALTER ROLE|::error/iu,
   );
+});
+
+test("recognized task failures keep only finite phase/mode and fixed unknown-code evidence", () => {
+  for (const phase of [
+    "configuration",
+    "migration",
+    "runtime_credentials",
+    "runtime_provision",
+    "seed",
+  ]) {
+    for (const mode of [
+      "migrate",
+      "provision-notifier",
+      "seed",
+      "unsupported",
+    ]) {
+      for (const code of [
+        undefined,
+        null,
+        7,
+        {},
+        ["EACCES"],
+        canary,
+        "CONNECT_TIMEOUT",
+      ]) {
+        const result = redactComposeStartupLogs(
+          "migration",
+          driver(code, {
+            phase,
+            mode,
+            message: canary,
+            stack: canary,
+            sql: canary,
+            parameters: [canary],
+            cause: { code: "EACCES", message: canary },
+          }),
+        );
+        assert.deepEqual(result, {
+          events: [databaseDriver("UNCLASSIFIED", mode, phase)],
+          redactedLines: 0,
+        });
+        assert.ok(!JSON.stringify(result).includes(canary));
+      }
+    }
+  }
+  for (const value of [undefined, null, {}, ["migration"], canary]) {
+    assert.deepEqual(
+      redactComposeStartupLogs(
+        "migration",
+        driver("EACCES", { phase: value, mode: value }),
+      ),
+      { events: [databaseDriver("EACCES")], redactedLines: 0 },
+    );
+  }
+  for (const raw of [
+    "null",
+    "[]",
+    "{",
+    JSON.stringify(canary),
+    driver("EACCES", { service: null }),
+    driver("EACCES", { event: canary }),
+    `  code: '${canary}',`,
+  ]) {
+    assert.deepEqual(redactComposeStartupLogs("migration", raw), {
+      events: [],
+      redactedLines: 1,
+    });
+  }
+});
+
+test("producer and collector retain the same finite code set and bounded exits", async () => {
+  const [producer, collector] = await Promise.all([
+    readFile(
+      new URL("../../deploy/compose/database-task.mjs", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("./compose-startup-diagnostics.mjs", import.meta.url),
+      "utf8",
+    ),
+  ]);
+  assert.deepEqual(codeList(producer), codeList(collector));
+  for (const code of codeList(producer)) {
+    assert.deepEqual(
+      redactComposeStartupLogs("migration", driver(code)).events,
+      [databaseDriver(code)],
+    );
+  }
+  for (const code of ["EXIT_1", "EXIT_255"]) {
+    assert.deepEqual(
+      redactComposeStartupLogs("migration", driver(code)).events,
+      [databaseDriver(code)],
+    );
+  }
+  for (const code of [
+    "EXIT_0",
+    "EXIT_01",
+    "EXIT_256",
+    "EXIT_1000",
+    "EXIT_-1",
+  ]) {
+    assert.deepEqual(
+      redactComposeStartupLogs("migration", driver(code)).events,
+      [databaseDriver("UNCLASSIFIED")],
+    );
+  }
+});
+
+function runProducer(scenario) {
+  const environment = { ...process.env };
+  for (const name of Object.keys(environment)) {
+    if (
+      /^(?:NODE_OPTIONS|NODE_PATH|DATABASE_URL(?:_FILE)?|PERIAPSIS_.*)$/iu.test(
+        name,
+      )
+    )
+      delete environment[name];
+  }
+  const result = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(
+        new URL("./fixtures/database-task-producer.mjs", import.meta.url),
+      ),
+      JSON.stringify(scenario),
+    ],
+    {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      env: environment,
+      encoding: "utf8",
+      timeout: 5_000,
+      maxBuffer: 65_536,
+      killSignal: "SIGKILL",
+      windowsHide: true,
+    },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null);
+  assert.ok(
+    !`${result.stdout}${result.stderr}`.includes("private-producer-canary"),
+  );
+  return { ...result, trace: JSON.parse(result.stdout) };
+}
+
+test("actual producer reports each failure phase without forwarding errors or credentials", () => {
+  for (const [scenario, mode, phase, code] of [
+    [
+      { failure: "configuration", code: "ENOENT" },
+      "migrate",
+      "configuration",
+      "ENOENT",
+    ],
+    [
+      { environment: canary },
+      "migrate",
+      "configuration",
+      "INVALID_ENVIRONMENT",
+    ],
+    [{ mode: canary }, "unsupported", "configuration", "UNSUPPORTED_TASK"],
+    [{ failure: "migration" }, "migrate", "migration", "EXIT_1"],
+    [
+      { failure: "migration", signal: "SIGTERM" },
+      "migrate",
+      "migration",
+      "SIGNAL_SIGTERM",
+    ],
+    [
+      { failure: "read_api", code: "EACCES" },
+      "migrate",
+      "runtime_credentials",
+      "EACCES",
+    ],
+    [
+      { failure: "read_worker", code: "EACCES" },
+      "migrate",
+      "runtime_credentials",
+      "EACCES",
+    ],
+    [
+      { failure: "read_notifier", code: "EACCES" },
+      "migrate",
+      "runtime_credentials",
+      "EACCES",
+    ],
+    [
+      { mode: "provision-notifier", failure: "read_notifier", code: "EACCES" },
+      "provision-notifier",
+      "runtime_credentials",
+      "EACCES",
+    ],
+    [
+      { failure: "connect", code: "ECONNREFUSED" },
+      "migrate",
+      "runtime_provision",
+      "ECONNREFUSED",
+    ],
+    [
+      { failure: "begin", code: "42501" },
+      "migrate",
+      "runtime_provision",
+      "42501",
+    ],
+    [
+      { failure: "provision_statement", code: "42702" },
+      "migrate",
+      "runtime_provision",
+      "42702",
+    ],
+    [
+      { failure: "provision_statement", code: "42P18" },
+      "migrate",
+      "runtime_provision",
+      "42P18",
+    ],
+    [
+      { failure: "cleanup", code: "ETIMEDOUT" },
+      "migrate",
+      "runtime_provision",
+      "ETIMEDOUT",
+    ],
+    [
+      { mode: "provision-notifier", failure: "begin", code: "23505" },
+      "provision-notifier",
+      "runtime_provision",
+      "23505",
+    ],
+    [
+      { mode: "seed", failure: "seed", exitCode: 255 },
+      "seed",
+      "seed",
+      "EXIT_255",
+    ],
+  ]) {
+    const result = runProducer(scenario);
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stderr);
+    assert.deepEqual(Object.keys(envelope), [
+      "timestamp",
+      "level",
+      "service",
+      "event",
+      "mode",
+      "phase",
+      "code",
+    ]);
+    assert.ok(Number.isFinite(Date.parse(envelope.timestamp)));
+    assert.deepEqual(
+      { ...envelope, timestamp: null },
+      {
+        timestamp: null,
+        level: "error",
+        service: "database-task",
+        event: "database_task_failed",
+        mode,
+        phase,
+        code,
+      },
+    );
+    assert.deepEqual(redactComposeStartupLogs("migration", result.stderr), {
+      events: [databaseDriver(code, mode, phase)],
+      redactedLines: 0,
+    });
+    if (["begin", "provision_statement"].includes(scenario.failure))
+      assert.equal(result.trace.at(-1), "cleanup");
+  }
+});
+
+test("actual producer rejects arbitrary codes, coercion, getters and out-of-range exits", () => {
+  for (const scenario of [
+    ...[
+      undefined,
+      null,
+      42702,
+      ["EACCES"],
+      { code: "EACCES" },
+      canary,
+      "CONNECT_TIMEOUT",
+    ].map((code) => ({ failure: "begin", code })),
+    { failure: "begin", codeGetter: true },
+    { failure: "migration", exitCode: 256 },
+    { failure: "migration", childError: true, code: canary },
+  ]) {
+    const result = runProducer(scenario);
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stderr);
+    assert.equal(envelope.code, "UNCLASSIFIED");
+    assert.equal(
+      envelope.phase,
+      scenario.failure === "migration" ? "migration" : "runtime_provision",
+    );
+    assert.equal(envelope.mode, "migrate");
+  }
+});
+
+test("actual producer preserves task ordering and environment-specific credential reads", () => {
+  for (const [scenario, prefix, roleCount] of [
+    [
+      {},
+      [
+        "configuration",
+        "read_admin",
+        "migration",
+        "read_api",
+        "read_worker",
+        "read_notifier",
+        "connect",
+        "begin",
+      ],
+      3,
+    ],
+    [
+      { environment: "test" },
+      [
+        "configuration",
+        "read_admin",
+        "migration",
+        "read_api",
+        "read_worker",
+        "connect",
+        "begin",
+      ],
+      2,
+    ],
+    [
+      { mode: "provision-notifier" },
+      ["configuration", "read_admin", "read_notifier", "connect", "begin"],
+      1,
+    ],
+    [{ mode: "seed" }, ["configuration", "read_admin", "seed"], 0],
+  ]) {
+    const result = runProducer(scenario);
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, "");
+    assert.deepEqual(result.trace.slice(0, prefix.length), prefix);
+    for (const operation of ["alter", "reset", "grant", "membership_lookup"])
+      assert.equal(
+        result.trace.filter((entry) => entry === operation).length,
+        roleCount,
+      );
+    assert.equal(result.trace.at(-1), roleCount === 0 ? "seed" : "cleanup");
+  }
+});
+
+test("actual configureLogin binds typed format arguments with quoted passwords on repeat", () => {
+  const first = runProducer({ quotePassword: true });
+  const repeated = runProducer({ quotePassword: true });
+  for (const result of [first, repeated]) {
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, "");
+    for (const operation of ["alter", "grant", "reset"])
+      assert.equal(
+        result.trace.filter((entry) => entry === operation).length,
+        3,
+      );
+  }
+  assert.deepEqual(repeated.trace, first.trace);
 });
 
 test("MinIO diagnostics reconstruct known operations without copying credentials or payloads", () => {
@@ -247,7 +618,7 @@ test("invalid state and failed logs are independently withheld", () => {
     });
     assert.ok(result.services.every((entry) => entry.state === "unavailable"));
     assert.deepEqual(result.services[1].logs.events, [
-      { kind: "database_driver", code: "EXIT_1" },
+      databaseDriver("EXIT_1"),
     ]);
     assert.doesNotMatch(JSON.stringify(result), new RegExp(canary, "u"));
   }

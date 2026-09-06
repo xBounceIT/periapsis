@@ -21,7 +21,7 @@ import {
   Plus,
   ShieldCheck,
 } from "lucide-react";
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { TenantInstant } from "../lib/tenant-date-time-context";
 import {
@@ -536,23 +536,7 @@ function EvidencePanel({
                 </dd>
               </div>
             </dl>
-            <div
-              className="dfir-custody"
-              aria-label={`Custody history for ${item.title}`}
-            >
-              {item.custody.map((event) => (
-                <div key={event.id}>
-                  <span aria-hidden="true">{event.sequence}</span>
-                  <p>
-                    <strong>{event.action.replaceAll("_", " ")}</strong>
-                    <small>
-                      <TenantInstant value={event.occurredAt} /> ·{" "}
-                      {event.actorLabel}
-                    </small>
-                  </p>
-                </div>
-              ))}
-            </div>
+            <CustodyHistory title={item.title} custody={item.custody} />
             <Button
               type="button"
               variant="outline"
@@ -566,6 +550,27 @@ function EvidencePanel({
     </div>
   );
 }
+
+const CustodyHistory = memo(function CustodyHistory({
+  title,
+  custody,
+}: Pick<EvidenceView, "title" | "custody">) {
+  return (
+    <div className="dfir-custody" aria-label={`Custody history for ${title}`}>
+      {custody.map((event) => (
+        <div key={event.id}>
+          <span aria-hidden="true">{event.sequence}</span>
+          <p>
+            <strong>{event.action.replaceAll("_", " ")}</strong>
+            <small>
+              <TenantInstant value={event.occurredAt} /> · {event.actorLabel}
+            </small>
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+});
 
 function RecordGrid({
   children,

@@ -12,6 +12,53 @@ const databasePackage = resolve("packages/db/package.json");
 const requireFromDatabasePackage = createRequire(databasePackage);
 const postgres = requireFromDatabasePackage("postgres");
 const mode = process.argv[2] ?? "migrate";
+const taskModes = new Set(["migrate", "provision-notifier", "seed"]);
+const databaseCodes = new Set([
+  "DATABASE_TASK_FAILED",
+  "UNSUPPORTED_TASK",
+  "INVALID_SECRET",
+  "INVALID_DATABASE_URL_FILE",
+  "DATABASE_URL_FILE_REQUIRED",
+  "INVALID_ENVIRONMENT",
+  "INVALID_DATABASE_URL",
+  "DATABASE_TLS_REQUIRED",
+  "ROLE_STATEMENT_FAILED",
+  "INVALID_WEBHOOK_PLAIN_LOCAL_OPT_IN",
+  "WEBHOOK_PLAIN_LOCAL_PRODUCTION_FORBIDDEN",
+  "MIGRATION_DATABASE_VERSION_UNSUPPORTED",
+  "MIGRATION_DATABASE_ADMIN_UNSUPPORTED",
+  "MIGRATION_DATABASE_LOCALE_UNSUPPORTED",
+  "MIGRATION_CLIENT_INCOMPATIBLE",
+  "MIGRATION_BUNDLE_DIVERGED",
+  "MIGRATION_JOURNAL_DIVERGED",
+  "MIGRATION_JOURNAL_UNAVAILABLE",
+  "MIGRATION_SEALER_DIVERGED",
+  "MIGRATION_LOCK_UNAVAILABLE",
+  "MIGRATION_LOCK_LOST",
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "EROFS",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "08001",
+  "08006",
+  "28P01",
+  "42501",
+  "42702",
+  "42P18",
+  "42P01",
+  "57014",
+  "55P03",
+  "23505",
+  "3D000",
+  "SIGNAL_SIGTERM",
+  "SIGNAL_SIGKILL",
+  "SIGNAL_SIGILL",
+  "SIGNAL_SIGABRT",
+]);
+let phase = "configuration";
 
 try {
   const environment = parseDeploymentEnvironment(process.env["PERIAPSIS_ENV"]);
@@ -22,7 +69,9 @@ try {
   const databaseUrl = await administratorDatabaseUrl(environment);
 
   if (mode === "migrate") {
+    phase = "migration";
     await runDatabaseScript("src/admin/migrate.js", databaseUrl);
+    phase = "runtime_credentials";
     const passwords = {
       api: await readSecret("api_database_password"),
       worker: await readSecret("worker_database_password"),
@@ -30,18 +79,21 @@ try {
     if (environment === "production") {
       passwords.notifier = await readSecret("notifier_database_password");
     }
+    phase = "runtime_provision";
     await provisionRuntimeLogins(databaseUrl, passwords, {
       webhookPlainLocalOptIn,
     });
   } else if (mode === "provision-notifier") {
-    await provisionRuntimeLogins(
-      databaseUrl,
-      {
-        notifier: await readSecret("notifier_database_password"),
-      },
-      { webhookPlainLocalOptIn },
-    );
+    phase = "runtime_credentials";
+    const passwords = {
+      notifier: await readSecret("notifier_database_password"),
+    };
+    phase = "runtime_provision";
+    await provisionRuntimeLogins(databaseUrl, passwords, {
+      webhookPlainLocalOptIn,
+    });
   } else if (mode === "seed") {
+    phase = "seed";
     await runDatabaseScript("seeds/seed.js", databaseUrl);
   } else {
     throw Object.assign(new Error("unsupported database task"), {
@@ -49,24 +101,33 @@ try {
     });
   }
 } catch (error) {
-  const candidateCode =
-    typeof error === "object" && error !== null && "code" in error
-      ? String(error.code)
-      : "DATABASE_TASK_FAILED";
-  const code = /^[A-Z0-9_]{1,64}$/u.test(candidateCode)
-    ? candidateCode
-    : "DATABASE_TASK_FAILED";
   process.stderr.write(
     `${JSON.stringify({
       timestamp: new Date().toISOString(),
       level: "error",
       service: "database-task",
       event: "database_task_failed",
-      mode,
-      code,
+      mode: taskModes.has(mode) ? mode : "unsupported",
+      phase,
+      code: diagnosticCode(error),
     })}\n`,
   );
   process.exitCode = 1;
+}
+
+function diagnosticCode(error) {
+  try {
+    const candidate =
+      typeof error === "object" && error !== null ? error.code : undefined;
+    if (typeof candidate === "string") {
+      if (databaseCodes.has(candidate)) return candidate;
+      const exit = /^EXIT_([1-9][0-9]{0,2})$/u.exec(candidate);
+      if (exit && Number(exit[1]) <= 255) return candidate;
+    }
+  } catch {
+    // A nonstandard code getter must not escape the redacted error boundary.
+  }
+  return "UNCLASSIFIED";
 }
 
 async function readSecret(name) {
@@ -276,16 +337,16 @@ async function configureLogin(transaction, specification) {
   const [alterRole] = await transaction`
     SELECT format(
       'ALTER ROLE %I WITH LOGIN NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT %s VALID UNTIL ''infinity'' PASSWORD %L',
-      ${specification.login},
-      ${specification.connectionLimit},
-      ${specification.password}
+      ${specification.login}::text,
+      ${specification.connectionLimit}::integer,
+      ${specification.password}::text
     ) AS statement
   `;
   const [grantRole] = await transaction`
     SELECT format(
       'GRANT %I TO %I WITH ADMIN FALSE, INHERIT TRUE, SET TRUE',
-      ${specification.memberOf},
-      ${specification.login}
+      ${specification.memberOf}::text,
+      ${specification.login}::text
     ) AS statement
   `;
   if (
@@ -298,7 +359,7 @@ async function configureLogin(transaction, specification) {
   }
   await transaction.unsafe(alterRole.statement);
   const [resetRole] = await transaction`
-    SELECT format('ALTER ROLE %I RESET ALL', ${specification.login})
+    SELECT format('ALTER ROLE %I RESET ALL', ${specification.login}::text)
       AS statement
   `;
   if (resetRole?.statement === undefined) {
@@ -329,6 +390,7 @@ async function configureLogin(transaction, specification) {
         code: "ROLE_STATEMENT_FAILED",
       });
     }
+    // eslint-disable-next-line no-await-in-loop -- Finish each ordered revocation before granting the canonical membership.
     await transaction.unsafe(membership.statement);
   }
   await transaction.unsafe(grantRole.statement);

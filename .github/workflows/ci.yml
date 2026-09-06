@@ -270,6 +270,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mask_secret() {
+            local value="$1"
+            [[ -n "${value}" && "${value}" != *$'\r'* && "${value}" != *$'\n'* ]] || return 1
+            printf '::add-mask::%s\n' "${value//%/%25}"
+          }
+          publish_secret() {
+            local name="$1"
+            local value="$2"
+            [[ "${name}" =~ ^PERIAPSIS_[A-Z0-9_]+$ ]] || return 1
+            mask_secret "${value}" || return 1
+            printf '%s=%s\n' "${name}" "${value}" >> "${GITHUB_ENV}"
+          }
           printf '%s\n' '127.0.0.1 idp.localhost storage.localhost' | sudo tee -a /etc/hosts >/dev/null
           tls_directory="${RUNNER_TEMP}/periapsis-compose-tls"
           mkdir -p "${tls_directory}"
@@ -298,34 +310,38 @@ jobs:
           api_credential_root="$(openssl rand -base64 32 | tr -d '\n')"
           identity_root="$(openssl rand -base64 32 | tr -d '\n')"
           notification_root="$(openssl rand 32 | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+          # Mask components as well as their JSON envelopes, before any env publication.
+          mask_secret "${api_credential_root}"
+          mask_secret "${identity_root}"
+          mask_secret "${notification_root}"
+          publish_secret PERIAPSIS_API_DATABASE_PASSWORD "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_API_CREDENTIAL_KEYRING "{\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${api_credential_root}\"}]}"
+          publish_secret PERIAPSIS_BOOTSTRAP_TOKEN "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_IDENTITY_KEYRING "{\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${identity_root}\"}]}"
+          publish_secret PERIAPSIS_IDP_ADMIN_PASSWORD "$(openssl rand -base64 48 | tr -d '\n')"
+          publish_secret PERIAPSIS_LDAP_ACCEPTANCE_CUSTOMER_PASSWORD "$(openssl rand -base64 48 | tr -d '\n')"
+          publish_secret PERIAPSIS_LDAP_ACCEPTANCE_ISOLATION_PASSWORD "$(openssl rand -base64 48 | tr -d '\n')"
+          publish_secret PERIAPSIS_LDAP_ACCEPTANCE_SECOND_USER_PASSWORD "$(openssl rand -base64 48 | tr -d '\n')"
+          publish_secret PERIAPSIS_LDAP_ACCEPTANCE_USER_PASSWORD "$(openssl rand -base64 48 | tr -d '\n')"
+          publish_secret PERIAPSIS_LDAP_ADMIN_PASSWORD "$(openssl rand -base64 48 | tr -d '\n')"
+          publish_secret PERIAPSIS_MASTER_KEY "$(openssl rand -base64 32)"
+          publish_secret PERIAPSIS_MINIO_ROOT_PASSWORD "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_MINIO_ROOT_USER "ciroot$(openssl rand -hex 8)"
+          publish_secret PERIAPSIS_NOTIFIER_DATABASE_PASSWORD "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_NOTIFIER_PREVIEW_TOKEN "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_NOTIFICATION_KEYRING "{\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${notification_root}\"}]}"
+          publish_secret PERIAPSIS_POSTGRES_PASSWORD "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_S3_ACCESS_KEY "ciapp$(openssl rand -hex 8)"
+          publish_secret PERIAPSIS_S3_SECRET_KEY "$(openssl rand -hex 32)"
+          publish_secret PERIAPSIS_SMOKE_ADMIN_PASSWORD "$(openssl rand -base64 48)"
+          publish_secret PERIAPSIS_WORKER_DATABASE_PASSWORD "$(openssl rand -hex 32)"
           {
-            echo "PERIAPSIS_API_DATABASE_PASSWORD=$(openssl rand -hex 32)"
-            echo "PERIAPSIS_API_CREDENTIAL_KEYRING={\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${api_credential_root}\"}]}"
-            echo "PERIAPSIS_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)"
             echo "PERIAPSIS_COMPOSE_SECRETS_DIR=${RUNNER_TEMP}/periapsis-compose-secrets"
             echo "PERIAPSIS_DEV_TLS_CA_FILE=${tls_directory}/ca.crt"
             echo "PERIAPSIS_DEV_TLS_CERT_FILE=${tls_directory}/server.crt"
             echo "PERIAPSIS_DEV_TLS_KEY_FILE=${tls_directory}/server.key"
-            echo "PERIAPSIS_IDENTITY_KEYRING={\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${identity_root}\"}]}"
-            echo "PERIAPSIS_IDP_ADMIN_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
             echo "PERIAPSIS_IDP_ADMIN_USERNAME=admin"
-            echo "PERIAPSIS_LDAP_ACCEPTANCE_CUSTOMER_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "PERIAPSIS_LDAP_ACCEPTANCE_ISOLATION_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "PERIAPSIS_LDAP_ACCEPTANCE_SECOND_USER_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "PERIAPSIS_LDAP_ACCEPTANCE_USER_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "PERIAPSIS_LDAP_ADMIN_PASSWORD=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "PERIAPSIS_MASTER_KEY=$(openssl rand -base64 32)"
-            echo "PERIAPSIS_MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)"
-            echo "PERIAPSIS_MINIO_ROOT_USER=ciroot$(openssl rand -hex 8)"
-            echo "PERIAPSIS_NOTIFIER_DATABASE_PASSWORD=$(openssl rand -hex 32)"
             echo "PERIAPSIS_NOTIFIER_IMAGE=periapsis/notifier:${PERIAPSIS_IMAGE_TAG}"
-            echo "PERIAPSIS_NOTIFIER_PREVIEW_TOKEN=$(openssl rand -hex 32)"
-            echo "PERIAPSIS_NOTIFICATION_KEYRING={\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${notification_root}\"}]}"
-            echo "PERIAPSIS_POSTGRES_PASSWORD=$(openssl rand -hex 32)"
-            echo "PERIAPSIS_S3_ACCESS_KEY=ciapp$(openssl rand -hex 8)"
-            echo "PERIAPSIS_S3_SECRET_KEY=$(openssl rand -hex 32)"
-            echo "PERIAPSIS_SMOKE_ADMIN_PASSWORD=$(openssl rand -base64 48)"
-            echo "PERIAPSIS_WORKER_DATABASE_PASSWORD=$(openssl rand -hex 32)"
           } >> "${GITHUB_ENV}"
       - name: Prepare private file-backed Compose secrets
         run: node scripts/deploy/prepare-compose-secrets.mjs

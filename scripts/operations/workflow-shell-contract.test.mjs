@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
+const ci = (
+  await readFile(
+    new URL("../../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  )
+).replaceAll("\r\n", "\n");
 const security = (
   await readFile(
     new URL("../../.github/workflows/deployment-security.yml", import.meta.url),
@@ -43,6 +53,346 @@ function script(source) {
     .join("\n")
     .trim();
 }
+
+const credentialGeneration = script(
+  step(ci, "Generate ephemeral integration credentials"),
+);
+const credentialFunctions = ["mask_secret", "publish_secret"]
+  .map((name) => {
+    const match = new RegExp(`^${name}\\(\\) \\{\\n[\\s\\S]*?^\\}`, "mu").exec(
+      credentialGeneration,
+    );
+    assert.ok(match, `${name} must remain an inspectable workflow function`);
+    return match[0];
+  })
+  .join("\n");
+const secretNames = [
+  "PERIAPSIS_API_DATABASE_PASSWORD",
+  "PERIAPSIS_API_CREDENTIAL_KEYRING",
+  "PERIAPSIS_BOOTSTRAP_TOKEN",
+  "PERIAPSIS_IDENTITY_KEYRING",
+  "PERIAPSIS_IDP_ADMIN_PASSWORD",
+  "PERIAPSIS_LDAP_ACCEPTANCE_CUSTOMER_PASSWORD",
+  "PERIAPSIS_LDAP_ACCEPTANCE_ISOLATION_PASSWORD",
+  "PERIAPSIS_LDAP_ACCEPTANCE_SECOND_USER_PASSWORD",
+  "PERIAPSIS_LDAP_ACCEPTANCE_USER_PASSWORD",
+  "PERIAPSIS_LDAP_ADMIN_PASSWORD",
+  "PERIAPSIS_MASTER_KEY",
+  "PERIAPSIS_MINIO_ROOT_PASSWORD",
+  "PERIAPSIS_MINIO_ROOT_USER",
+  "PERIAPSIS_NOTIFIER_DATABASE_PASSWORD",
+  "PERIAPSIS_NOTIFIER_PREVIEW_TOKEN",
+  "PERIAPSIS_NOTIFICATION_KEYRING",
+  "PERIAPSIS_POSTGRES_PASSWORD",
+  "PERIAPSIS_S3_ACCESS_KEY",
+  "PERIAPSIS_S3_SECRET_KEY",
+  "PERIAPSIS_SMOKE_ADMIN_PASSWORD",
+  "PERIAPSIS_WORKER_DATABASE_PASSWORD",
+];
+const bash =
+  process.platform === "win32"
+    ? join(
+        process.env.ProgramFiles ?? "C:/Program Files",
+        "Git/usr/bin/bash.exe",
+      )
+    : "/bin/bash";
+const bashPath = (path) =>
+  path
+    .replaceAll("\\", "/")
+    .replace(/^([A-Za-z]):/u, (_, drive) => `/${drive.toLowerCase()}`);
+
+// Execute the actual Bash functions. Observe printf at the call boundary so a
+// removed or late mask fails before the corresponding environment line is written.
+const orderedMaskHarness = `
+observed_masks=()
+printf() {
+  local format="$1"
+  shift
+  if [[ "\${format}" == '::add-mask::%s\\n' ]]; then
+    [[ "\${MASK_WRITE_FAIL:-0}" != 1 ]] || return 1
+    observed_masks+=("$@")
+  elif [[ "\${format}" == '%s=%s\\n' ]]; then
+    [[ $# == 2 && \${#observed_masks[@]} -gt 0 ]] || return 91
+    [[ "\${observed_masks[-1]}" == "\${2//%/%25}" ]] || return 92
+  fi
+  builtin printf "\${format}" "$@"
+}
+`;
+
+async function runCredentialShell(t, source, extra = {}) {
+  const directory = await mkdtemp(
+    join(tmpdir(), "periapsis-workflow-mask-test-"),
+  );
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const envFile = join(directory, "github-env");
+  await writeFile(envFile, "EXISTING_NON_SECRET=unchanged\n");
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) =>
+        !/^(?:PERIAPSIS_|GITHUB_|RUNNER_|BASH_FUNC_|SHELLOPTS$|BASHOPTS$)/u.test(
+          name,
+        ),
+    ),
+  );
+  const result = spawnSync(
+    bash,
+    [
+      "--noprofile",
+      "--norc",
+      "-c",
+      `set -euo pipefail\n${orderedMaskHarness}\n${source}`,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 5000,
+      killSignal: "SIGKILL",
+      windowsHide: true,
+      maxBuffer: 32_768,
+      env: {
+        ...environment,
+        BASH_ENV: "",
+        ENV: "",
+        PATH: process.platform === "win32" ? "/usr/bin:/bin" : process.env.PATH,
+        GITHUB_ENV: bashPath(envFile),
+        RUNNER_TEMP: bashPath(directory),
+        PERIAPSIS_IMAGE_TAG: "fixture-image-tag",
+        ...extra,
+      },
+    },
+  );
+  assert.ok(
+    !result.error,
+    "the real Bash fixture must finish within its bound",
+  );
+  assert.equal(result.signal, null);
+  assert.ok(result.stderr === "", "no raw failure detail may be emitted");
+  const published = await readFile(envFile, "utf8");
+  assert.ok(published.startsWith("EXISTING_NON_SECRET=unchanged\n"));
+  return {
+    result,
+    published: published.slice("EXISTING_NON_SECRET=unchanged\n".length),
+  };
+}
+
+test("Compose generation masks all 21 secrets and three keyring components before environment publication", async (t) => {
+  const start = credentialGeneration.indexOf(
+    'api_credential_root="$(openssl rand',
+  );
+  assert.ok(start > 0);
+  const generation = credentialGeneration.slice(start);
+  assert.deepEqual(
+    [...generation.matchAll(/^publish_secret (PERIAPSIS_[A-Z0-9_]+) /gmu)].map(
+      (match) => match[1],
+    ),
+    secretNames,
+  );
+  assert.doesNotMatch(credentialGeneration, /set -[^\n]*x|set -o xtrace/u);
+  assert.ok(
+    ci.indexOf("Generate ephemeral integration credentials") <
+      ci.indexOf("Prepare private file-backed Compose secrets"),
+  );
+  const { result, published } = await runCredentialShell(
+    t,
+    `${credentialFunctions}\ntls_directory="\${RUNNER_TEMP}/periapsis-compose-tls"\n${generation}`,
+  );
+  assert.equal(result.status, 0);
+  const entries = published
+    .trimEnd()
+    .split("\n")
+    .map((line) => {
+      const separator = line.indexOf("=");
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    });
+  assert.equal(entries.length, 27);
+  const values = Object.fromEntries(entries);
+  const masks = result.stdout
+    .trimEnd()
+    .split("\n")
+    .map((line) => {
+      assert.ok(
+        line.startsWith("::add-mask::"),
+        "stdout may contain only masking commands",
+      );
+      return line.slice("::add-mask::".length);
+    });
+  assert.equal(masks.length, 24);
+  for (const name of secretNames) {
+    assert.ok(values[name]?.length > 0, `${name} must be published`);
+    assert.equal(
+      masks.filter((mask) => mask === values[name]).length,
+      1,
+      `${name} must be masked exactly once with unchanged bytes`,
+    );
+  }
+  for (const [index, name] of [
+    "PERIAPSIS_API_CREDENTIAL_KEYRING",
+    "PERIAPSIS_IDENTITY_KEYRING",
+    "PERIAPSIS_NOTIFICATION_KEYRING",
+  ].entries()) {
+    let envelope;
+    try {
+      envelope = JSON.parse(values[name]);
+    } catch {
+      assert.fail("generated keyring must be valid JSON");
+    }
+    assert.ok(
+      JSON.stringify(envelope) === values[name],
+      "keyring JSON must remain compact and unchanged",
+    );
+    assert.ok(envelope?.activeVersion === 1);
+    assert.ok(Array.isArray(envelope.keys) && envelope.keys.length === 1);
+    assert.ok(envelope.keys[0]?.version === 1);
+    const key = envelope.keys[0].key;
+    assert.ok(typeof key === "string");
+    assert.ok(
+      masks[index] === key,
+      "each raw key is masked before the first secret publication",
+    );
+    assert.equal(
+      Buffer.from(key, index === 2 ? "base64url" : "base64").length,
+      32,
+    );
+    assert.ok(
+      index === 2
+        ? /^[A-Za-z0-9_-]{43}$/u.test(key)
+        : /^[A-Za-z0-9+/]{43}=$/u.test(key),
+    );
+  }
+  assert.ok(values.PERIAPSIS_IDP_ADMIN_USERNAME === "admin");
+  assert.ok(
+    values.PERIAPSIS_NOTIFIER_IMAGE === "periapsis/notifier:fixture-image-tag",
+  );
+  assert.ok(
+    values.PERIAPSIS_COMPOSE_SECRETS_DIR.endsWith("/periapsis-compose-secrets"),
+  );
+  for (const name of ["CA", "CERT", "KEY"]) {
+    assert.ok(
+      values[`PERIAPSIS_DEV_TLS_${name}_FILE`].includes(
+        "/periapsis-compose-tls/",
+      ),
+    );
+  }
+});
+
+test("real Bash masking preserves percent, quotes, whitespace and JSON bytes without command injection", async (t) => {
+  const canary = `canary-${randomBytes(24).toString("hex")}: +/= %0A%25 ' \\" $(false) ::warning::`;
+  const { result, published } = await runCredentialShell(
+    t,
+    `${credentialFunctions}\npublish_secret PERIAPSIS_TEST_SECRET "$TEST_CANARY"`,
+    { TEST_CANARY: JSON.stringify({ key: canary }) },
+  );
+  assert.equal(result.status, 0);
+  assert.ok(
+    published === `PERIAPSIS_TEST_SECRET=${JSON.stringify({ key: canary })}\n`,
+    "published bytes must not be escaped or evaluated",
+  );
+  assert.ok(
+    result.stdout ===
+      `::add-mask::${JSON.stringify({ key: canary }).replaceAll("%", "%25")}\n`,
+    "only workflow command data is escaped",
+  );
+});
+
+test("invalid or unmaskable secrets are never published by the real Bash function", async (t) => {
+  await Promise.all(
+    [
+      ["PERIAPSIS_TEST_SECRET", ""],
+      ["PERIAPSIS_TEST_SECRET", "line\nbreak"],
+      ["PERIAPSIS_TEST_SECRET", "line\rbreak"],
+      ["GITHUB_ENV", "invalid-name-canary"],
+      ["PERIAPSIS_TEST\nNEXT", "invalid-name-canary"],
+      ["PERIAPSIS_TEST=value", "invalid-name-canary"],
+    ].map(async ([name, value]) => {
+      const { result, published } = await runCredentialShell(
+        t,
+        `${credentialFunctions}\npublish_secret "$TEST_SECRET_NAME" "$TEST_CANARY"`,
+        { TEST_SECRET_NAME: name, TEST_CANARY: value },
+      );
+      assert.equal(result.status, 1);
+      assert.ok(published === "", "invalid input must not be published");
+      assert.ok(result.stdout === "", "invalid input must not be printed");
+    }),
+  );
+  const { result, published } = await runCredentialShell(
+    t,
+    `${credentialFunctions}\npublish_secret PERIAPSIS_TEST_SECRET "$TEST_CANARY"`,
+    { TEST_CANARY: randomBytes(24).toString("hex"), MASK_WRITE_FAIL: "1" },
+  );
+  assert.equal(result.status, 1);
+  assert.ok(published === "", "failed masking must not publish input");
+  assert.ok(result.stdout === "", "failed masking must not print input");
+});
+
+test("the Bash order probe rejects an absent or late mask", async (t) => {
+  const mutations = [
+    credentialFunctions.replace('  mask_secret "${value}" || return 1\n', ""),
+    credentialFunctions
+      .replace('  mask_secret "${value}" || return 1\n', "")
+      .replace(
+        ' >> "${GITHUB_ENV}"',
+        ' >> "${GITHUB_ENV}"\n  mask_secret "${value}" || return 1',
+      ),
+  ];
+  await Promise.all(
+    mutations.map(async (functions) => {
+      assert.notEqual(functions, credentialFunctions);
+      const { result, published } = await runCredentialShell(
+        t,
+        `${functions}\npublish_secret PERIAPSIS_TEST_SECRET "$TEST_CANARY"`,
+        { TEST_CANARY: randomBytes(24).toString("hex") },
+      );
+      assert.equal(result.status, 91);
+      assert.ok(
+        published === "",
+        "an absent or late mask must block publication",
+      );
+      assert.ok(
+        result.stdout === "",
+        "an absent or late mask must not print input",
+      );
+    }),
+  );
+});
+
+test("deployment S3 generation masks both values before the preparer and publishes only its path", async (t) => {
+  const prepare = script(
+    step(
+      job(security, "manifests"),
+      "Prepare private file-backed Compose secrets",
+    ),
+  );
+  assert.match(
+    prepare,
+    /^PERIAPSIS_S3_ACCESS_KEY="ciapp\$\(openssl rand -hex 8\)"$/mu,
+  );
+  assert.match(
+    prepare,
+    /^PERIAPSIS_S3_SECRET_KEY="\$\(openssl rand -hex 32\)"$/mu,
+  );
+  const probe = `
+node() {
+  [[ $# == 1 && "$1" == scripts/deploy/prepare-compose-secrets.mjs ]]
+  [[ \${#observed_masks[@]} == 2 ]]
+  [[ "\${observed_masks[0]}" == "\${PERIAPSIS_S3_ACCESS_KEY}" ]]
+  [[ "\${observed_masks[1]}" == "\${PERIAPSIS_S3_SECRET_KEY}" ]]
+}
+`;
+  const { result, published } = await runCredentialShell(
+    t,
+    `${probe}\n${prepare}`,
+  );
+  assert.equal(result.status, 0);
+  assert.ok(
+    /^PERIAPSIS_COMPOSE_SECRETS_DIR=[^\r\n]+\/periapsis-compose-secrets\n$/u.test(
+      published,
+    ),
+  );
+  assert.ok(
+    /^::add-mask::ciapp[0-9a-f]{16}\n::add-mask::[0-9a-f]{64}\n$/u.test(
+      result.stdout,
+    ),
+  );
+});
 
 for (const name of ["application-images", "notifier-image"]) {
   test(`${name} exports the pinned daemon socket before scanners run`, () => {
@@ -204,11 +554,7 @@ test("the disposable performance process is non-root with only explicit writable
   assert.doesNotMatch(cleanup, /chmod|0777|0644/u);
 });
 
-test("both Compose workflows prepare file-backed secrets before the first authenticated profile start", async () => {
-  const ci = await readFile(
-    new URL("../../.github/workflows/ci.yml", import.meta.url),
-    "utf8",
-  );
+test("both Compose workflows prepare file-backed secrets before the first authenticated profile start", () => {
   for (const [source, startup] of [
     [security, "Validate Compose profiles and Swarm model"],
     [ci, "Validate resolved Compose model"],
