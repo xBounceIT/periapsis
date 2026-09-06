@@ -25,7 +25,7 @@ const notifierHttp = source("services/notifier/src/http.ts");
 const apiRepository = source(
   "services/api/internal/postgres/notification_repository.go",
 );
-const compose = source("deploy/compose/compose.yaml");
+const compose = source("deploy/compose/compose.base.yaml");
 const workflow = source(".github/workflows/ci.yml");
 
 function functionBody(name: string): string {

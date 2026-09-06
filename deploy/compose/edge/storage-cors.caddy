@@ -1,0 +1,55 @@
+(periapsis_storage_cors) {
+	# The pinned local MinIO has no per-bucket CORS implementation. The only
+	# browser-facing S3 hop owns this policy; upstream CORS headers never escape.
+	@preflight {
+		method OPTIONS
+		path /periapsis-evidence/*
+		header Origin {args[0]}
+		header Access-Control-Request-Method GET
+		header Access-Control-Request-Method HEAD
+		header Access-Control-Request-Method PUT
+	}
+	@options method OPTIONS
+	@foreign_origin {
+		header Origin *
+		not header Origin {args[0]}
+	}
+	@browser_method_denied {
+		header Origin *
+		not method GET HEAD PUT
+	}
+	@browser_path_denied {
+		header Origin *
+		not path /periapsis-evidence/*
+	}
+	@browser header Origin {args[0]}
+	route {
+		header {
+			+Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+			defer
+		}
+		handle @preflight {
+			header {
+				Access-Control-Allow-Origin {args[0]}
+				Access-Control-Allow-Methods "GET, HEAD, PUT"
+				Access-Control-Allow-Headers "Cache-Control, Content-Disposition, Content-Length, Content-Type, If-None-Match, X-Amz-Meta-Periapsis-Declared-Mime, X-Amz-Meta-Periapsis-Expected-Size"
+				Access-Control-Max-Age 300
+			}
+			respond "" 204
+		}
+		respond @options 403
+		respond @foreign_origin 403
+		respond @browser_method_denied 403
+		respond @browser_path_denied 403
+		header @browser {
+			Access-Control-Allow-Origin {args[0]}
+			Access-Control-Expose-Headers ETag
+			defer
+		}
+		# No request rewrite: preserve Host, raw URL, signed headers and body.
+		# Requests without Origin still require MinIO's normal S3 authorization.
+		reverse_proxy http://minio:9000 {
+			header_down -Access-Control-*
+		}
+	}
+}

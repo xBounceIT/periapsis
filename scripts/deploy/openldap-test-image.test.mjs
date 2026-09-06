@@ -205,7 +205,7 @@ test("OpenLDAP image fixes numeric identity at build time and never uses root bo
 });
 
 test("Compose, its env, both workloads, smoke and integration use exact unprivileged LDAP ports", async () => {
-  const compose = await source("deploy/compose/compose.yaml");
+  const compose = await source("deploy/compose/compose.base.yaml");
   const ldap = compose
     .split("\n  openldap:\n")[1]
     .split(/^  [a-z][a-z-]*:\n/mu)[0];

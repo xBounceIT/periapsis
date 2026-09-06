@@ -244,7 +244,7 @@ test("CLI errors never print values and reject unknown options", async (t) => {
 
 test("every Compose secret maps to its own file and environment-backed regressions are rejected", async () => {
   const source = await readFile(
-    new URL("../../deploy/compose/compose.yaml", import.meta.url),
+    new URL("../../deploy/compose/compose.base.yaml", import.meta.url),
     "utf8",
   );
   assert.deepEqual(validateComposeFileSecrets(source), []);

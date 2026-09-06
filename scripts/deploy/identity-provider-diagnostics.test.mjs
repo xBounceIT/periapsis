@@ -279,7 +279,7 @@ test("startup directory import filename matches the declared Keycloak realm", ()
   // routes these files to this provider, not the permissive single-file provider.
   const realm = JSON.parse(read("deploy/compose/auth/keycloak-realm.json"));
   assert.match(realm.realm, /^[a-z0-9-]+$/u);
-  const compose = read("deploy/compose/compose.yaml");
+  const compose = read("deploy/compose/compose.base.yaml");
   const block = compose.slice(
     compose.indexOf("  identity-provider:"),
     compose.indexOf("  mailpit:"),

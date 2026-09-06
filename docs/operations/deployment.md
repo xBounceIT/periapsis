@@ -30,6 +30,49 @@ Never run local MinIO, Mailpit, OpenLDAP, or Keycloak profiles as production dep
 Use supported managed/self-operated services with backups, TLS, monitoring, and a separate
 security lifecycle.
 
+## Remote reverse proxy with an HTTP origin
+
+TLS may terminate on a trusted proxy on another machine. Periapsis web can listen on
+HTTP without any local web certificate; the public origin must remain HTTPS. Set site
+values through environment variables, for example:
+
+```dotenv
+PERIAPSIS_PUBLIC_URL=https://incidents.example.com
+PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS=192.0.2.10/32
+```
+
+Replace the documentation address with the actual proxy source observed by web. Use
+canonical lowercase origins without a trailing slash or redundant `:443`. The proxy must
+overwrite incoming forwarding headers with the actual client IP in `X-Forwarded-For`,
+exactly `X-Forwarded-Proto: https`, and the public origin's `Host`. Do not blindly append
+untrusted caller-supplied XFF. Web validates the entire bounded chain, resolves it from
+right to left, and forwards only the canonical client address to the API. This identity
+feeds existing audit, credential-network restrictions and shared request limits.
+
+- For a dedicated-host **compatibility/staging trial**, select
+  `deploy/compose/compose.reverse-proxy.yaml` instead of `compose.yaml`. Apply
+  [`deploy/compose/.env.reverse-proxy.example`](../../deploy/compose/.env.reverse-proxy.example)
+  alongside the existing file-backed secrets. Set the host bind IP/HTTP port, and public
+  storage/IdP HTTPS origins when using those bundled test services. The TLS fragment is
+  not loaded, so no dummy certificate paths or local application CA are required.
+- For **Swarm**, use `stack.yml` followed by `stack.reverse-proxy.yml` on every
+  validation/deployment. Also set `PERIAPSIS_TRUSTED_PROXY_CIDRS` to the reviewed web
+  peers seen by API. Host-mode publication preserves the external peer boundary; it
+  permits at most one web task per node and uses stop-first updates. Follow the
+  [Swarm rollout procedure](../../deploy/swarm/README.md#opt-in-remote-reverse-proxy-without-local-certificates).
+
+Both variants enable `PERIAPSIS_WEB_PROXY_ONLY=true`; web denies non-proxy application
+requests. This is not transport encryption or a firewall. Restrict origin ports to the
+proxy and use a private network or encrypted tunnel between machines, never public
+plaintext transport. Do not publish the API or database. PostgreSQL, S3, LDAP, scanners
+and federation keep their independent outbound TLS and trust requirements. Kubernetes'
+existing HTTP ClusterIP/HTTPS Ingress setup is unchanged.
+
+Before accepting traffic, verify a real request through the proxy retains its client IP,
+caller-injected XFF cannot replace it, direct origin application requests are rejected,
+and login, CSRF, callback URLs and signed uploads still work at the public origin. The
+repository's tests do not replace this site-specific NAT/firewall/browser acceptance.
+
 ## Secret lifecycle
 
 Inventory each secret by owner, purpose, creation time, version, consumers, and rotation

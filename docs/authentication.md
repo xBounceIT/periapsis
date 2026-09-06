@@ -73,7 +73,7 @@ immediately on the completing replica.
 
 `PERIAPSIS_PUBLIC_URL` is the exact browser-facing origin. Production requires HTTPS. It
 must match the request `Origin` (or accepted same-origin `Referer`) on cookie-authenticated
-mutations. Local Compose also uses HTTPS: its external Caddy edge sets the origin to
+mutations. Default local Compose also uses HTTPS: its external Caddy edge sets the origin to
 `https://localhost:PERIAPSIS_WEB_PORT`; the API and web upstream have no direct host HTTP
 binding.
 
@@ -89,6 +89,20 @@ stops at the first untrusted hop, strips all inbound forwarding headers, and sen
 canonical address to the API. Local Compose trusts only the fixed Caddy edge `/32`; direct
 local-process development leaves the value empty. Production ingress networks must be
 listed explicitly on both boundaries; malformed or duplicate chains fail closed.
+
+For HTTP origins behind a remote TLS-terminating proxy, enable
+`PERIAPSIS_WEB_PROXY_ONLY=true` using the dedicated Compose or Swarm variant. Web
+requires a nonempty restricted `PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS` and canonical
+`PERIAPSIS_PUBLIC_URL` HTTPS origin (lowercase hostname, no trailing slash or redundant
+`:443`). It rejects untrusted socket peers before static/API routing and requires exactly
+one public `Host`, one valid bounded `X-Forwarded-For`, and one `X-Forwarded-Proto: https`.
+Alternate forwarding headers are removed before calling the API. Only exact GET/HEAD
+`/health/live` is available directly; exact GET `/health/ready` additionally bypasses the
+gate only from loopback and still reflects API readiness. Neither exception exposes
+application routes. Secure cookies and origin/CSRF checks derive from the public HTTPS
+origin, not from the unencrypted backend socket. Keep the cross-machine hop on a private,
+firewall-restricted network or encrypted tunnel. See the
+[deployment setup](operations/deployment.md#remote-reverse-proxy-with-an-http-origin).
 
 The Compose edge serves the Keycloak test realm at
 `https://idp.localhost:PERIAPSIS_IDP_PORT`. The API receives the external development CA

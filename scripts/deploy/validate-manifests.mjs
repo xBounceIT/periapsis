@@ -2,6 +2,10 @@ import { readFile, readdir } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { composeSecretVariables } from "./prepare-compose-secrets.mjs";
+import {
+  readDevelopmentComposeSources,
+  readDevelopmentCaddySources,
+} from "./compose-sources.mjs";
 
 export function validateComposeFileSecrets(contents, path = "Compose") {
   const errors = [];
@@ -32,6 +36,13 @@ export function validateComposeFileSecrets(contents, path = "Compose") {
 const requiredFiles = [
   "apps/web/Dockerfile",
   "deploy/compose/compose.yaml",
+  "deploy/compose/compose.base.yaml",
+  "deploy/compose/compose.tls.yaml",
+  "deploy/compose/compose.reverse-proxy.yaml",
+  "deploy/compose/reverse-proxy.override.yaml",
+  "deploy/compose/edge/Caddyfile.reverse-proxy",
+  "deploy/compose/edge/storage-cors.caddy",
+  "deploy/compose/edge/reverse-proxy-entrypoint.sh",
   "deploy/compose/database-task.mjs",
   "deploy/compose/database-task-config.mjs",
   "deploy/compose/Dockerfile.database",
@@ -268,14 +279,12 @@ export function validateInlineSecrets(contents, path = "manifest") {
 }
 
 export function validateDFIRStorageCORS(contents, path = "local storage CORS") {
-  const storage = contents.slice(
-    contents.indexOf("https://storage.localhost:"),
-  );
+  const storage = contents.slice(contents.indexOf("(periapsis_storage_cors)"));
   const errors = requireMarkers(storage, path, [
     "@preflight {",
     "method OPTIONS",
     "path /periapsis-evidence/*",
-    "header Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
+    "header Origin {args[0]}",
     "header Access-Control-Request-Method GET",
     "header Access-Control-Request-Method HEAD",
     "header Access-Control-Request-Method PUT",
@@ -288,10 +297,7 @@ export function validateDFIRStorageCORS(contents, path = "local storage CORS") {
     "header_down -Access-Control-*",
   ]);
   const expected = new Map([
-    [
-      "Access-Control-Allow-Origin",
-      "https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
-    ],
+    ["Access-Control-Allow-Origin", "{args[0]}"],
     ["Access-Control-Allow-Methods", '"GET, HEAD, PUT"'],
     [
       "Access-Control-Allow-Headers",
@@ -532,6 +538,7 @@ export function validateComposeDevelopmentTLS(
       "<<: *application-security",
       "image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
       "./edge/Caddyfile:/etc/caddy/Caddyfile:ro",
+      "./edge/storage-cors.caddy:/etc/caddy/storage-cors.caddy:ro",
       "source: dev_tls_certificate",
       "target: periapsis-dev-tls.crt",
       "source: dev_tls_private_key",
@@ -557,6 +564,8 @@ export function validateComposeDevelopmentTLS(
       "reverse_proxy http://identity-provider:8080",
       "https://storage.localhost:{$PERIAPSIS_MINIO_API_PORT:19000}",
       "reverse_proxy http://minio:9000",
+      "import /etc/caddy/storage-cors.caddy",
+      "import periapsis_storage_cors https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
     ]),
   ];
   if (
@@ -819,6 +828,10 @@ async function listFiles(root, directory) {
 }
 
 async function load(root, path) {
+  if (path === "deploy/compose/compose.yaml")
+    return readDevelopmentComposeSources(root);
+  if (path === "deploy/compose/edge/Caddyfile")
+    return readDevelopmentCaddySources(root);
   return readFile(join(root, path), "utf8");
 }
 
@@ -1180,7 +1193,12 @@ export async function validateRepository(rootDirectory) {
       "file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notifier_database_password",
     ]),
   );
-  errors.push(...validateComposeFileSecrets(compose, composePath));
+  errors.push(
+    ...validateComposeFileSecrets(
+      contentsByPath.get("deploy/compose/compose.base.yaml") ?? "",
+      "deploy/compose/compose.base.yaml",
+    ),
+  );
   errors.push(
     ...requireMarkers(
       contentsByPath.get("deploy/compose/database-task.mjs") ?? "",

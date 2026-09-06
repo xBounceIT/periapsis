@@ -347,6 +347,8 @@ jobs:
         run: node scripts/deploy/prepare-compose-secrets.mjs
       - name: Validate resolved Compose model
         run: docker compose --file deploy/compose/compose.yaml --profile minimal config --quiet
+      - name: Verify TLS and certificate-free proxy Compose models
+        run: node --test scripts/deploy/compose-models.test.mjs
       - name: Build application and database images
         run: |
           docker compose --file deploy/compose/compose.yaml --profile auth-test build api worker web migration ldap-tls openldap identity-provider minio minio-provision

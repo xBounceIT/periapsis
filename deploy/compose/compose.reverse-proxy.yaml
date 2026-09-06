@@ -1,0 +1,5 @@
+name: periapsis
+
+# The common model contains no local edge certificate requirements.
+include:
+  - path: [./compose.base.yaml, ./reverse-proxy.override.yaml]

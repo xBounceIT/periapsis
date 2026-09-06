@@ -1,0 +1,107 @@
+x-application-security: &application-security
+  init: true
+  user: "10001:10001"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001,mode=1770
+  stop_grace_period: 30s
+
+x-runtime-profiles: &runtime-profiles
+  - minimal
+  - auth-test
+  - full
+
+services:
+  api:
+    environment:
+      PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/periapsis-dev-tls-ca.crt
+    secrets:
+      - source: dev_tls_ca
+        target: periapsis-dev-tls-ca.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+
+  worker:
+    environment:
+      PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/periapsis-dev-tls-ca.crt
+    secrets:
+      - source: dev_tls_ca
+        target: periapsis-dev-tls-ca.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+
+  edge:
+    <<: *application-security
+    profiles: *runtime-profiles
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    environment:
+      PERIAPSIS_IDP_PORT: ${PERIAPSIS_IDP_PORT:-18090}
+      PERIAPSIS_MINIO_API_PORT: ${PERIAPSIS_MINIO_API_PORT:-19000}
+      PERIAPSIS_WEB_PORT: ${PERIAPSIS_WEB_PORT:-8443}
+      XDG_CONFIG_HOME: /config
+      XDG_DATA_HOME: /data
+    volumes:
+      - ./edge/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./edge/storage-cors.caddy:/etc/caddy/storage-cors.caddy:ro
+    secrets:
+      - source: dev_tls_certificate
+        target: periapsis-dev-tls.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+      - source: dev_tls_private_key
+        target: periapsis-dev-tls.key
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: dev_tls_ca
+        target: periapsis-dev-tls-ca.crt
+        uid: "10001"
+        gid: "10001"
+        mode: 0444
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+      - /data:uid=10001,gid=10001,mode=0700
+      - /config:uid=10001,gid=10001,mode=0700
+    ports:
+      - 127.0.0.1:${PERIAPSIS_WEB_PORT:-8443}:${PERIAPSIS_WEB_PORT:-8443}
+      - 127.0.0.1:${PERIAPSIS_IDP_PORT:-18090}:${PERIAPSIS_IDP_PORT:-18090}
+      - 127.0.0.1:${PERIAPSIS_MINIO_API_PORT:-19000}:${PERIAPSIS_MINIO_API_PORT:-19000}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent --show-error --max-time 2 --cacert /run/secrets/periapsis-dev-tls-ca.crt https://localhost:${PERIAPSIS_WEB_PORT:-8443}/health/live >/dev/null
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      web:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      frontend:
+        ipv4_address: 172.30.240.4
+      identity:
+        ipv4_address: 172.30.241.6
+        aliases:
+          - idp.localhost
+      storage:
+        ipv4_address: 172.30.242.6
+        aliases:
+          - storage.localhost
+
+secrets:
+  dev_tls_certificate:
+    file: ${PERIAPSIS_DEV_TLS_CERT_FILE:?set PERIAPSIS_DEV_TLS_CERT_FILE to an external PEM certificate path}
+  dev_tls_private_key:
+    file: ${PERIAPSIS_DEV_TLS_KEY_FILE:?set PERIAPSIS_DEV_TLS_KEY_FILE to an external PEM private-key path}
+  dev_tls_ca:
+    file: ${PERIAPSIS_DEV_TLS_CA_FILE:?set PERIAPSIS_DEV_TLS_CA_FILE to an external PEM CA path}

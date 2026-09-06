@@ -6,12 +6,115 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/periapsis-im/periapsis/services/api/internal/authentication"
 	"github.com/periapsis-im/periapsis/services/api/internal/authorization"
 )
+
+type reverseProxyTransportAuthStub struct {
+	*transportAuthStub
+	event authentication.EventContext
+	csrf  string
+}
+
+func (stub *reverseProxyTransportAuthStub) SwitchTenant(
+	ctx context.Context, token, csrf string, tenantID uuid.UUID, event authentication.EventContext,
+) (authentication.SessionCredential, error) {
+	stub.event = event
+	stub.csrf = csrf
+	return stub.transportAuthStub.SwitchTenant(ctx, token, csrf, tenantID, event)
+}
+
+func TestHTTPSPublicOriginSecurityOnPlainHTTPBackend(t *testing.T) {
+	t.Parallel()
+	const publicOrigin = "https://localhost:8443"
+	const forwardedClient = "203.0.113.50"
+	csrf := strings.Repeat("B", 43)
+	for _, test := range []struct {
+		name        string
+		origin      string
+		peer        string
+		csrf        string
+		serviceErr  error
+		wantCalls   int
+		wantStatus  int
+		wantAddress string
+	}{
+		{name: "trusted web peer", origin: publicOrigin, peer: "172.30.240.3:40000", csrf: csrf, wantCalls: 1, wantStatus: http.StatusOK, wantAddress: forwardedClient},
+		{name: "foreign origin", origin: "https://attacker.example", peer: "172.30.240.3:40000", csrf: csrf, wantStatus: http.StatusForbidden},
+		{name: "plaintext public origin", origin: "http://localhost:8443", peer: "172.30.240.3:40000", csrf: csrf, wantStatus: http.StatusForbidden},
+		{name: "missing CSRF", origin: publicOrigin, peer: "172.30.240.3:40000", wantStatus: http.StatusForbidden},
+		{name: "CSRF rejected by use case", origin: publicOrigin, peer: "172.30.240.3:40000", csrf: csrf, serviceErr: authentication.ErrForbidden, wantCalls: 1, wantStatus: http.StatusForbidden, wantAddress: forwardedClient},
+		{name: "neighbor outside exact web prefix", origin: publicOrigin, peer: "172.30.240.4:40000", csrf: csrf, wantCalls: 1, wantStatus: http.StatusOK, wantAddress: "172.30.240.4"},
+		{name: "direct forged forwarding ignored", origin: publicOrigin, peer: "198.51.100.40:40000", csrf: csrf, wantCalls: 1, wantStatus: http.StatusOK, wantAddress: "198.51.100.40"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			now := time.Now().UTC()
+			tenantID := uuid.Must(uuid.NewV7())
+			rotatedToken := strings.Repeat("C", 43)
+			auth := &reverseProxyTransportAuthStub{transportAuthStub: &transportAuthStub{
+				switchError: test.serviceErr,
+				switchResult: authentication.SessionCredential{
+					Session: authentication.Session{
+						ID: uuid.Must(uuid.NewV7()), User: authentication.User{
+							ID: uuid.Must(uuid.NewV7()), DisplayName: "Proxy test",
+						},
+						ActiveTenantID: &tenantID, CreatedAt: now, LastSeenAt: now,
+						IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(8 * time.Hour),
+						AuthenticationMethod: "totp",
+					},
+					SessionToken: rotatedToken, CSRFToken: csrf,
+				},
+			}}
+			router := newApplicationTestRouter(t, auth, "production", []netip.Prefix{
+				netip.MustParsePrefix("172.30.240.3/32"),
+			})
+			request := httptest.NewRequest(http.MethodPut, "http://api:8080/api/v1/auth/session/tenant",
+				strings.NewReader(`{"tenantId":"`+tenantID.String()+`"}`))
+			if request.TLS != nil || request.URL.Scheme != "http" {
+				t.Fatal("fixture must exercise a plain HTTP backend connection")
+			}
+			request.RemoteAddr = test.peer
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Origin", test.origin)
+			request.Header.Set("X-Forwarded-For", forwardedClient)
+			request.Header.Set("X-Forwarded-Proto", "https")
+			// The canonical public origin, not a caller's forwarded host, is authoritative.
+			request.Header.Set("X-Forwarded-Host", "attacker.example")
+			if test.csrf != "" {
+				request.Header.Set(csrfTokenHeader, test.csrf)
+			}
+			request.AddCookie(&http.Cookie{Name: productionCookie, Value: strings.Repeat("A", 43)})
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.wantStatus || auth.switchCalls != test.wantCalls {
+				t.Fatalf("status/calls = %d/%d, want %d/%d", response.Code, auth.switchCalls, test.wantStatus, test.wantCalls)
+			}
+			if test.wantCalls != 0 && (auth.event.RemoteAddress.String() != test.wantAddress || auth.csrf != csrf) {
+				t.Fatal("use case received an incorrect client address or CSRF token")
+			}
+			cookies := response.Result().Cookies()
+			if test.wantStatus != http.StatusOK {
+				assertProblem(t, response, http.StatusForbidden, "forbidden")
+				if len(cookies) != 0 {
+					t.Fatal("rejected mutation changed browser cookies")
+				}
+				return
+			}
+			if len(cookies) != 1 || cookies[0].Name != productionCookie || cookies[0].Value != rotatedToken ||
+				!cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].Domain != "" || cookies[0].Path != "/" ||
+				cookies[0].SameSite != http.SameSiteStrictMode {
+				t.Fatal("HTTP backend weakened the public HTTPS session-cookie policy")
+			}
+		})
+	}
+}
 
 func TestEventContextFallsBackFromUntrustedCorrelationUUID(t *testing.T) {
 	t.Parallel()

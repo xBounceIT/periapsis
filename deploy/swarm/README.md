@@ -21,6 +21,86 @@ identities remain stable, and pin `PERIAPSIS_TRUSTED_PROXY_CIDRS` to the exact w
 peers so the network dimension cannot be spoofed. Health, metrics, and documentation
 remain exempt; PostgreSQL admission errors fail ordinary requests closed.
 
+## Opt-in remote reverse proxy without local certificates
+
+For a trusted HTTPS reverse proxy on another machine, apply
+`stack.reverse-proxy.yml` **after** `stack.yml`. No local web certificate is needed:
+the browser connects to the external HTTPS edge, and that edge connects over a private,
+firewall-restricted HTTP link to each eligible web node on `PERIAPSIS_WEB_PORT`.
+This does not allow a public HTTP origin or plaintext traffic over the Internet. The
+external edge owns certificate validation, HTTP-to-HTTPS redirects and HSTS. PostgreSQL,
+S3, scanner, LDAP and federated-provider TLS/trust settings are unchanged.
+
+Set the following non-secret values in the operator environment file:
+
+- `PERIAPSIS_PUBLIC_URL`: the exact public HTTPS origin, including a non-default port
+  when used; no application path, credentials, query or fragment. This remains HTTPS
+  even though the private origin link is HTTP. Secure cookies, CSRF/origin checks,
+  WebAuthn and provider callback pins must continue to use that public origin.
+- `PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS`: only the remote proxy's actual immediate TCP
+  peers seen by web. For one proxy address use a `/32` IPv4 or `/128` IPv6 prefix.
+- `PERIAPSIS_TRUSTED_PROXY_CIDRS`: only the reviewed web immediate-peer addresses
+  actually seen by API. Verify the internal overlay/VIP path; do not assume a task's
+  advertised address is the peer observed after network translation.
+
+The two CIDR markers in `.env.example` are deliberately invalid. Replace both; never
+use `0.0.0.0/0`, `::/0`, a whole VPC/cluster, or an unreviewed shared overlay subnet.
+Both values are required by this variant. Omitting trust in the base stack discards the
+original client IP; it does not establish a trusted proxy boundary. Shared rate limits,
+credential CIDR restrictions and audit attribution depend on this configuration.
+
+The edge must overwrite caller-supplied forwarding headers, send a canonical
+`X-Forwarded-For` client IP and exactly `X-Forwarded-Proto: https`, preserve the public
+Host for routing, and preserve request paths, queries, bodies and authorization/cookies.
+If several independently managed proxies are involved, review every hop; do not simply
+trust an arbitrary incoming forwarding chain. Restrict the origin port in host/network
+firewall rules to the exact remote proxy sources. Application trust is not a firewall:
+do not publish API, metrics, database or other backend ports to that edge or the Internet.
+Probe a legitimate external client and an injected XFF header before admitting traffic;
+verify that the API resolves the legitimate client, and that direct non-proxy requests
+cannot reach application routes. Health probes remain local and are not a bypass for
+application requests.
+
+The variant uses `mode: host` publication to bypass the routing mesh on the web ingress
+hop. Direct the external load balancer only at nodes running a healthy web task; other
+nodes need not listen. A fixed host port allows **at most one web task per node**. The
+variant preserves the base placement constraints and adds `max_replicas_per_node: 1`;
+provide enough eligible nodes for the chosen replica count. Updates and rollbacks are
+`stop-first` to release that fixed port; a single-node/single-web deployment therefore
+has brief downtime during replacement. Base update monitoring, rollback behavior,
+resources, numeric UID/GID, read-only root, networks, secrets and zero-replica startup
+are retained. See Docker's [routing-mesh documentation](https://docs.docker.com/engine/swarm/ingress/#bypass-the-routing-mesh).
+
+After loading the reviewed non-secret environment as shown below, validate the actual
+merged configuration with the Docker CLI before deployment:
+
+```sh
+docker stack config \
+  --compose-file deploy/swarm/stack.yml \
+  --compose-file deploy/swarm/stack.reverse-proxy.yml
+```
+
+Inspect web's single published port: target `8081`, the selected published port,
+protocol `tcp`, and mode `host`, with no surviving `ingress` entry. Verify both trust
+settings, the public HTTPS origin, the retained placement constraints and update fields.
+The matching port tuple intentionally replaces the base port in the legacy stack loader;
+no Compose-only `!override`/`!reset` tags are used. Repository YAML contracts do not prove
+Docker's merged result or live firewall/client-IP behavior. Retain those separate checks.
+See [`docker stack config`](https://docs.docker.com/reference/cli/docker/stack/config/).
+
+Use both files, in this order, for the initial zero-replica deployment and **every** later
+stack update; then follow the same migration/bootstrap/scale sequence below:
+
+```sh
+docker stack deploy --with-registry-auth \
+  --compose-file deploy/swarm/stack.yml \
+  --compose-file deploy/swarm/stack.reverse-proxy.yml periapsis
+```
+
+Applying only `stack.yml` later would remove the opt-in boundary and restore routing-mesh
+publication. Do not change `PERIAPSIS_WEB_PORT` between the two inputs or add a separate
+origin publication. This variant does not deploy or configure the external proxy itself.
+
 ## Prepare immutable inputs
 
 Copy `.env.example` outside the repository and replace every image with an immutable

@@ -105,9 +105,65 @@ profile is started again; a failed task intentionally leaves them closed. The ex
 recovery rules are in the
 [upgrade runbook](../../docs/operations/migration-bootstrap-upgrade.md#current-compatibility-handoff).
 
+## Remote TLS proxy without local edge certificates
+
+Use `compose.reverse-proxy.yaml` explicitly when HTTPS terminates on another
+machine. It includes the same `compose.base.yaml` service model with
+`reverse-proxy.override.yaml`, never the TLS fragment. The normal `compose.yaml`
+entry remains local TLS by default. Docker Compose 2.39.4 or later is required
+for this documented multi-file setup; do not pass the TLS entry as an additional
+`-f` file or supply dummy certificate paths.
+
+Prepare the same 15 file-backed secrets, then apply the non-secret site settings
+from `.env.reverse-proxy.example` to your `.env`. Set the dedicated host's bind IP,
+HTTP port, canonical public **HTTPS** application origin and exact proxy peer
+CIDRs. The three `PERIAPSIS_DEV_TLS_*_FILE` values are unused in this mode and may
+remain empty. No container's security flags, secret files, database provisioning
+or application authorization are replaced by the remote proxy.
+
+```text
+docker compose --env-file .env --file deploy/compose/compose.reverse-proxy.yaml --profile full config --quiet
+docker compose --env-file .env --file deploy/compose/compose.reverse-proxy.yaml --profile full up --build --detach --wait
+```
+
+The external proxy forwards application traffic directly to the web HTTP port.
+It must replace client-supplied forwarding headers with one canonical
+`X-Forwarded-Proto: https`, a valid `X-Forwarded-For` client address, and the public
+origin's `Host` (including its non-default port, when applicable). Web admits only
+the configured socket peers and canonical public origin; the API still trusts
+only the fixed web container address. Inspect the actual peer address seen after
+host NAT and configure that exact address, not a universal CIDR or a whole LAN.
+
+Restrict the host firewall to that proxy on the web, IdP and storage listener
+ports. The HTTP connection between machines must traverse a trusted private
+network or encrypted tunnel; do not expose this plaintext hop over the public
+Internet. A default `0.0.0.0` bind is not a substitute for firewall rules.
+
+The auxiliary HTTP Caddy serves only the compatibility MinIO/Keycloak targets,
+with the same proxy-peer restriction and exact application-origin storage CORS
+policy. The external proxy must publish `PERIAPSIS_S3_PUBLIC_ENDPOINT` and
+`PERIAPSIS_IDP_PUBLIC_URL` as HTTPS origins and preserve the storage Host, raw URI,
+signed headers and body. Only local `GET /health/live` bypasses the auxiliary
+peer gate. Keycloak's hostname remains an invalid placeholder until explicitly
+configured for `auth-test`/`full`; never treat that placeholder as a working IdP.
+The test-only auxiliary Keycloak sees the external proxy's IP; its audit records
+are not evidence of the application's original-client IP attribution.
+Existing Keycloak data may already contain an imported realm: changing an env
+value does not update an existing realm. Update its callback origins deliberately
+through its supported administration flow; do not reset volumes to rotate them.
+
+API and worker continue to validate outbound HTTPS normally. The worker receives
+only an additional egress network, not published ports. The containers must resolve
+and reach the remote IdP's public hostname; if it resolves to a private proxy IP,
+set `PERIAPSIS_FEDERATED_PRIVATE_EGRESS_CIDRS` to explicitly admit that destination
+and retain any needed existing identity targets. Keep HTTPS-port and LDAP/S3 SSRF
+allowlists independent. This remains the Compose compatibility environment, not
+a conversion of local test IdP/storage components into production services.
+
 ## Create the local TLS material
 
-The Compose profiles have one public application edge. They will not interpolate until
+The default `compose.yaml` entry includes the common model and local TLS fragment.
+These default profiles have one public application edge. They will not interpolate until
 all three `PERIAPSIS_DEV_TLS_*_FILE` values name readable, absolute paths outside this
 repository. The certificate must cover `localhost`, `idp.localhost`,
 `storage.localhost`, `127.0.0.1`, and `::1`. One convenient workflow uses

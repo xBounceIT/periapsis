@@ -9,6 +9,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!deploy/compose/.env.reverse-proxy.example
 *.log
 *.out
 *.test

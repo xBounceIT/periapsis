@@ -11,6 +11,31 @@ candidate state and the requirement-to-test map are in
 [`docs/release-acceptance.md`](docs/release-acceptance.md), including the completed
 final-journal database gates and the remaining release boundaries.
 
+## Remote reverse-proxy deployment slice (2026-09-06)
+
+- [x] Add an opt-in certificate-free HTTP application origin for a trusted TLS proxy on
+      another machine, with public URL and exact proxy CIDRs supplied by environment.
+      Compose splits shared services from its unchanged default local TLS entry; the
+      alternative never interpolates or mounts local edge certificates. Swarm opts into
+      host publication, one web task per node and stop-first replacement.
+- [x] Enforce proxy-only admission before web assets/API routing, validate singular Host
+      and forwarding headers, and retain canonical client-IP attribution through the
+      independently trusted web-to-API hop. Public HTTPS cookies and origin/CSRF checks
+      remain unchanged when the backend socket is HTTP. Add real HTTP web tests, a Go
+      router regression, real Compose-model checks and real Caddy peer/CORS checks.
+- [x] Verify this slice locally: root `pnpm verify` exits 0 (663 DB, 2,213 web,
+      175 notifier tests plus its conditional Mailpit skip; generated drift, builds,
+      Go vet and Go tests pass). After the final entrypoint test/CI wiring addition,
+      operations pass 189/189 with no skips. Separate actual Compose and Caddy gates
+      pass 14/14 and 16/16; the entrypoint test covers 24 real shell invocations.
+      Workflow syntax and 89 embedded Bash scripts pass; changed-source Gitleaks is
+      clean. Logs: `.tmp/verify-external-reverse-proxy-repeat-20260906.log`,
+      `.tmp/reverse-proxy-operations-final.log`, `.tmp/reverse-proxy-caddy-final.log`.
+- [ ] Retain a dedicated-host trial with the actual external proxy, observed NAT peers,
+      restricted firewall and private/encrypted cross-machine transport. Verify client-IP
+      spoof resistance, login/callbacks, CSRF and signed uploads. No server was deployed
+      in this slice; Compose test dependencies do not become production services.
+
 ## Repository implementation
 
 - [x] Canonical Drizzle schema, generated migrations/sqlc, OpenAPI 3.1, generated Go and

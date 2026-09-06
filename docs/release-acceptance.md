@@ -10,6 +10,21 @@ and a green repository gate does not replace a retained container/CI or producti
 artifact. The current candidate state appears after the matrix; external evidence is also
 tracked in [`TASKS.md`](../TASKS.md).
 
+The 2026-09-06 remote-proxy slice adds HTTP-origin deployment variants without local web
+certificates. It retains an HTTPS public origin, explicit immediate-peer CIDR trust, secure
+cookies and CSRF checks; it does not alter migrations, the V52 seal, or tenant policy.
+Focused evidence covers real Node HTTP requests, the production Go router on a plaintext
+backend socket, 14 real Compose config checks and 16 real Caddy HTTP/CORS checks. These
+are local transport/configuration tests, not a running Docker stack, authenticated S3/IdP
+acceptance, production rollout, or verification of a site's NAT/firewall rules. The
+[deployment runbook](operations/deployment.md#remote-reverse-proxy-with-an-http-origin)
+defines those remaining checks.
+
+Root `pnpm verify` completed successfully for this slice; the final entrypoint-test/CI
+wiring addition was followed by a clean 189-test operations rerun. Compose and Caddy
+runtime/configuration gates also passed separately; the conditional Mailpit test still
+requires its external fixture. See the dated slice in `TASKS.md` for exact local evidence.
+
 The matrix retains earlier focused and final-journal results. Those labels do not
 carry forward to a new seal automatically: only the explicitly versioned evidence below
 applies to the named candidate. V52 is currently under verification, not production-validated.

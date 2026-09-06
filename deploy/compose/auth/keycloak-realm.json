@@ -16,11 +16,11 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["https://localhost:${PERIAPSIS_WEB_PORT}/*"],
-      "webOrigins": ["https://localhost:${PERIAPSIS_WEB_PORT}"],
+      "redirectUris": ["${PERIAPSIS_PUBLIC_URL}/*"],
+      "webOrigins": ["${PERIAPSIS_PUBLIC_URL}"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "https://localhost:${PERIAPSIS_WEB_PORT}/*"
+        "post.logout.redirect.uris": "${PERIAPSIS_PUBLIC_URL}/*"
       },
       "defaultClientScopes": ["profile", "email", "roles", "web-origins"]
     },
@@ -30,7 +30,7 @@
       "protocol": "saml",
       "publicClient": true,
       "enabled": true,
-      "redirectUris": ["https://localhost:${PERIAPSIS_WEB_PORT}/*"],
+      "redirectUris": ["${PERIAPSIS_PUBLIC_URL}/*"],
       "attributes": {
         "saml.assertion.signature": "true",
         "saml.client.signature": "false",

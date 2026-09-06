@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  readDevelopmentComposeSources,
+  readDevelopmentCaddySources,
+} from "./compose-sources.mjs";
 
 import {
   validateActionPins,
@@ -53,11 +57,14 @@ test("repository deployment sources satisfy security contracts", async () => {
 
 test("application shutdown budget preserves worker completion and telemetry flush", async () => {
   const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
-  for (const path of [
-    "deploy/compose/compose.yaml",
-    "deploy/swarm/stack.yml",
+  const [compose, swarm] = await Promise.all([
+    readDevelopmentComposeSources(root),
+    readFile(resolve(root, "deploy/swarm/stack.yml"), "utf8"),
+  ]);
+  for (const [path, source] of [
+    ["deploy/compose/compose.yaml", compose],
+    ["deploy/swarm/stack.yml", swarm],
   ]) {
-    const source = await readFile(resolve(root, path), "utf8");
     assert.deepEqual(validateApplicationShutdownBudget(source, path), []);
     assert.ok(
       validateApplicationShutdownBudget(
@@ -368,17 +375,14 @@ test("inline secret detection accepts indirection and rejects literals", () => {
 
 test("local DFIR storage CORS source has exact closed headers and upstream isolation", async () => {
   const valid = await readFile(
-    new URL("../../deploy/compose/edge/Caddyfile", import.meta.url),
+    new URL("../../deploy/compose/edge/storage-cors.caddy", import.meta.url),
     "utf8",
   );
   assert.deepEqual(validateDFIRStorageCORS(valid), []);
   for (const [before, after] of [
     ["If-None-Match, ", ""],
     ["X-Amz-Meta-Periapsis-Declared-Mime, ", ""],
-    [
-      "Access-Control-Allow-Origin https://localhost:{$PERIAPSIS_WEB_PORT:8443}",
-      "Access-Control-Allow-Origin *",
-    ],
+    ["Access-Control-Allow-Origin {args[0]}", "Access-Control-Allow-Origin *"],
     [
       'Access-Control-Allow-Methods "GET, HEAD, PUT"',
       'Access-Control-Allow-Methods "GET, HEAD, PUT, DELETE"',
@@ -617,14 +621,8 @@ patches:
 
 test("Compose browser flows stay behind the local TLS edge", async () => {
   const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
-  const compose = await readFile(
-    resolve(root, "deploy/compose/compose.yaml"),
-    "utf8",
-  );
-  const caddyfile = await readFile(
-    resolve(root, "deploy/compose/edge/Caddyfile"),
-    "utf8",
-  );
+  const compose = await readDevelopmentComposeSources(root);
+  const caddyfile = await readDevelopmentCaddySources(root);
   assert.deepEqual(validateComposeDevelopmentTLS(compose, caddyfile), []);
   assert.ok(
     validateComposeDevelopmentTLS(
@@ -669,10 +667,7 @@ test("Compose browser flows stay behind the local TLS edge", async () => {
 
 test("Compose local webhook development keeps an explicit bounded port allowlist", async () => {
   const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
-  const compose = await readFile(
-    resolve(root, "deploy/compose/compose.yaml"),
-    "utf8",
-  );
+  const compose = await readDevelopmentComposeSources(root);
   const environment = await readFile(
     resolve(root, "deploy/compose/.env.example"),
     "utf8",

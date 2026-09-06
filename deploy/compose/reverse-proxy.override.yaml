@@ -1,0 +1,81 @@
+services:
+  web:
+    environment:
+      PERIAPSIS_WEB_PROXY_ONLY: "true"
+      PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set the canonical public HTTPS origin}
+      PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS:?set the exact external proxy peer CIDRs}
+    ports:
+      - ${PERIAPSIS_HTTP_BIND_ADDRESS:-0.0.0.0}:${PERIAPSIS_HTTP_PORT:-8080}:8081
+
+  api:
+    environment:
+      PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set the canonical public HTTPS origin}
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: ${PERIAPSIS_S3_PUBLIC_ENDPOINT:?set the public HTTPS object-storage origin}
+
+  worker:
+    environment:
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: ${PERIAPSIS_S3_PUBLIC_ENDPOINT:?set the public HTTPS object-storage origin}
+    networks:
+      proxy-egress: {}
+
+  identity-provider:
+    environment:
+      # Invalid by default: configure a real HTTPS origin before auth-test/full.
+      KC_HOSTNAME: ${PERIAPSIS_IDP_PUBLIC_URL:-https://configure-idp.example.invalid}
+      PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set the canonical public HTTPS origin}
+
+  minio:
+    environment:
+      MINIO_API_CORS_ALLOW_ORIGIN: ${PERIAPSIS_PUBLIC_URL:?set the canonical public HTTPS origin}
+
+  edge:
+    profiles: [minimal, auth-test, full]
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    entrypoint: [/bin/sh, /etc/caddy/reverse-proxy-entrypoint.sh]
+    environment:
+      PERIAPSIS_IDP_PORT: ${PERIAPSIS_IDP_PORT:-18090}
+      PERIAPSIS_MINIO_API_PORT: ${PERIAPSIS_MINIO_API_PORT:-19000}
+      PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set the canonical public HTTPS origin}
+      PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS:?set the exact external proxy peer CIDRs}
+      XDG_CONFIG_HOME: /config
+      XDG_DATA_HOME: /data
+    volumes:
+      - ./edge/Caddyfile.reverse-proxy:/etc/caddy/Caddyfile:ro
+      - ./edge/storage-cors.caddy:/etc/caddy/storage-cors.caddy:ro
+      - ./edge/reverse-proxy-entrypoint.sh:/etc/caddy/reverse-proxy-entrypoint.sh:ro
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1770
+      - /data:uid=10001,gid=10001,mode=0700
+      - /config:uid=10001,gid=10001,mode=0700
+    ports:
+      - ${PERIAPSIS_HTTP_BIND_ADDRESS:-0.0.0.0}:${PERIAPSIS_IDP_PORT:-18090}:${PERIAPSIS_IDP_PORT:-18090}
+      - ${PERIAPSIS_HTTP_BIND_ADDRESS:-0.0.0.0}:${PERIAPSIS_MINIO_API_PORT:-19000}:${PERIAPSIS_MINIO_API_PORT:-19000}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent --show-error --max-time 2 http://127.0.0.1:${PERIAPSIS_MINIO_API_PORT:-19000}/health/live >/dev/null
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      frontend:
+        ipv4_address: 172.30.240.4
+      identity:
+        ipv4_address: 172.30.241.6
+      storage:
+        ipv4_address: 172.30.242.6
+
+networks:
+  # Only the worker needs a new route to the remote HTTPS identity provider.
+  # SSRF/private-egress admission remains independently configured in the app.
+  proxy-egress: {}

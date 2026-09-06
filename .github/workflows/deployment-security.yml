@@ -96,6 +96,7 @@ jobs:
           node --test scripts/deploy/prepare-compose-secrets.test.mjs
           node --test scripts/deploy/openldap-diagnostics.test.mjs
           node --test scripts/deploy/openldap-test-image.test.mjs
+          node --test scripts/deploy/reverse-proxy-entrypoint.test.mjs
           node --test scripts/operations/recovery-evidence.test.mjs
           node scripts/deploy/validate-manifests.mjs
       - name: Exercise storage CORS with checksum-pinned Caddy
@@ -131,10 +132,15 @@ jobs:
       - name: Validate Compose profiles and Swarm model
         run: |
           set -euo pipefail
+          node --test scripts/deploy/compose-models.test.mjs
           for profile in minimal auth-test full seed; do
             docker compose --file deploy/compose/compose.yaml --profile "${profile}" config --quiet
           done
           docker stack config --compose-file deploy/swarm/stack.yml >/dev/null
+          PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS=192.0.2.10/32 \
+          PERIAPSIS_TRUSTED_PROXY_CIDRS=192.0.2.20/32 \
+            docker stack config --compose-file deploy/swarm/stack.yml \
+              --compose-file deploy/swarm/stack.reverse-proxy.yml >/dev/null
       - name: Smoke-test local LDAP, OIDC, and SAML providers
         id: auth-provider-smoke
         run: |

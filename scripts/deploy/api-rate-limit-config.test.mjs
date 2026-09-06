@@ -18,7 +18,7 @@ test("API rate-limit defaults are wired through every deployment surface", async
       read(".env.example"),
       read("deploy/compose/.env.example"),
       read("deploy/swarm/.env.example"),
-      read("deploy/compose/compose.yaml"),
+      read("deploy/compose/compose.base.yaml"),
       read("deploy/swarm/stack.yml"),
       read("deploy/k8s/base/config-map.yaml"),
       read("services/api/cmd/api/main.go"),

@@ -6,6 +6,68 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
+test("certificate-free proxy deployment keeps runtime and real-model gates wired", async () => {
+  const ignore = await readFile(resolve(root, ".gitignore"), "utf8");
+  assert.match(ignore, /^!deploy\/compose\/\.env\.reverse-proxy\.example$/mu);
+  const example = await readFile(
+    resolve(root, "deploy/compose/.env.reverse-proxy.example"),
+    "utf8",
+  );
+  assert.match(
+    example,
+    /^PERIAPSIS_PUBLIC_URL=https:\/\/incidents\.example\.com$/mu,
+  );
+  assert.match(
+    example,
+    /^PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS=192\.0\.2\.10\/32$/mu,
+  );
+  const manifest = JSON.parse(
+    await readFile(resolve(root, "package.json"), "utf8"),
+  );
+  assert.ok(
+    manifest.scripts["test:operations"]
+      .split(" ")
+      .includes("scripts/deploy/swarm-reverse-proxy.test.mjs"),
+  );
+  assert.ok(
+    manifest.scripts["test:operations"]
+      .split(" ")
+      .includes("scripts/deploy/reverse-proxy-entrypoint.test.mjs"),
+  );
+  assert.equal(
+    manifest.scripts["test:compose-models"],
+    "node --test scripts/deploy/compose-models.test.mjs",
+  );
+  const workflows = await Promise.all(
+    [
+      ".github/workflows/ci.yml",
+      ".github/workflows/deployment-security.yml",
+    ].map((path) => readFile(resolve(root, path), "utf8")),
+  );
+  for (const workflow of workflows) {
+    assert.match(
+      workflow,
+      /node --test scripts\/deploy\/compose-models\.test\.mjs/u,
+    );
+  }
+  const deployment = await readFile(
+    resolve(root, ".github/workflows/deployment-security.yml"),
+    "utf8",
+  );
+  assert.match(
+    deployment,
+    /node --test scripts\/deploy\/storage-cors-runtime\.test\.mjs/u,
+  );
+  assert.match(
+    deployment,
+    /node --test scripts\/deploy\/reverse-proxy-entrypoint\.test\.mjs/u,
+  );
+  assert.match(
+    deployment,
+    /docker stack config --compose-file deploy\/swarm\/stack\.yml\s*\\\s*--compose-file deploy\/swarm\/stack\.reverse-proxy\.yml/u,
+  );
+});
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -150,7 +212,7 @@ test("pull requests use fast checks while main, tags, and releases keep the full
     "utf8",
   );
   const [composeManifest, swarmManifest] = await Promise.all([
-    readFile(resolve(root, "deploy/compose/compose.yaml"), "utf8"),
+    readFile(resolve(root, "deploy/compose/compose.base.yaml"), "utf8"),
     readFile(resolve(root, "deploy/swarm/stack.yml"), "utf8"),
   ]);
 

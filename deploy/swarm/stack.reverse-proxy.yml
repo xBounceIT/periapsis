@@ -1,0 +1,24 @@
+# Opt in after stack.yml; the public HTTPS edge is operator-owned on another host.
+# Keep the same published/target/protocol tuple so legacy stack merge replaces the
+# routing-mesh entry instead of adding another published origin port.
+services:
+  api:
+    environment:
+      PERIAPSIS_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_TRUSTED_PROXY_CIDRS:?set exact web immediate-peer CIDRs seen by API}
+  web:
+    environment:
+      PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set canonical public HTTPS origin}
+      PERIAPSIS_WEB_PROXY_ONLY: "true"
+      PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS:?set exact remote reverse-proxy immediate-peer CIDRs}
+    ports:
+      - target: 8081
+        published: ${PERIAPSIS_WEB_PORT:-8081}
+        protocol: tcp
+        mode: host
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+      update_config:
+        order: stop-first
+      rollback_config:
+        order: stop-first
