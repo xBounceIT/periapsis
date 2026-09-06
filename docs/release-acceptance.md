@@ -107,7 +107,23 @@ reports zero known vulnerabilities. Evidence:
 `.tmp/dependency-security-audit-20260906.json`. This does not establish a green
 replacement CI run or real OpenLDAP/Compose startup.
 
-The complete 21-entry upgrade matrix still requires retained passing evidence.
+The subsequent Linux CI run at c429841 passes all 21 upgrade jobs and every actual
+`Exercise the real upgrade path` step, including the corrected current-journal pins:
+[run 34039083554](https://github.com/xBounceIT/periapsis/actions/runs/34039083554),
+`.tmp/ci-c429841-upgrades-pg-smtp.md`. The overall run still fails on the concurrent
+PostgreSQL readiness timeout, one mounted mention-picker web test and minimal Compose;
+Mailpit is skipped. The separate deployment run passes all five application-image
+security jobs but fails the OpenLDAP startup smoke after successfully building its adapter.
+
+The subsequent local CORS/LDAP-entrypoint repair passes complete `pnpm verify`
+(648 DB, 2,152 web, 175 notifier plus one conditional Mailpit skip, 162 operations
+without skips, generated/build/Go gates). Evidence:
+`.tmp/verify-v51-cors-ldap-entrypoint-20260906.log`. The separate real Caddy 2.11.4
+HTTP transport gate passes 6/6, including closed CORS and unchanged synthetic
+signed-request/replay transport; it does not prove browser enforcement, TLS or MinIO
+authorization. The new Linux gate and repaired LDAP startup still require remote CI.
+No SQL, dependency lockfile or production external S3 configuration changed.
+
 Elevated SAML MFA,
 trust/freshness/local-required controls, rotate/step-up and historical revocation
 drift remain distinct from the passing ordinary flow. The shared DFIR projection and

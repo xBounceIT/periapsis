@@ -259,7 +259,11 @@ final-journal database gates and the remaining release boundaries.
       pins remain unchanged and the owned server is stopped. This run includes the
       dependency and upgrade-pin repairs. Proof:
       `C:\Users\dange\AppData\Local\Temp\periapsis-v51-extra-owned-05564106dfd740b8b723f5ecde8f8584\proof.json`;
-      log: `.tmp/v51-extra-rls-go-20260906.log`. The full 21-upgrade matrix is still open.
+      log: `.tmp/v51-extra-rls-go-20260906.log`. The subsequent Linux CI run
+      [34039083554](https://github.com/xBounceIT/periapsis/actions/runs/34039083554)
+      at c429841 passes all 21 upgrade jobs and their actual `Exercise the real upgrade path`
+      steps, including the repaired SAML/lifecycle suites and V49/V50/V51 seals.
+      Report: `.tmp/ci-c429841-upgrades-pg-smtp.md`. This does not make the whole CI green.
 - [x] Repeat the complete `pnpm verify` command after the final frontend/SR-18 changes.
       V50 verification passed with exit 0: web 155 files/2,152 tests, DB 73 files/627
       tests, notifier 175 with conditional Mailpit skipped, operations 52, generated
@@ -292,6 +296,13 @@ final-journal database gates and the remaining release boundaries.
       with the actual Gitleaks binary and no operations skips. Generated drift, E2E
       typing, builds, Go vet and Go tests pass. Only documentation changed afterward;
       focused formatting and diff checks cover that handoff update.
+      The local CORS/LDAP-entrypoint follow-up also passes the complete command:
+      `.tmp/verify-v51-cors-ldap-entrypoint-20260906.log`, exit 0. Totals remain
+      648 DB, 2,152 web and 175 notifier plus one conditional Mailpit skip; operations
+      now pass 162/162 with real Gitleaks and no skips. Generated drift, build and Go
+      gates pass. The separate real Caddy gate also passes 6/6 in a root repeat:
+      `.tmp/caddy-storage-cors-root-repeat-20260906.log`. Only release-evidence docs
+      changed after this verification; SQL, lockfile and user README remain unchanged.
 
 ## GitHub CI repair evidence
 
@@ -417,6 +428,25 @@ final-journal database gates and the remaining release boundaries.
       acceptance-contract tests pass, as do shell/static checks and independent review.
       Evidence: `.tmp/openldap-test-adapter-proof.md`. These tests simulate ownership
       and slap* binaries; actual Docker/TLS/fixture CRUD remains a required remote gate.
+      The next CI builds the adapter but exposes a Bash entrypoint collision: two
+      global readonly names are reused by function-local declarations. Renaming only
+      the globals preserves the bootstrap and hardening. A regression executes the
+      actual main (not just sourced functions) to a controlled identity rejection;
+      65 focused tests pass and independent review is clean. Proof:
+      `.tmp/ci-c429841-openldap-entrypoint-diagnosis.md`. TLS/LDAP startup still needs CI.
+- [x] Move local MinIO browser CORS to the existing loopback TLS edge because the pinned
+      MinIO rejects bucket CORS writes. Preserve the exact origin, GET/HEAD/PUT, seven
+      signed request headers, ETag-only exposure, no credentials and a 300-second
+      preflight cache; strip every upstream Access-Control response header. Keep the
+      private backend, S3 authorization, signed Host/raw URL/body, versioning and user
+      policy unchanged. Native checksum-pinned Caddy 2.11.4 tests pass 6/6, including
+      denials, upstream errors and synthetic conditional-write replay; the separate
+      dependency-free Linux CI gate is hard-failing, never skipped. Its first real
+      parse caught and corrected the pinned Caddy version's one-value-per-header syntax.
+      This is HTTP transport with a controlled upstream, not TLS/browser/MinIO
+      authorization or the complete Compose profile. Proof:
+      `.tmp/minio-cors-edge-repair-20260906.md`. The independent migration startup exit
+      remains unattributed and is not claimed fixed by the CORS repair.
 - [ ] Obtain green remote CI for the candidate. At published 61c2df9, deployment run
       34031054630 passes web/API/worker/notifier multi-arch runtime, SBOM and scans.
       Its database build hits QEMU SIGILL during ARM64 pnpm installation, then the
@@ -453,6 +483,18 @@ final-journal database gates and the remaining release boundaries.
       SQL bytes. A new consistency regression checks all 21 suites and the canonical
       generated fingerprint; 24 focused tests pass. Runtime upgrade repetition remains
       required. Evidence: `.tmp/ci-cad3fdf-readonly-diagnosis.md`.
+      At c429841, all 21 actual upgrade paths pass, but the main PostgreSQL aggregate
+      again stops at the unchanged 10s V51 readiness statement timeout. One web test
+      (the mounted 50-member mention picker) exceeds 5s; Mailpit is skipped through its
+      JavaScript dependency. Minimal Compose repeats cors_set/not_implemented and the
+      still-unattributed migration exit. The five application-image security jobs pass;
+      the new OpenLDAP adapter builds, then exits before TLS/LDAP readiness.
+      Reports: `.tmp/ci-c429841-upgrades-pg-smtp.md` and
+      `.tmp/ci-c429841-openldap-entrypoint-diagnosis.md`.
+      A read-only readiness design proposes service-specific probes which compute the
+      full catalog hash once, retaining every leaf, source and ACL check without caching.
+      This is not implemented: `.tmp/v51-readiness-dedup-design.md`. It requires new
+      forward migrations/sealing and real timeout/tamper/upgrade proofs.
 
 ## Release evidence to obtain
 
