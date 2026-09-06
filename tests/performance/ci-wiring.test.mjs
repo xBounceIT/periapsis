@@ -9,7 +9,10 @@ const repositoryRoot = resolve(
 );
 
 async function readRepositoryFile(path) {
-  return readFile(resolve(repositoryRoot, path), "utf8");
+  return (await readFile(resolve(repositoryRoot, path), "utf8")).replaceAll(
+    "\r\n",
+    "\n",
+  );
 }
 
 test("performance workflow runs the real gate and always retains evidence", async () => {
@@ -66,6 +69,15 @@ test("performance image pins the exact Node and PostgreSQL runtimes", async () =
     /PERIAPSIS_PERFORMANCE_SLA_WORKER=\/usr\/local\/bin\/performance-sla/u,
   );
   assert.match(dockerfile, /node --test tests\/performance\/\*\.test\.mjs/);
+  const runtimeStage = dockerfile.split(/^FROM /mu).at(-1);
+  assert.deepEqual(runtimeStage.match(/^USER .+$/gmu), ["USER 10001:10001"]);
+  assert.match(dockerfile, /addgroup -S -g 10001 performance/u);
+  assert.match(
+    dockerfile,
+    /adduser -S -D -H -h \/tmp -u 10001 -G performance performance/u,
+  );
+  assert.match(dockerfile, /HOME=\/tmp/u);
+  assert.match(dockerfile, /TMPDIR=\/tmp/u);
   assert.match(
     dockerfile,
     /ENTRYPOINT \["\/workspace\/scripts\/performance\/run-ci-ticketing-hot-paths\.sh"\]/,
@@ -81,10 +93,15 @@ test("performance entrypoint owns a fresh exact cluster and direct psql", async 
     /mktemp -d \/tmp\/periapsis-performance-pg-XXXXXXXXXX/,
   );
   assert.match(entrypoint, /postgres \(PostgreSQL\) 18\.6/);
-  assert.match(entrypoint, /su-exec postgres initdb/);
+  assert.match(entrypoint, /^initdb \\/mu);
+  assert.match(entrypoint, /"\$\(id -u\)" != 10001/u);
+  assert.match(entrypoint, /"\$\(id -g\)" != 10001/u);
+  assert.match(entrypoint, /\[ ! -w "\$evidence_directory" \]/u);
+  assert.match(entrypoint, /^umask 077$/mu);
   assert.match(entrypoint, /-A trust/);
   assert.match(entrypoint, /listen_addresses=127\.0\.0\.1/);
   assert.match(entrypoint, /-c timezone=UTC/);
+  assert.match(entrypoint, /-c unix_socket_directories=\$data_directory/u);
   assert.match(
     entrypoint,
     /PERIAPSIS_PERFORMANCE_EXPECTED_DATA_DIRECTORY="\$data_directory"/,
@@ -98,8 +115,12 @@ test("performance entrypoint owns a fresh exact cluster and direct psql", async 
     /node scripts\/performance\/run-ticketing-hot-paths\.mjs &/,
   );
   assert.match(entrypoint, /trap 'terminate_gate TERM' TERM/);
+  assert.match(entrypoint, /trap finish_gate EXIT/u);
   assert.match(entrypoint, /pg_ctl -D "\$data_directory" -m fast -w stop/);
-  assert.doesNotMatch(entrypoint, /rm\s+-rf|DROP DATABASE|docker exec/);
+  assert.doesNotMatch(
+    entrypoint,
+    /rm\s+-rf|DROP DATABASE|docker exec|\bsu-exec\b|\bchown\b|\bsudo\b/u,
+  );
 });
 
 test("Docker context includes the required performance workflow and excludes local diagnostics", async () => {

@@ -6,6 +6,7 @@ import postgres from "postgres";
 type ErrorWithCode = Error & { code?: string };
 type RuntimeRole = "periapsis_api" | "periapsis_worker" | "periapsis_notifier";
 type RuntimeActor = { tenant: string | null; user: string };
+type JSONRecord = Record<string, postgres.JSONValue>;
 type SAMLLogoutCommandWire = Readonly<
   Record<
     | "operationRunId"
@@ -53,6 +54,11 @@ function isJSONRecord(
   value: unknown,
 ): value is { [key: string]: postgres.JSONValue } {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function jsonRecord(value: unknown, label: string): JSONRecord {
+  assert(isJSONRecord(value), `${label}: expected an object`);
+  return value;
 }
 
 function serially<T>(
@@ -564,11 +570,13 @@ async function seedUpstreamConfiguration(
         enabled,created_at,updated_at
       ) VALUES (${fixture.provider}::uuid,'saml',1,1,1,1,'disabled',false,true,${now},${now})
     `;
-    await transaction`
-      INSERT INTO public.platform_saml_login_policies (
-        provider_id,account_mode,enabled,revision
-      ) VALUES (${fixture.provider}::uuid,'existing_identity',true,1)
-    `;
+    if (fixture.origin !== "tenant_platform_provider") {
+      await transaction`
+        INSERT INTO public.platform_saml_login_policies (
+          provider_id,account_mode,enabled,revision
+        ) VALUES (${fixture.provider}::uuid,'existing_identity',true,1)
+      `;
+    }
   } else {
     await transaction`
       INSERT INTO public.tenant_auth_providers (
@@ -652,6 +660,28 @@ async function seedUpstreamConfiguration(
     ) VALUES (${tenantValue}$2::uuid,0,$3::bytea)`,
     [fixture.tenant, keyId, Buffer.from("synthetic-public-SP-certificate")],
   );
+  if (fixture.origin === "tenant_platform_provider") {
+    // The configuration INSERT installs the disabled login policy. Activate it
+    // only after its complete configuration/key graph exists, with its guard on.
+    await transaction`
+      SELECT set_config('app.platform_saml_direct_policy_write_v1','on',true)
+    `;
+    const activated = await transaction`
+      UPDATE public.platform_saml_login_policies
+      SET account_mode='existing_identity',enabled=true,revision=2,
+          updated_at=transaction_timestamp()
+      WHERE provider_id=${fixture.provider}::uuid AND revision=1 AND NOT enabled
+      RETURNING provider_id
+    `;
+    assert.equal(
+      activated.length,
+      1,
+      "activate the existing SAML login policy",
+    );
+    await transaction`
+      SELECT set_config('app.platform_saml_direct_policy_write_v1','',true)
+    `;
+  }
   const [projection] = platform
     ? await transaction<{ value: postgres.JSONValue }[]>`
         SELECT app.private_platform_saml_direct_configuration_v1(${fixture.provider}::uuid,NULL) AS value
@@ -680,9 +710,571 @@ async function seedUpstreamConfiguration(
   return projection.value;
 }
 
+async function admissionAuthoritySnapshot(
+  fixture: SAMLUpstreamFixture,
+): Promise<postgres.JSONValue> {
+  const [row] = await sql<{ value: postgres.JSONValue }[]>`
+    SELECT jsonb_build_object(
+      'platformRoles',(SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id)
+        FROM public.user_platform_roles g WHERE g.user_id=${fixture.user}::uuid),
+      'memberships',(SELECT jsonb_agg(to_jsonb(m) ORDER BY m.id)
+        FROM public.tenant_memberships m WHERE m.user_id=${fixture.user}::uuid),
+      'tenantRoles',(SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id)
+        FROM public.tenant_membership_role_grants g
+        JOIN public.tenant_memberships m ON m.tenant_id=g.tenant_id AND m.id=g.membership_id
+        WHERE m.user_id=${fixture.user}::uuid)
+    ) AS value
+  `;
+  assert(row);
+  return row.value;
+}
+
+async function seedTenantPlatformAdmission(
+  fixture: SAMLUpstreamFixture,
+): Promise<postgres.JSONValue> {
+  const base = fixture.sequence * 1000;
+  const floor = uuid(base + 30);
+  const baseline = uuid(base + 31);
+  const alias = uuid(base + 32);
+  const platformGrant = uuid(base + 33);
+  const epoch = uuid(base + 34);
+  const source = uuid(base + 35);
+  const grant = uuid(base + 36);
+  const tenantAdministrator = uuid(base + 37);
+  const administratorMembership = uuid(base + 38);
+  const providerKey = `saml_upstream_${fixture.sequence}`;
+  const subjectDigest = digest(`saml-upstream-subject-${fixture.sequence}`);
+
+  // Administrative fixture setup with ordinary constraints and triggers. These
+  // pre-existing grants are inputs to authentication, never assertion outputs.
+  const configuration = await sql.begin(async (transaction) => {
+    await transaction`
+      INSERT INTO public.users (id,email,display_name)
+      VALUES (${fixture.user}::uuid,${`saml-upstream-${fixture.sequence}@example.invalid`},
+        'Prelinked SAML admission fixture')
+    `;
+    await transaction`
+      INSERT INTO public.identity_keyring_versions (key_version,verifier,is_active,bound_at)
+      VALUES (1,${Buffer.from(digest("saml-upstream-keyring"), "base64")},true,transaction_timestamp())
+      ON CONFLICT (key_version) DO NOTHING
+    `;
+    const projected = await seedUpstreamConfiguration(transaction, fixture);
+    await transaction`
+      INSERT INTO public.user_platform_roles (id,user_id,role_id,granted_by_user_id)
+      SELECT ${platformGrant}::uuid,${fixture.user}::uuid,id,${fixture.user}::uuid
+      FROM public.platform_roles WHERE key='platform_super_admin'
+    `;
+    await transaction`
+      INSERT INTO public.platform_federated_external_identities (
+        id,platform_provider_id,provider_kind,user_id,subject_format,
+        subject_ciphertext,subject_nonce,key_version,admitted_configuration_revision,
+        admitted_security_revision,last_observed_at,last_observation_state,
+        version,resource_version,created_at,updated_at
+      ) VALUES (${fixture.externalIdentity}::uuid,${fixture.provider}::uuid,'saml',
+        ${fixture.user}::uuid,'utf8_exact',${Buffer.alloc(32, 0x41)},${Buffer.alloc(12, 0x42)},
+        1,1,1,transaction_timestamp(),'known',1,1,transaction_timestamp(),transaction_timestamp())
+    `;
+    await transaction`
+      INSERT INTO public.platform_federated_external_identity_aliases (
+        id,platform_provider_id,external_identity_id,key_version,subject_digest
+      ) VALUES (${alias}::uuid,${fixture.provider}::uuid,${fixture.externalIdentity}::uuid,
+        1,${Buffer.from(subjectDigest, "base64")})
+    `;
+    await transaction`
+      INSERT INTO public.tenants (id,slug,name)
+      VALUES (${fixture.tenant}::uuid,'saml-upstream-admitted','SAML upstream admission')
+    `;
+    await transaction`
+      INSERT INTO public.users (id,email,display_name)
+      VALUES (${tenantAdministrator}::uuid,'saml-admission-owner@example.invalid','SAML tenant setup owner')
+    `;
+    await transaction`
+      INSERT INTO public.tenant_memberships (id,tenant_id,user_id,role,status)
+      VALUES (${administratorMembership}::uuid,${fixture.tenant}::uuid,${tenantAdministrator}::uuid,
+        'tenant_admin','active')
+    `;
+    await transaction`
+      SELECT app.seed_tenant_authorization(${fixture.tenant}::uuid,${administratorMembership}::uuid)
+    `;
+    await transaction`
+      INSERT INTO public.tenant_memberships (id,tenant_id,user_id,role,status)
+      VALUES (${fixture.membership}::uuid,${fixture.tenant}::uuid,${fixture.user}::uuid,
+        'read_only','active')
+    `;
+    await transaction`
+      INSERT INTO public.tenant_mfa_subjects (
+        tenant_id,user_id,webauthn_user_handle,identity_epoch,session_invalidation_epoch,version
+      ) VALUES (${fixture.tenant}::uuid,${fixture.user}::uuid,
+        ${Buffer.from(digest("saml-upstream-user-handle"), "base64")},1,1,1)
+    `;
+    await serially(
+      [
+        { id: floor, tenant: null, scope: "platform_floor" },
+        { id: baseline, tenant: fixture.tenant, scope: "tenant_baseline" },
+      ],
+      async (policy) => {
+        const current = await transaction<
+          { id: string; level: string; local: boolean }[]
+        >`
+          SELECT id,level,local_required AS local FROM public.mfa_policy_revisions
+          WHERE scope=${policy.scope} AND tenant_id IS NOT DISTINCT FROM ${policy.tenant}::uuid
+            AND retired_at IS NULL
+        `;
+        if (current.length > 0) {
+          assert.equal(current.length, 1, "one live policy per fixture scope");
+          assert.equal(
+            current[0]?.level,
+            "primary",
+            "reuse the existing primary policy",
+          );
+          assert.equal(
+            current[0]?.local,
+            false,
+            "existing policy does not require a local factor",
+          );
+          return;
+        }
+        await transaction`
+        SELECT set_config('app.mfa_policy_write_v1',${`insert:${policy.id}:1`},true)
+      `;
+        await transaction`
+        INSERT INTO public.mfa_policy_revisions (
+          id,revision,tenant_id,scope,level,local_required,freshness_nanoseconds
+        ) VALUES (${policy.id}::uuid,1,${policy.tenant}::uuid,${policy.scope},'primary',false,0)
+      `;
+      },
+    );
+    await transaction`
+      SELECT set_config('app.mfa_policy_write_v1','',true)
+    `;
+    // The ordinary lifecycle is disabled binding -> exact epoch -> activation.
+    // Inserting an already-enabled binding would bypass its actual state machine.
+    await transaction`
+      INSERT INTO public.tenant_auth_provider_login_keys (tenant_id,binding_family,binding_id,key)
+      VALUES (${fixture.tenant}::uuid,'platform_provider',${fixture.binding}::uuid,${providerKey})
+    `;
+    await transaction`
+      INSERT INTO public.tenant_platform_auth_provider_bindings (
+        id,tenant_id,platform_provider_id,key,created_by_user_id,updated_by_user_id
+      ) VALUES (${fixture.binding}::uuid,${fixture.tenant}::uuid,${fixture.provider}::uuid,
+        ${providerKey},${fixture.user}::uuid,${fixture.user}::uuid)
+    `;
+    await transaction`
+      INSERT INTO public.tenant_authorization_sources (id,tenant_id,kind,key,authoritative,protected)
+      VALUES (${source}::uuid,${fixture.tenant}::uuid,'identity_provider_access',
+        ${`identity_provider_access:${fixture.binding}:1`},true,false)
+    `;
+    await transaction`
+      INSERT INTO public.tenant_platform_identity_provider_access_epochs (
+        id,tenant_id,binding_id,platform_provider_id,source_id,sequence,started_by_user_id
+      ) VALUES (${epoch}::uuid,${fixture.tenant}::uuid,${fixture.binding}::uuid,
+        ${fixture.provider}::uuid,${source}::uuid,1,${fixture.user}::uuid)
+    `;
+    await transaction`
+      UPDATE public.tenant_platform_auth_provider_bindings
+      SET enabled=true,current_access_epoch_id=${epoch}::uuid,version=2,
+          auth_revision=2,mapping_revision=2,updated_at=transaction_timestamp()
+      WHERE tenant_id=${fixture.tenant}::uuid AND id=${fixture.binding}::uuid AND version=1
+    `;
+    await transaction`
+      INSERT INTO public.tenant_platform_federated_provider_access_grants (
+        id,tenant_id,platform_provider_id,binding_id,access_epoch_id,source_id,
+        external_identity_id,membership_id,user_id,owns_membership,started_at,last_observed_at
+      ) VALUES (${grant}::uuid,${fixture.tenant}::uuid,${fixture.provider}::uuid,
+        ${fixture.binding}::uuid,${epoch}::uuid,${source}::uuid,${fixture.externalIdentity}::uuid,
+        ${fixture.membership}::uuid,${fixture.user}::uuid,false,transaction_timestamp(),transaction_timestamp())
+    `;
+    return projected;
+  });
+
+  const authorityBefore = await admissionAuthoritySnapshot(fixture);
+  const [begin] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.begin_platform_saml_authentication_v1(
+      ${transaction.json({ loginKey: providerKey })}::jsonb
+    ) AS value
+  `,
+  );
+  const directConfiguration = jsonRecord(
+    begin?.value,
+    "direct SAML configuration",
+  );
+  const directFloor = jsonRecord(
+    directConfiguration.platformFloor,
+    "platform floor",
+  );
+  const createdAt = new Date();
+  const protocolPins = {
+    ...jsonRecord(directConfiguration.pins, "direct configuration pins"),
+    configurationDigest: digest("saml-upstream-configuration-proof"),
+  };
+  const pins = {
+    protocol: protocolPins,
+    platformFloorPolicyId: directFloor.id,
+    platformFloorPolicyRevision: directFloor.revision,
+  };
+  const audit = (offset: number) => ({
+    requestId: uuid(base + offset),
+    correlationId: uuid(base + offset + 1),
+    ipAddress: "192.0.2.1",
+    userAgent: "periapsis-saml-admission-runtime",
+  });
+  const create = {
+    begin: {
+      operationRunId: fixture.material,
+      receiptDigest: digest("saml-upstream-login-receipt"),
+      networkDigest: digest("saml-upstream-login-network"),
+      accountDigest: digest("saml-upstream-login-account"),
+      providerDigest: digest("saml-upstream-login-provider"),
+    },
+    current: {
+      transactionId: digest("saml-upstream-login-transaction"),
+      materialId: fixture.material,
+      requestId: `request-${fixture.material}`,
+      relayStateDigest: digest("saml-upstream-login-relay"),
+      browserDigest: digest("saml-upstream-login-browser"),
+      returnPath: "/incidents",
+      state: "pending",
+      version: 1,
+      createdAt: createdAt.toISOString(),
+      expiresAt: new Date(createdAt.getTime() + 5 * 60_000).toISOString(),
+    },
+    pins,
+    audit: audit(40),
+  };
+  const [created] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.create_platform_saml_authentication_transaction_v1(
+      ${transaction.json(create)}::jsonb
+    ) AS value
+  `,
+  );
+  const loginTransaction = jsonRecord(
+    created?.value,
+    "direct SAML transaction",
+  );
+  assert.equal(loginTransaction.version, 1);
+  const observedAt = new Date();
+  const [planning] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.load_platform_saml_planning_state_v1(${transaction.json({
+      transactionId: loginTransaction.transactionId,
+      observedAt: observedAt.toISOString(),
+      pins,
+      // Planning uses the Go enum UTF8Exact=3; apply uses the textual format.
+      subjectFormat: 3,
+      subjectAliases: [{ keyVersion: 1, digest: subjectDigest }],
+    })}::jsonb) AS value
+  `,
+  ).catch((error: unknown) => {
+    // PostgreSQL errors can carry query text and parameter details. Keep the
+    // failing public stage and SQLSTATE in runtime evidence, not that payload.
+    const code =
+      error instanceof Error ? (error as ErrorWithCode).code : undefined;
+    if (code !== undefined && /^[A-Z0-9]{5}$/u.test(code)) {
+      throw new Error(`direct SAML planning ABI failed (SQLSTATE ${code})`);
+    }
+    throw error;
+  });
+  const planningState = jsonRecord(
+    planning?.value,
+    "prelinked SAML planning state",
+  );
+  assert.equal(planningState.providerEnabled, true);
+  assert.equal(planningState.platformLoginLive, true);
+  assert(Array.isArray(planningState.matches));
+  assert.equal(planningState.matches.length, 1);
+  const match = jsonRecord(
+    planningState.matches[0],
+    "exact prelinked SAML identity",
+  );
+  assert.equal(match.userId, fixture.user);
+  assert.equal(match.externalIdentityId, fixture.externalIdentity);
+  assert.equal(match.platformAuthorityId, platformGrant);
+  assert.equal(match.protectedPlatformAuthorityLive, true);
+  const expiresBase = Math.floor(observedAt.getTime() / 1000) * 1000;
+  const absoluteExpiresAt = new Date(expiresBase + 60 * 60_000).toISOString();
+  const idleExpiresAt = new Date(expiresBase + 30 * 60_000).toISOString();
+  const login = {
+    authority: {
+      transactionId: loginTransaction.transactionId,
+      materialId: fixture.material,
+      expectedVersion: loginTransaction.version,
+      pins: protocolPins,
+      responseIdDigest: digest("saml-upstream-response"),
+      assertionIdDigest: digest("saml-upstream-assertion"),
+      hasSessionIndex: false,
+      hasSessionMaterial: true,
+      consumedAt: observedAt.toISOString(),
+      returnPath: loginTransaction.returnPath,
+    },
+    plan: {
+      disposition: "immediate_session",
+      pins,
+      provenance: {
+        provider: { scope: "platform", providerId: fixture.provider },
+        userId: match.userId,
+        externalIdentityId: match.externalIdentityId,
+        identityRevision: match.identityRevision,
+        userAuthenticationRevision: match.userAuthenticationRevision,
+        matchedAliasKeyVersion: jsonRecord(match.alias, "matched SAML alias")
+          .keyVersion,
+        platformAuthorityId: match.platformAuthorityId,
+        platformAuthorityRevision: match.platformAuthorityRevision,
+        authenticatedAt: observedAt.toISOString(),
+        validUntil: absoluteExpiresAt,
+        selectedAssurance: {
+          level: "primary",
+          authenticatedAt: observedAt.toISOString(),
+        },
+      },
+      subject: {
+        aliases: [{ keyVersion: 1, digest: subjectDigest }],
+        subjectFormat: "utf8_exact",
+        envelope: {
+          format: "utf8_exact",
+          ciphertext: Buffer.alloc(32, 0x51).toString("base64"),
+          nonce: Buffer.alloc(12, 0x52).toString("base64"),
+          keyVersion: 1,
+        },
+      },
+      platformFloor: directFloor,
+    },
+    session: {
+      id: fixture.ownerSession,
+      rotationFamilyId: fixture.family,
+      tokenDigest: Buffer.from(
+        fixture.transactionHex.repeat(32),
+        "hex",
+      ).toString("base64"),
+      csrfSecretDigest: digest("saml-upstream-owner-csrf"),
+      authenticationMethod: "saml",
+      idleExpiresAt,
+      absoluteExpiresAt,
+    },
+    protectedSessionMaterial: {
+      keyVersion: 1,
+      nonce: Buffer.alloc(12, fixture.sequence).toString("base64"),
+      ciphertext: Buffer.alloc(32, fixture.sequence).toString("base64"),
+    },
+    sessionAudience: "api",
+    recoveryRestricted: false,
+    appliedAt: observedAt.toISOString(),
+    audit: audit(42),
+    proofDigest: digest("saml-upstream-login-proof"),
+  };
+  const [authenticated] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.apply_platform_saml_authentication_v1(${transaction.json(login)}::jsonb) AS value
+  `,
+  );
+  const authenticatedResult = jsonRecord(
+    authenticated?.value,
+    "direct SAML login receipt",
+  );
+  assert.equal(authenticatedResult.category, "success");
+  assert.equal(authenticatedResult.sessionId, fixture.ownerSession);
+  assert.deepEqual(await admissionAuthoritySnapshot(fixture), authorityBefore);
+
+  const switchObservedAt = new Date().toISOString();
+  const [loaded] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.load_platform_saml_tenant_switch_v1(${transaction.json({
+      sourceSessionId: fixture.ownerSession,
+      targetTenantId: fixture.tenant,
+      observedAt: switchObservedAt,
+    })}::jsonb) AS value
+  `,
+  );
+  const switchSnapshot = jsonRecord(
+    loaded?.value,
+    "SAML tenant-switch snapshot",
+  );
+  const target = jsonRecord(
+    switchSnapshot.commandPins,
+    "live SAML target command pins",
+  );
+  assert.equal(target.tenantId, fixture.tenant);
+  assert.equal(target.membershipId, fixture.membership);
+  assert.equal(target.bindingId, fixture.binding);
+  assert.equal(target.accessEpochId, epoch);
+  assert.equal(target.accessSourceId, source);
+  assert.equal(target.accessGrantId, grant);
+  assert.equal(target.bindingVersion, 2);
+  assert.equal(target.externalIdentityId, fixture.externalIdentity);
+  const switchCommand = {
+    sourceSessionId: fixture.ownerSession,
+    expectedVersion: 1,
+    authenticationMethod: "saml",
+    target,
+    requestDigest: digest("saml-upstream-switch-request"),
+    decision: "rotate",
+    session: {
+      id: fixture.session,
+      rotationFamilyId: fixture.family,
+      tokenDigest: Buffer.from(
+        (fixture.sequence + 90).toString(16).repeat(32),
+        "hex",
+      ).toString("base64"),
+      csrfSecretDigest: digest("saml-upstream-successor-csrf"),
+      audience: "api",
+      idleExpiresAt,
+      absoluteExpiresAt,
+      sessionVersion: 2,
+      recoveryRestricted: false,
+    },
+    observedAt: switchObservedAt,
+    audit: {
+      ...audit(44),
+      eventId: uuid(base + 46),
+      authenticationMethod: "saml",
+    },
+  };
+  // V50 must fail here at the deferred typed-provenance constraint. Do not
+  // fabricate N or its receipt to advance past that production defect.
+  const switched = await asRole("periapsis_api", async (transaction) => {
+    const [result] = await transaction<{ value: postgres.JSONValue | null }[]>`
+      SELECT app.apply_platform_saml_tenant_switch_v1(
+        ${transaction.json(switchCommand)}::jsonb
+      ) AS value
+    `;
+    return jsonRecord(result?.value, "SAML tenant-switch receipt");
+  });
+  assert.deepEqual(switched, {
+    applied: true,
+    decision: "rotated",
+    sourceSessionId: fixture.ownerSession,
+    sessionId: fixture.session,
+    targetTenantId: fixture.tenant,
+    sessionVersion: 2,
+  });
+  assert.deepEqual(await admissionAuthoritySnapshot(fixture), authorityBefore);
+  await verifyAdmittedSAMLRevalidation(fixture);
+  const [replayed] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.apply_platform_saml_tenant_switch_v1(${transaction.json(switchCommand)}::jsonb) AS value
+  `,
+  );
+  assert.deepEqual(
+    replayed?.value,
+    switched,
+    "switch replay survives later session revision",
+  );
+  assert.deepEqual(await admissionAuthoritySnapshot(fixture), authorityBefore);
+  return configuration;
+}
+
+async function verifyAdmittedSAMLRevalidation(
+  fixture: SAMLUpstreamFixture,
+): Promise<void> {
+  const lookup = {
+    tenantId: fixture.tenant,
+    sessionId: fixture.session,
+    audience: "api",
+  };
+  const [loaded] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.load_federated_session_revalidation_v1(${transaction.json(lookup)}::jsonb) AS value
+  `,
+  );
+  const revalidation = jsonRecord(
+    loaded?.value,
+    "admitted SAML first revalidation",
+  );
+  const snapshot = jsonRecord(
+    revalidation.snapshot,
+    "admitted SAML session snapshot",
+  );
+  const live = jsonRecord(revalidation.live, "admitted SAML live authority");
+  assert.equal(revalidation.authenticationMethod, "saml");
+  assert.equal(snapshot.version, 2);
+  assert.equal(snapshot.tenantId, fixture.tenant);
+  assert.equal(snapshot.userId, fixture.user);
+  assert.equal(snapshot.rotationFamilyId, fixture.family);
+  const primary = jsonRecord(snapshot.primary, "admitted SAML primary");
+  assert.equal(primary.kind, "platform_provider_binding");
+  assert.deepEqual(primary.provider, {
+    scope: "platform",
+    providerId: fixture.provider,
+  });
+  assert.deepEqual(primary.admission, {
+    tenantId: fixture.tenant,
+    bindingId: fixture.binding,
+  });
+  for (const fact of [
+    "sessionActive",
+    "rotationFamilyActive",
+    "userActive",
+    "tenantActive",
+    "membershipActive",
+    "primaryActive",
+  ]) {
+    assert.equal(live[fact], true, `first SAML revalidation: ${fact}`);
+  }
+  assert.equal(live.identityEpoch, snapshot.identityEpoch);
+  assert.equal(live.sessionInvalidationEpoch, primary.sessionInvalidationEpoch);
+  assert.equal(live.primaryRevision, primary.primaryRevision);
+  assert(Array.isArray(live.trustRules));
+  assert.equal(live.trustRules.length, 1);
+  assert.equal(
+    jsonRecord(live.trustRules[0], "SAML trust source").active,
+    true,
+  );
+  const requirement = jsonRecord(live.requirement, "admitted SAML requirement");
+  assert.equal(requirement.level, "primary");
+  assert.equal(requirement.localRequired, false);
+  const mutation = {
+    ...lookup,
+    userId: fixture.user,
+    authenticationMethod: "saml",
+    expectedVersion: 2,
+    observedAt: new Date().toISOString(),
+    decision: "usable",
+    reason: "current",
+    requirement,
+  };
+  const [applied] = await asRole(
+    "periapsis_api",
+    (transaction) => transaction<{ value: postgres.JSONValue | null }[]>`
+    SELECT app.apply_federated_session_revalidation_v1(${transaction.json(mutation)}::jsonb) AS value
+  `,
+  );
+  assert.deepEqual(applied?.value, {
+    tenantId: fixture.tenant,
+    sessionId: fixture.session,
+    expectedVersion: 2,
+    decision: "usable",
+    applied: true,
+  });
+  const [stored] = await sql<
+    { version: number; live: boolean; parent: string }[]
+  >`
+    SELECT state.session_version::integer AS version,session.revoked_at IS NULL AS live,
+           session.rotated_from_session_id AS parent
+    FROM public.auth_session_mfa_states state
+    JOIN public.auth_sessions session ON session.id=state.session_id
+    WHERE state.tenant_id=${fixture.tenant}::uuid AND state.session_id=${fixture.session}::uuid
+  `;
+  assert.deepEqual(stored, {
+    version: 3,
+    live: true,
+    parent: fixture.ownerSession,
+  });
+}
+
 async function seedUpstreamFixture(
   fixture: SAMLUpstreamFixture,
 ): Promise<postgres.JSONValue> {
+  if (fixture.origin === "tenant_platform_provider") {
+    return seedTenantPlatformAdmission(fixture);
+  }
   return sql.begin(async (transaction) => {
     // Privileged stored-state fixture, as above; every tested revoke/claim below
     // runs with ordinary triggers enabled and only the real API role.
@@ -708,58 +1300,6 @@ async function seedUpstreamFixture(
           session_id,user_id,session_version,user_authentication_revision,recovery_restricted,audience,issued_at
         ) VALUES (${fixture.ownerSession}::uuid,${fixture.user}::uuid,1,1,false,'api',${now})
       `;
-      if (fixture.origin === "tenant_platform_provider") {
-        await transaction`
-          INSERT INTO public.tenants (id,slug,name)
-          VALUES (${fixture.tenant}::uuid,'saml-upstream-admitted','SAML upstream admission')
-        `;
-        await transaction`
-          INSERT INTO public.tenant_memberships (id,tenant_id,user_id,role,status)
-          VALUES (${fixture.membership}::uuid,${fixture.tenant}::uuid,${fixture.user}::uuid,'tenant_admin','active')
-        `;
-        await transaction`
-          UPDATE public.auth_sessions SET revoked_at=transaction_timestamp(),revoke_reason='rotated'
-          WHERE id=${fixture.ownerSession}::uuid
-        `;
-        await transaction`
-          INSERT INTO public.auth_sessions (
-            id,user_id,rotation_family_id,active_tenant_id,token_digest,csrf_secret_digest,
-            authentication_method,last_seen_at,idle_expires_at,absolute_expires_at,created_at
-          ) SELECT ${fixture.session}::uuid,user_id,rotation_family_id,${fixture.tenant}::uuid,
-              ${Buffer.from((fixture.sequence + 90).toString(16).repeat(32), "hex")},csrf_secret_digest,
-              authentication_method,transaction_timestamp(),idle_expires_at,absolute_expires_at,transaction_timestamp()
-            FROM public.auth_sessions WHERE id=${fixture.ownerSession}::uuid
-        `;
-        await transaction`
-          INSERT INTO public.auth_session_mfa_states (
-            session_id,tenant_id,user_id,session_version,identity_epoch,recovery_restricted,
-            audience,primary_kind,session_invalidation_epoch,issued_at
-          ) VALUES (${fixture.session}::uuid,${fixture.tenant}::uuid,${fixture.user}::uuid,
-            1,1,false,'api','tenant_platform_provider',1,${now})
-        `;
-        await transaction`
-          INSERT INTO public.auth_session_tenant_platform_federated_provenance (
-            tenant_id,session_id,user_id,authentication_method,platform_provider_id,binding_id,
-            access_epoch_id,access_source_id,access_grant_id,membership_id,external_identity_id,
-            external_identity_revision,provider_revision,binding_revision,security_revision,
-            mapping_revision,authorization_revision,subject_alias_key_version,trust_rule_revision,authenticated_at
-          ) VALUES (${fixture.tenant}::uuid,${fixture.session}::uuid,${fixture.user}::uuid,
-            'saml',${fixture.provider}::uuid,${fixture.binding}::uuid,
-            ${uuid(7101)}::uuid,${uuid(7102)}::uuid,${uuid(7103)}::uuid,
-            ${fixture.membership}::uuid,${fixture.externalIdentity}::uuid,1,1,1,1,1,1,1,1,${now})
-        `;
-        await transaction`
-          INSERT INTO public.platform_saml_tenant_switch_commands (
-            source_session_id,expected_version,target_tenant_id,target_tenant_version,
-            membership_id,binding_id,binding_version,mapping_revision,authorization_revision,
-            access_epoch_id,access_epoch_version,access_source_id,access_grant_id,access_grant_version,
-            request_digest,request_snapshot,decision,rotated_session_id,result_snapshot,applied_at
-          ) VALUES (${fixture.ownerSession}::uuid,1,${fixture.tenant}::uuid,1,
-            ${fixture.membership}::uuid,${fixture.binding}::uuid,1,1,1,
-            ${uuid(7101)}::uuid,1,${uuid(7102)}::uuid,${uuid(7103)}::uuid,1,
-            ${Buffer.alloc(32, 71)},'{}','rotated',${fixture.session}::uuid,'{}',transaction_timestamp())
-        `;
-      }
     }
     const configuration = await seedUpstreamConfiguration(transaction, fixture);
     if (fixture.origin === "tenant_provider") {
@@ -861,6 +1401,7 @@ async function verifyUpstreamLogout(
   fixture: SAMLUpstreamFixture,
 ): Promise<void> {
   const configuration = await seedUpstreamFixture(fixture);
+  const previousVersion = fixture.origin === "tenant_platform_provider" ? 3 : 1;
   await advanceUpstreamMetadata(fixture);
   const tenant = fixture.origin === "platform_provider" ? null : fixture.tenant;
   const session =
@@ -914,7 +1455,7 @@ async function verifyUpstreamLogout(
   assert.equal(result.continuationId, command.continuationId);
   assert.equal(result.sessionId, session);
   assert.equal(result.tenantId, tenant);
-  assert.equal(result.previousVersion, 1);
+  assert.equal(result.previousVersion, previousVersion);
   assert.deepEqual(Object.keys(result).toSorted(), [
     "category",
     "continuationExpiresAt",
@@ -968,7 +1509,7 @@ async function verifyUpstreamLogout(
   assert.equal(claimed.sessionId, session);
   assert.equal(claimed.userId, fixture.user);
   assert.equal(claimed.tenantId, tenant);
-  assert.equal(claimed.previousVersion, 1);
+  assert.equal(claimed.previousVersion, previousVersion);
   assert.equal(claimed.materialId, fixture.material);
   assert.deepEqual(Object.keys(claimed).toSorted(), [
     ...(fixture.origin === "tenant_platform_provider" ? ["admission"] : []),

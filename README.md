@@ -50,6 +50,7 @@ corepack enable
 corepack pnpm install --frozen-lockfile
 corepack pnpm generate
 corepack pnpm verify
+node scripts/deploy/prepare-compose-secrets.mjs --env-file .env
 docker compose --env-file .env -f deploy/compose/compose.yaml --profile minimal up --build
 ```
 
@@ -58,8 +59,9 @@ blank value, and configure the external local certificate paths. Generate indepe
 bootstrap and master-key values as documented in
 [authentication.md](docs/authentication.md), then follow the
 [Compose TLS setup](deploy/compose/README.md#create-the-local-tls-material). Production
-credentials must be mounted as files; environment-only secrets are a local-development
-concession implemented by Compose creating secret files.
+credentials must be mounted as files. For local Compose, the preparation command creates
+the external secret files before startup; Docker cannot materialize environment-backed
+secrets inside read-only containers. Preparation refuses to overwrite existing files.
 
 The web application is served through the local TLS edge at `https://localhost:8443`.
 OpenAPI JSON is available at `/openapi.json` and Swagger UI at `/docs` when documentation

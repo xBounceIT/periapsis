@@ -170,12 +170,23 @@ final-journal database gates and the remaining release boundaries.
       the 232-migration V50 journal. The complete Go logout matrix passes both tenants,
       platform-local, invalid credentials, exact replay and cancellation. Fresh normal
       migration/restart and isolated V49/V50 upgrades pass with unchanged data/audit.
-      The expanded SAML matrix now reaches its third origin but remains RED: the
+      The earlier synthetic SAML matrix reached its third origin but remained RED: the
       inherited typed-primary-provenance constraint accepts only OIDC platform-provider
       sessions, conflicting with the real SAML tenant-switch writer. Its synthetic third
-      origin also needs complete identity/binding/epoch/access-grant fixture rows.
-      Repair both without weakening provenance, then repeat all three origins. Evidence:
+      origin lacked complete identity/binding/epoch/access-grant fixture rows. Evidence:
       `.tmp/v50-saml-d3084f1a1c4f4ffb9692011b600c66cd.log`; no SQL hotpatch was applied.
+      The fixture now commits the complete ordinary administrative graph and calls the
+      real direct begin/create/planning/apply, tenant switch and first revalidation ABIs,
+      instead of inserting a successor and empty switch receipt. Two actual V50 runs
+      stop earlier in `load_platform_saml_planning_state_v1`: SQLSTATE 42702 because
+      `identity.*` and `identity_alias.key_version` introduce two `key_version` columns.
+      Repair alias-key projection separately from identity ciphertext-key projection,
+      preserving unequal key versions, then address typed provenance through a reviewed
+      forward migration and seal. The three shared revalidation helpers are already
+      protocol-aware in 0228; do not replace them from stale 0165 definitions.
+      Current RED: `.tmp/v50-saml-76269d139e524a06bc161d64a4c558c7.log` and proof JSON.
+      Both clones were dropped, sources/template pins unchanged; local lint/typecheck
+      pass. Direct apply, real switch and third-origin logout remain unexecuted.
 - [ ] Rebuild the final compatibility seal on the stable journal, then run the fresh full
       PostgreSQL 18.6 `test:security` aggregate and complete upgrade/compatibility matrix,
       replacing all pre-seal database evidence.
@@ -212,10 +223,40 @@ final-journal database gates and the remaining release boundaries.
       quote workflow shell arguments and export the selected Docker daemon to scanners.
       DB unit tests: 627 PASS; operations: 52 PASS; actionlint plus ShellCheck: PASS.
       Local checks are not a successful rerun of the affected remote container jobs.
+- [x] Replace environment-backed Compose secrets with explicit external file mounts,
+      preserving read-only containers and per-service secret selection. Preparation is
+      fail-closed, outside the checkout, exclusive/no-overwrite, owner-private on Linux
+      and Windows, and rolls back partial I/O without logging values. Seventeen real
+      filesystem tests include failed first/middle/last writes; deployment contracts and
+      both Compose workflows are wired. The CI edge private-key ownership is explicitly
+      10001 because Compose file mounts retain host ownership.
+- [x] Make the disposable performance wrapper itself UID/GID 10001 with no runtime
+      root/chown/su-exec dependency. PostgreSQL data/log/socket use private `/tmp`, and
+      signal/startup-failure cleanup preserves the benchmark failure. All 114 performance
+      tests pass; CI now supplies a read-only root, tmpfs, dropped capabilities and a
+      checked writable evidence mount, returning artifact ownership only after exit.
+      Neither source repair has yet passed a real Docker run; local Docker is unavailable.
+      A repeated wrapper test exposed a Windows Git Bash launcher orphan after its
+      timeout. The harness now executes the MSYS shell directly with an explicit tool
+      path and SIGKILL for timed-out fixtures, including a real TERM-ignoring shell
+      regression. The full 114-test repeat passes in
+      `.tmp/performance-nonroot-direct-shell-contracts.log`; no shell is left running.
+      The complete `pnpm verify` passes again after these changes: web 2,152, DB 627,
+      notifier 175 plus the conditional Mailpit skip, operations 71, generated drift,
+      builds and Go vet/tests. Evidence:
+      `.tmp/verify-compose-secrets-nonroot-20260906.log`. Actionlint 1.7.12 with
+      ShellCheck also passes (`.tmp/compose-file-secrets-actionlint.log`). The unchanged
+      two web files that timed out remotely pass all 74 focused tests locally; measured
+      rendering cost does not establish runner resource pressure or justify relaxing
+      their timeout. See `.tmp/web-ci-timeout-diagnosis.md` for the controlled evidence.
 - [ ] Obtain green remote CI for the candidate. Gitleaks fixture/generated-source
-      false positives, the disposable performance image's root wrapper, web multi-arch
-      timeout, actual image vulnerability scans/SBOM, and composed acceptance still need
-      verified resolution/evidence. Do not add broad scanner suppressions.
+      false positives, the web ARM64 QEMU illegal-instruction failure, vulnerable OpenSSL
+      image libraries and unnecessary Go-based development binaries in the database-task
+      runtime image still need resolution. The exact fbe30c0 CI also reports two web test
+      timeouts and a database protected-configuration readiness timeout; do not weaken
+      assertions or time budgets without diagnosis. API and worker multi-arch runtime,
+      SBOM and scans pass on fbe30c0. Repeat all affected image/Compose/acceptance gates on
+      the next candidate; do not add broad scanner suppressions.
 
 ## Release evidence to obtain
 

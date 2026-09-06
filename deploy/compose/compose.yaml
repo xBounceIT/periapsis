@@ -905,32 +905,32 @@ secrets:
   dev_tls_ca:
     file: ${PERIAPSIS_DEV_TLS_CA_FILE:?set PERIAPSIS_DEV_TLS_CA_FILE to an external PEM CA path}
   postgres_password:
-    environment: PERIAPSIS_POSTGRES_PASSWORD
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/postgres_password
   api_database_password:
-    environment: PERIAPSIS_API_DATABASE_PASSWORD
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/api_database_password
   worker_database_password:
-    environment: PERIAPSIS_WORKER_DATABASE_PASSWORD
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/worker_database_password
   notifier_database_password:
-    environment: PERIAPSIS_NOTIFIER_DATABASE_PASSWORD
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notifier_database_password
   notifier_preview_token:
-    environment: PERIAPSIS_NOTIFIER_PREVIEW_TOKEN
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notifier_preview_token
   notification-keyring:
-    environment: PERIAPSIS_NOTIFICATION_KEYRING
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notification-keyring
   periapsis_bootstrap_token:
-    environment: PERIAPSIS_BOOTSTRAP_TOKEN
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/periapsis_bootstrap_token
   periapsis_master_key:
-    environment: PERIAPSIS_MASTER_KEY
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/periapsis_master_key
   periapsis_api_credential_keyring:
-    environment: PERIAPSIS_API_CREDENTIAL_KEYRING
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/periapsis_api_credential_keyring
   periapsis_identity_keyring:
-    environment: PERIAPSIS_IDENTITY_KEYRING
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/periapsis_identity_keyring
   ldap_admin_password:
-    environment: PERIAPSIS_LDAP_ADMIN_PASSWORD
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/ldap_admin_password
   minio_root_user:
-    environment: PERIAPSIS_MINIO_ROOT_USER
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_root_user
   minio_root_password:
-    environment: PERIAPSIS_MINIO_ROOT_PASSWORD
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_root_password
   minio_access_key:
-    environment: PERIAPSIS_S3_ACCESS_KEY
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_access_key
   minio_secret_key:
-    environment: PERIAPSIS_S3_SECRET_KEY
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_secret_key

@@ -31,6 +31,8 @@ COPY --from=sla-worker-build /out/performance-sla /usr/local/bin/performance-sla
 
 ENV CI=true \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    HOME=/tmp \
+    TMPDIR=/tmp \
     PERIAPSIS_PERFORMANCE_SLA_WORKER=/usr/local/bin/performance-sla
 
 WORKDIR /workspace
@@ -41,8 +43,12 @@ RUN node --version \
     && psql --version \
     && corepack pnpm install --frozen-lockfile \
     && node --test tests/performance/*.test.mjs \
-    && chmod 0755 /workspace/scripts/performance/run-ci-ticketing-hot-paths.sh
+    && chmod 0755 /workspace/scripts/performance/run-ci-ticketing-hot-paths.sh \
+    && addgroup -S -g 10001 performance \
+    && adduser -S -D -H -h /tmp -u 10001 -G performance performance \
+    && mkdir -p /workspace/tmp/performance
 
+USER 10001:10001
 STOPSIGNAL SIGTERM
 
 ENTRYPOINT ["/workspace/scripts/performance/run-ci-ticketing-hot-paths.sh"]

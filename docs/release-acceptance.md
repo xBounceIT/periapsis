@@ -68,13 +68,26 @@ Verified on isolated native PostgreSQL 18.6 UTF8/C databases:
   Proofs: `.tmp/schema-upgrade-V49-14aef6997af64314bd3a9aca25ce99e6-proof.json` and
   `.tmp/schema-upgrade-V50-c81fb4cb39784f43ab97529498d22f95-proof.json`.
 
-The full current aggregate is **not green**. The expanded three-origin SAML test reaches
-tenant admission through a platform SAML provider and fails its deferred typed-provenance
-constraint. The production switch writer in 0186 emits SAML provenance, but the inherited
-0165 constraint (renamed in 0207 and delegated to by 0210) accepts OIDC only. The new
-fixture also needs complete identity/binding/epoch/grant rows. Neither relabelling SAML
+The full current aggregate is **not green**. The earlier synthetic three-origin SAML test
+failed its deferred typed-provenance constraint. The production switch writer in 0186
+emits SAML provenance, but the inherited 0165 constraint (renamed in 0207 and delegated
+to by 0210) accepts OIDC only. The old fixture lacked complete administrative rows.
+Neither relabelling SAML
 as OIDC nor disabling triggers is an acceptable repair. Retained failure:
 `.tmp/v50-saml-d3084f1a1c4f4ffb9692011b600c66cd-proof.json`.
+
+The revised fixture now commits the complete identity/binding/epoch/grant graph through
+ordinary constraints and calls the actual direct admission and tenant-switch ABIs instead
+of fabricating the successor. Its begin/create stages pass, but the real planning ABI
+stops earlier with SQLSTATE 42702: `identity.*` and `identity_alias.key_version` make
+`matched.key_version` ambiguous in `load_platform_saml_planning_state_v1` (0184).
+Preserve the distinct identity-ciphertext and subject-alias key versions when repairing
+the projection. Both real clones were dropped with stable sources/template pins; repeat
+proof: `.tmp/v50-saml-76269d139e524a06bc161d64a4c558c7-proof.json`. The third origin has
+not yet reached direct apply, tenant switch, first revalidation or logout. The three
+shared revalidation helpers were already made protocol-aware by 0228; reconstructing
+them only from 0165 would be stale. Both product defects require a reviewed forward
+migration, current seal and complete runtime repetition, not an ad-hoc catalog patch.
 
 The complete V50 catalog tamper corpus passes after normal least-privileged login
 provisioning, including all retained scenarios and the new retired-V49 mutations.

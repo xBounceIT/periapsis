@@ -56,7 +56,29 @@ It permits at most 16 unique versions in the range 1..32767; every decoded key i
 32 bytes. Keep retained versions until all database ciphertext has been rotated, and
 never reuse auth, identity, master, or notification roots.
 
-Compose materializes host values under `/run/secrets`. Environment-only application
+Set `PERIAPSIS_COMPOSE_SECRETS_DIR` in `.env` to a new absolute directory outside the
+checkout whose parent exists. Fill all 15 secret values, including those used only by
+`auth-test` or `full`, then run once from the repository root:
+
+```text
+node scripts/deploy/prepare-compose-secrets.mjs --env-file .env
+```
+
+Process environment values take precedence over `.env`, as with Compose. The helper
+validates every value before creating files, never prints them, and refuses an existing
+directory, file or symlink. It does not rotate credentials in place: stop the affected
+services and prepare a new directory when deliberately rotating local secrets, keeping
+`.env` and the files consistent. Never remove old files while containers still mount them.
+
+On Linux, the directory is private mode `0700`; individual files use `0444` so the
+different non-root application and infrastructure UIDs can read their explicitly granted
+bind mounts. Other host users cannot traverse the private parent. On Windows the helper
+removes inherited directory ACLs and grants only the current user's SID before writing
+secrets. Do not share that directory, relax its permissions, or mount it wholesale.
+Docker/host administrators remain trusted. TLS files are configured independently below.
+
+Compose mounts those files under `/run/secrets`, without trying to create them inside
+read-only containers. Environment-only application
 database URLs are intentional only in this local-development model. The `full` profile
 runs `notifier-provision` after the schema migration and before notifier startup. Swarm and Kubernetes
 mount complete URLs and set `PERIAPSIS_DATABASE_URL_FILE`, which production mode requires.

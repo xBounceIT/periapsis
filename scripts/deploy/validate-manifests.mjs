@@ -1,6 +1,33 @@
 import { readFile, readdir } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { composeSecretVariables } from "./prepare-compose-secrets.mjs";
+
+export function validateComposeFileSecrets(contents, path = "Compose") {
+  const errors = [];
+  const secrets = contents.split(/^secrets:\s*\r?$/mu);
+  if (secrets.length !== 2)
+    return [`${path}: expected one top-level secret inventory`];
+  const inventory = secrets[1].split(/^[a-z][a-z_-]*:/mu)[0];
+  if (/^\s+environment:/mu.test(inventory)) {
+    errors.push(
+      `${path}: read-only services require file-backed Compose secrets`,
+    );
+  }
+  for (const name of Object.keys(composeSecretVariables)) {
+    const expected = `  ${name}:\n    file: \${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/${name}`;
+    if (
+      (inventory.replaceAll("\r\n", "\n") + "\n").split(`${expected}\n`)
+        .length !== 2 ||
+      (inventory.match(new RegExp(`^  ${name}:`, "gmu")) ?? []).length !== 1
+    ) {
+      errors.push(
+        `${path}: ${name} must mount its distinct prepared external file`,
+      );
+    }
+  }
+  return errors;
+}
 
 const requiredFiles = [
   "apps/web/Dockerfile",
@@ -1102,43 +1129,10 @@ export async function validateRepository(rootDirectory) {
       "- provision-notifier",
       "PERIAPSIS_DATABASE_URL: postgresql://periapsis_notifier_login:${PERIAPSIS_NOTIFIER_DATABASE_PASSWORD:-}",
       "notifier_database_password:",
-      "environment: PERIAPSIS_NOTIFIER_DATABASE_PASSWORD",
+      "file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notifier_database_password",
     ]),
   );
-  const composeCredentialReferences = [];
-  for (const [owner, secret, expectedReference] of [
-    ["api", "api_database_password", "PERIAPSIS_API_DATABASE_PASSWORD"],
-    [
-      "worker",
-      "worker_database_password",
-      "PERIAPSIS_WORKER_DATABASE_PASSWORD",
-    ],
-    [
-      "notifier",
-      "notifier_database_password",
-      "PERIAPSIS_NOTIFIER_DATABASE_PASSWORD",
-    ],
-  ]) {
-    const match = compose.match(
-      new RegExp(
-        `^  ${secret}:\\r?\\n    environment: ([A-Z0-9_]+)\\s*$`,
-        "mu",
-      ),
-    );
-    if (match?.[1] !== expectedReference) {
-      errors.push(
-        `${composePath}: ${owner} database password must use ${expectedReference}`,
-      );
-    } else {
-      composeCredentialReferences.push([owner, match[1]]);
-    }
-  }
-  errors.push(
-    ...validateCredentialReferenceIsolation(
-      composeCredentialReferences,
-      composePath,
-    ),
-  );
+  errors.push(...validateComposeFileSecrets(compose, composePath));
   errors.push(
     ...requireMarkers(
       contentsByPath.get("deploy/compose/database-task.mjs") ?? "",
@@ -1776,7 +1770,7 @@ export async function validateRepository(rootDirectory) {
       [
         "PERIAPSIS_NOTIFIER_INTERNAL_URL: http://notifier-preview:8083",
         "PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE",
-        "environment: PERIAPSIS_NOTIFIER_PREVIEW_TOKEN",
+        "file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notifier_preview_token",
         "notification-preview:",
         "- notifier-preview",
       ],
@@ -1836,7 +1830,7 @@ export async function validateRepository(rootDirectory) {
       "deploy/compose/compose.yaml",
       [
         "NOTIFICATION_KEYRING_FILE: /run/secrets/notification-keyring",
-        "environment: PERIAPSIS_NOTIFICATION_KEYRING",
+        "file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/notification-keyring",
       ],
     ],
     [

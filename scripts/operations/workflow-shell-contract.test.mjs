@@ -134,3 +134,60 @@ test("the performance run quotes its name, image and evidence mount", () => {
   );
   assert.match(run, /--rm --init --stop-timeout 120/u);
 });
+
+test("the disposable performance process is non-root with only explicit writable mounts", () => {
+  const run = script(
+    step(performance, "Run hot paths against a fresh database"),
+  );
+  assert.match(run, /--read-only --user 10001:10001/u);
+  assert.match(run, /--cap-drop ALL --security-opt no-new-privileges/u);
+  assert.match(
+    run,
+    /--tmpfs \/tmp:rw,nosuid,nodev,uid=10001,gid=10001,mode=1770/u,
+  );
+  assert.match(
+    run,
+    /sudo chown 10001:10001 "\$\{GITHUB_WORKSPACE\}\/tmp\/performance"/u,
+  );
+  const cleanup = step(
+    performance,
+    "Return evidence ownership to the artifact uploader",
+  );
+  assert.match(cleanup, /if: \$\{\{ always\(\) \}\}/u);
+  assert.match(script(cleanup), /test ! -L "\$\{evidence_directory\}"/u);
+  assert.match(
+    script(cleanup),
+    /test "\$\(realpath "\$\{evidence_directory\}"\)" = "\$\{GITHUB_WORKSPACE\}\/tmp\/performance"/u,
+  );
+  assert.match(
+    script(cleanup),
+    /sudo chown -R --no-dereference "\$\(id -u\):\$\(id -g\)" "\$\{evidence_directory\}"/u,
+  );
+  assert.ok(
+    performance.indexOf("Return evidence ownership") <
+      performance.indexOf("Retain immutable performance evidence"),
+  );
+  assert.doesNotMatch(cleanup, /chmod|0777|0644/u);
+});
+
+test("both Compose workflows prepare file-backed secrets before the first authenticated profile start", async () => {
+  const ci = await readFile(
+    new URL("../../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  for (const [source, startup] of [
+    [security, "Validate Compose profiles and Swarm model"],
+    [ci, "Validate resolved Compose model"],
+  ]) {
+    const prepare = step(source, "Prepare private file-backed Compose secrets");
+    assert.match(prepare, /node scripts\/deploy\/prepare-compose-secrets.mjs/u);
+    assert.ok(
+      source.indexOf("Prepare private file-backed Compose secrets") <
+        source.indexOf(startup),
+    );
+    assert.match(
+      source,
+      /PERIAPSIS_COMPOSE_SECRETS_DIR="?\$\{RUNNER_TEMP\}\/periapsis-compose-secrets/u,
+    );
+  }
+});

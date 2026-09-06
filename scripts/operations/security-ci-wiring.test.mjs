@@ -289,6 +289,27 @@ test("pull requests use fast checks while main, tags, and releases keep the full
       (match) => match[1],
     ),
   );
+  const prepareStart = deploymentWorkflow.indexOf(
+    "      - name: Prepare private file-backed Compose secrets\n",
+  );
+  const renderStart = deploymentWorkflow.indexOf(
+    "      - name: Validate Compose profiles and Swarm model\n",
+  );
+  assert.ok(prepareStart >= 0 && renderStart > prepareStart);
+  const preparation = deploymentWorkflow.slice(prepareStart, renderStart);
+  assert.match(
+    preparation,
+    /export PERIAPSIS_COMPOSE_SECRETS_DIR="\$\{RUNNER_TEMP\}\/periapsis-compose-secrets"/u,
+  );
+  assert.match(
+    preparation,
+    /node scripts\/deploy\/prepare-compose-secrets.mjs/u,
+  );
+  assert.match(
+    preparation,
+    /echo "PERIAPSIS_COMPOSE_SECRETS_DIR=\$\{PERIAPSIS_COMPOSE_SECRETS_DIR\}" >> "\$\{GITHUB_ENV\}"/u,
+  );
+  declaredVariables.add("PERIAPSIS_COMPOSE_SECRETS_DIR");
   for (const [path, manifest] of [
     ["deploy/compose/compose.yaml", composeManifest],
     ["deploy/swarm/stack.yml", swarmManifest],

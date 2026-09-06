@@ -83,9 +83,15 @@ jobs:
           go-version: 1.26.7
           check-latest: false
           cache: false
+      - name: Install Node.js for secret preparation
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          check-latest: false
       - name: Run dependency-free deployment contract tests
         run: |
           node --test scripts/deploy/validate-manifests.test.mjs
+          node --test scripts/deploy/prepare-compose-secrets.test.mjs
           node --test scripts/operations/recovery-evidence.test.mjs
           node scripts/deploy/validate-manifests.mjs
       - name: Install pinned manifest validators
@@ -100,6 +106,15 @@ jobs:
           echo "${GOBIN}" >> "${GITHUB_PATH}"
       - name: Validate workflow syntax
         run: actionlint
+      - name: Prepare private file-backed Compose secrets
+        run: |
+          set -euo pipefail
+          export PERIAPSIS_COMPOSE_SECRETS_DIR="${RUNNER_TEMP}/periapsis-compose-secrets"
+          PERIAPSIS_S3_ACCESS_KEY="ciapp$(openssl rand -hex 8)"
+          PERIAPSIS_S3_SECRET_KEY="$(openssl rand -hex 32)"
+          export PERIAPSIS_S3_ACCESS_KEY PERIAPSIS_S3_SECRET_KEY
+          node scripts/deploy/prepare-compose-secrets.mjs
+          echo "PERIAPSIS_COMPOSE_SECRETS_DIR=${PERIAPSIS_COMPOSE_SECRETS_DIR}" >> "${GITHUB_ENV}"
       - name: Validate Compose profiles and Swarm model
         run: |
           set -euo pipefail

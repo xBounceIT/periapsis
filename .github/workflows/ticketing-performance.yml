@@ -31,12 +31,31 @@ jobs:
 
       - name: Run hot paths against a fresh database
         run: |
+          set -euo pipefail
           mkdir -p tmp/performance
+          test ! -L "${GITHUB_WORKSPACE}/tmp/performance"
+          test "$(realpath "${GITHUB_WORKSPACE}/tmp/performance")" = "${GITHUB_WORKSPACE}/tmp/performance"
+          sudo chown 10001:10001 "${GITHUB_WORKSPACE}/tmp/performance"
+          sudo chmod 0700 "${GITHUB_WORKSPACE}/tmp/performance"
           docker run --rm --init --stop-timeout 120 \
+            --read-only --user 10001:10001 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,uid=10001,gid=10001,mode=1770 \
             --name "periapsis-performance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --env PERIAPSIS_PERFORMANCE_CI_ACKNOWLEDGEMENT=disposable-container-postgres-18.6 \
             --volume "${GITHUB_WORKSPACE}/tmp/performance:/workspace/tmp/performance" \
             "periapsis-performance:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Return evidence ownership to the artifact uploader
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          evidence_directory="${GITHUB_WORKSPACE}/tmp/performance"
+          if test -d "${evidence_directory}"; then
+            test ! -L "${evidence_directory}"
+            test "$(realpath "${evidence_directory}")" = "${GITHUB_WORKSPACE}/tmp/performance"
+            sudo chown -R --no-dereference "$(id -u):$(id -g)" "${evidence_directory}"
+          fi
 
       - name: Retain immutable performance evidence
         if: ${{ always() }}
