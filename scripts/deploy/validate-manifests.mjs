@@ -673,7 +673,7 @@ export function validateNotifierPackagingDockerfile(
   path = "Dockerfile.notifier",
 ) {
   return requireMarkers(contents, path, [
-    "ARG NODE_IMAGE=node:24.19.0-alpine3.23@sha256:",
+    "ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:",
     "ENV CI=true",
     "COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./",
     "COPY services/notifier/package.json services/notifier/package.json",
@@ -688,6 +688,24 @@ export function validateNotifierPackagingDockerfile(
     "HEALTHCHECK",
     'ENTRYPOINT ["node", "dist/main.js"]',
   ]);
+}
+
+export function validateDatabaseTaskPackaging(contents, path) {
+  const errors = requireMarkers(contents, path, [
+    "corepack pnpm --filter @periapsis/db build:runtime",
+    "corepack pnpm --filter @periapsis/db deploy --legacy --prod --config.hoist-workspace-packages=false /out",
+    "test -f packages/db/dist/src/admin/migrate.js",
+    "test -f packages/db/dist/seeds/seed.js",
+    "COPY --from=build --chown=10001:10001 /out/node_modules /workspace/packages/db/node_modules",
+    "COPY --from=build --chown=10001:10001 /workspace/packages/db/dist/ /workspace/packages/db/",
+    "COPY --from=build --chown=10001:10001 /workspace/packages/db/migrations/ /workspace/packages/db/migrations/",
+    "COPY --from=build --chown=10001:10001 /workspace/packages/db/seeds/sla-fixture.generated.json /workspace/packages/db/seeds/sla-fixture.generated.json",
+  ]);
+  const finalStage = contents.slice(contents.lastIndexOf("\nFROM "));
+  if (/^COPY\b.*\s(?:\/workspace|\/out)\/?\s+\S+$/gmu.test(finalStage)) {
+    errors.push(`${path}: the final image must not copy the build workspace`);
+  }
+  return errors;
 }
 
 export function validateNodeRuntimePackageManagers(contents, path) {
@@ -1149,6 +1167,12 @@ export async function validateRepository(rootDirectory) {
     ),
   );
   try {
+    errors.push(
+      ...validateDatabaseTaskPackaging(
+        contentsByPath.get("deploy/compose/Dockerfile.database") ?? "",
+        "deploy/compose/Dockerfile.database",
+      ),
+    );
     errors.push(
       ...requireMarkers(
         contentsByPath.get("deploy/compose/Dockerfile.database") ?? "",

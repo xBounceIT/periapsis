@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "files": [
+    "src/admin/migrate.ts",
+    "src/admin/provision-runtime-roles.ts",
+    "seeds/seed.ts"
+  ],
+  "include": []
+}

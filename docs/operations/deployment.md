@@ -5,6 +5,18 @@ notifier. Database migrations use a fifth one-shot image. Application images are
 numeric UID/GID 10001, read-only-root compatible, unprivileged, and expose only their
 documented health ports.
 
+The database image compiles its migration, role-provisioning, and seed entrypoints during
+the build. Its final stage receives only the compiled JavaScript graph, production
+dependencies, the byte-preserved canonical migrations/journal, and the generated SLA seed
+JSON. It does not ship TypeScript, tsx, Drizzle Kit, lint tools, or the build workspace.
+Production export disables workspace-package hoisting so dependency links cannot refer
+back to a builder-only package; ordinary dependency hoisting is preserved.
+The deployed `migrate`, `seed`, and `provision-notifier` commands and mounted-secret
+configuration remain unchanged. Local development database commands still use tsx;
+`corepack pnpm --filter @periapsis/db build:runtime` checks the emitted runtime graph.
+Image build, SBOM, vulnerability scans, and non-root/read-only execution must still pass
+for each candidate digest; a source packaging check is not container acceptance.
+
 ## Environment choices
 
 - Compose is for local development and deterministic authentication/integration tests.

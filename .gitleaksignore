@@ -1,0 +1,165 @@
+# Reviewed historical findings only; Gitleaks 8.30.1 commit fingerprints.
+# 41 findings map to 40 unique fingerprints in the immutable bootstrap commit.
+# Never remove the commit prefix or add path/rule/global exceptions.
+# Review proof and fresh-secret detection controls: scripts/deploy/gitleaks-history.test.mjs.
+# Official format: https://github.com/gitleaks/gitleaks/tree/v8.30.1#gitleaksignore
+
+# Synthetic custody-request idempotency identifier; not an authentication credential.
+# reviewed-lines: 104-104; sha256: 39e8258fbda015371c85c8ea33e3f99a1fd75e3632141242f44f1a6ab7c9dc2c
+3d452510f185151f60263d004fe16a7d539f7655:apps/web/src/dfir/evidence-custody-transport.test.ts:generic-api-key:104
+
+# Synthetic custody-request idempotency identifier; not an authentication credential.
+# reviewed-lines: 118-118; sha256: e121fb6cf85c558f37b185ad5c9cc91de472a0ef45a2358101d38c2a1dae9b05
+3d452510f185151f60263d004fe16a7d539f7655:apps/web/src/dfir/evidence-custody-transport.test.ts:generic-api-key:118
+
+# Synthetic custody-request idempotency identifier; not an authentication credential.
+# reviewed-lines: 67-67; sha256: 39e8258fbda015371c85c8ea33e3f99a1fd75e3632141242f44f1a6ab7c9dc2c
+3d452510f185151f60263d004fe16a7d539f7655:apps/web/src/dfir/evidence-custody-transport.test.ts:generic-api-key:67
+
+# Synthetic custody-request idempotency identifier; not an authentication credential.
+# reviewed-lines: 79-79; sha256: e121fb6cf85c558f37b185ad5c9cc91de472a0ef45a2358101d38c2a1dae9b05
+3d452510f185151f60263d004fe16a7d539f7655:apps/web/src/dfir/evidence-custody-transport.test.ts:generic-api-key:79
+
+# SAML transport placeholder; base64 decodes to the literal private-key, not key material.
+# reviewed-lines: 85-85; sha256: 5af745b0bbf227d33d62c9c19ccd05e2a8adf789c17fa41c70b0ddd402af736e
+3d452510f185151f60263d004fe16a7d539f7655:apps/web/src/lib/platform-saml-administration-api.test.ts:generic-api-key:85
+
+# SAML transport placeholder; base64 decodes to the literal private-key, not key material.
+# reviewed-lines: 99-99; sha256: 39b06ea4d57da47c6071f35c4bf02f180b4898741d81778eee713b00b26938ea
+3d452510f185151f60263d004fe16a7d539f7655:apps/web/src/lib/platform-saml-administration-api.test.ts:generic-api-key:99
+
+# Architecture prose describing key staging or credential permission/CIDR children.
+# reviewed-lines: 743-743; sha256: b30ba8f35c52c606f7e02e9f68718a45f64a6e97afa9d39ce1fbdef1633ff597
+3d452510f185151f60263d004fe16a7d539f7655:docs/adr/0010-federated-sso-mfa-and-session-assurance.md:generic-api-key:743
+
+# Architecture prose describing key staging or credential permission/CIDR children.
+# reviewed-lines: 439-439; sha256: 72d0e0feffbf9ec7647868a00606175d4e3f9fc544832ac023ffc485043f5546
+3d452510f185151f60263d004fe16a7d539f7655:docs/domain-model.md:generic-api-key:439
+
+# Descriptive public JWK key IDs in a deterministic ordering assertion.
+# reviewed-lines: 39-39; sha256: 813eaaa2c11e2a3d956e46db55995bfc09eb9db3f943833f20e6ff8f0449d8e9
+3d452510f185151f60263d004fe16a7d539f7655:modules/identity/federatedoidc/jwks_test.go:generic-api-key:39
+
+# Repeated ascending hexadecimal test token, confined to development/file-precedence tests.
+# reviewed-lines: 150-150; sha256: 02971edf58459ee28d6fd92d24cbf35e170c8eecf7ef34a211dda0ea0837cf8e
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/config/config_test.go:generic-api-key:150
+
+# Repeated ascending hexadecimal test token, confined to development/file-precedence tests.
+# reviewed-lines: 97-97; sha256: af67320f7efba182c47a0eeba4a21c8c9856383e767e41823ee919c9becab0c9
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/config/config_test.go:generic-api-key:97
+
+# Fixed-width base64 chunk of a valid deflate-compressed OpenAPI 3.1 document, not key material.
+# reviewed-lines: 66705-66706; sha256: f75f48ed178384c7c2e4626aacdd98fbf8fe08ff6f50a1ad86e6f127c8911ba1
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/contract/api.gen.go:generic-api-key:66705
+
+# Fixed-width base64 chunk of a valid deflate-compressed OpenAPI 3.1 document, not key material.
+# reviewed-lines: 68464-68465; sha256: bcc49eb0909e5dcc024cb31b56b2bd486ccf85fcb9ae2251cf3147b47b1e6fd7
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/contract/api.gen.go:generic-api-key:68464
+
+# Fixed-width base64 chunk of a valid deflate-compressed OpenAPI 3.1 document, not key material.
+# reviewed-lines: 68635-68636; sha256: 0b11c51f6aceefae818c3c4f9508f53d8bb0a9037008aafa706c96f2a2b65a87
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/contract/api.gen.go:generic-api-key:68635
+
+# Generated OpenAPI currentAccessEpochId UUID example, not a credential.
+# reviewed-lines: 14862-14862; sha256: 66d8992dbb4bbfd481adf22e63f351beb45a042135797a7a2438f433d2afbefc
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/contract/openapi.json:generic-api-key:14862
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 256-256; sha256: f55db9cec1e29b70ae9cb27b5bd278833b331c05ad9724c6932a4e0715e071c2
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/customfields/service_test.go:generic-api-key:256
+
+# Explicit storage CANARY label in isolated configuration/S3 tests.
+# reviewed-lines: 21-21; sha256: 8a9573838f8071e6084915bd0e1189382596b75f0e98d95d9970db543d6e7820
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/dfiradapter/config_test.go:generic-api-key:21
+
+# Explicit storage CANARY label in isolated configuration/S3 tests.
+# reviewed-lines: 335-335; sha256: da3396d638fd296472626f482c371238c1da3448ad7692f83cc097b6c0394272
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/dfiradapter/s3_test.go:generic-api-key:335
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 352-352; sha256: 4254d065327f24eaba5892a6173cd4aba6e682de5fca62fee2e605a76b9342a8
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/notification_handlers_test.go:generic-api-key:352
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 399-399; sha256: 4e5ae887f5e6250c1d257507ca59e3ce00dffa93d0d33feabc8989b86c5b48aa
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/phase4_handlers_test.go:generic-api-key:399
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 401-401; sha256: 62565f52e41b17037d3b46beef933838c136ae271227744c387cad4eecd1edaf
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/phase4_handlers_test.go:generic-api-key:401
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 156-156; sha256: 679c3c893fd103ad913d3ca6f1be78aea2c7756d83681e2b3a2a4f21a33934e4
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/ticket_bulk_handlers_test.go:generic-api-key:156
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 310-310; sha256: 17352d71074bde69bba3d8e5e8e13d05f6cb28060224f4ed083b0bb2069dad8e
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/ticketing_handlers_test.go:generic-api-key:310
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 374-374; sha256: 60b82985c5e023c03c11bf07512d3e9f72e514b89edcd7db8b7abbe9e36a0f9d
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/ticketing_handlers_test.go:generic-api-key:374
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 410-410; sha256: 851cfe9952cf0a9154b969f0d5f906929f56abef0137745722acdca3bd8b957b
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/httpserver/ticketing_handlers_test.go:generic-api-key:410
+
+# Two Go string placeholders containing only key between PEM labels; regex spans intervening Go code.
+# reviewed-lines: 161-194; sha256: 1ecf13c831d1b20e230909922a310d12193bdda95bdeba98550a175cc48b98bf
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/notification/service_test.go:private-key:161
+
+# Comparison against the public xchacha20-poly1305 algorithm name, not a secret value.
+# reviewed-lines: 508-508; sha256: e18fa88574d65b7cc5ba6de3fcce40064f35e23fa2e94592ff299c7d521526ba
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/platformldapauth/service.go:generic-api-key:508
+
+# Comparison against the public xchacha20-poly1305 algorithm name, not a secret value.
+# reviewed-lines: 823-823; sha256: 1e2b5cea2d9ff2ed21938896f37aec8bdb9d7d1a93efe0a91f18a9becead4ec2
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/platformoidcauth/direct_totp.go:generic-api-key:823
+
+# Comparison against the public xchacha20-poly1305 algorithm name, not a secret value.
+# reviewed-lines: 1017-1017; sha256: e18fa88574d65b7cc5ba6de3fcce40064f35e23fa2e94592ff299c7d521526ba
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/platformsamlauth/direct_totp.go:generic-api-key:1017
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 820-820; sha256: fd5b43042f824d2679741ac20805cee4a553bf25282f60445f8f41c996c8646a
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/service_test.go:generic-api-key:820
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 860-860; sha256: 702959c82cd26659368ebff3dcb794d40042be4060f51c2fccff417f464b340d
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/service_test.go:generic-api-key:860
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 905-905; sha256: 358a3b3ec5a0b6da457cf8aaf72c5507f3aeb43f0db3cb03d8be9aab0c6f90ef
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/service_test.go:generic-api-key:905
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 939-939; sha256: 866cffcc4970c737c30a275051aa50bdfe5db022bedc5ecd2e4be41fd93543f9
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/service_test.go:generic-api-key:939
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 995-995; sha256: 1cf0ac9ecd4ad02d9bab04729d9d28cb019c5d4deac1420abc3494291d663bf0
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/service_test.go:generic-api-key:995
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 526-526; sha256: aec40b78c3979e46466d5acbe317b1bf2f0caf59dd634606e0c889e909d78493
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/ticket_bulk_service_test.go:generic-api-key:526
+
+# Synthetic idempotency request/header value in isolated handler/service tests.
+# reviewed-lines: 549-549; sha256: c4ccc835905dfe69f6c94fae0e1275e07caa98d9de6900f20a90a2d520ab094e
+3d452510f185151f60263d004fe16a7d539f7655:services/api/internal/ticketing/ticket_bulk_service_test.go:generic-api-key:549
+
+# Repeated ascending hexadecimal synthetic token in isolated notifier tests.
+# reviewed-lines: 243-243; sha256: ab947b6fffcd73e65dcb5153e52edfb3381b94d711998adb7715da500bf22e05
+3d452510f185151f60263d004fe16a7d539f7655:services/notifier/src/config.test.ts:generic-api-key:243
+
+# Base64url encoding of a repeated ascending hexadecimal test key; duplicate scanner finding shares this fingerprint.
+# reviewed-lines: 245-245; sha256: 32a91023d0e14053fc9fae7a6689152da663865db428a3e5d59f8a9b5a01dd23
+3d452510f185151f60263d004fe16a7d539f7655:services/notifier/src/config.test.ts:generic-api-key:245
+
+# Repeated ascending hexadecimal synthetic token in isolated notifier tests.
+# reviewed-lines: 254-254; sha256: bf70af84007458b39a4b0ae3164d6fd015b534b6456a8176f521ca5fc921274d
+3d452510f185151f60263d004fe16a7d539f7655:services/notifier/src/http.test.ts:generic-api-key:254
+
+# Repeated ascending hexadecimal synthetic token in isolated notifier tests.
+# reviewed-lines: 428-428; sha256: f363e361b9ded090b3c6ce4b123138b74acece57b0d695f69d80cc8b9c77ea74
+3d452510f185151f60263d004fe16a7d539f7655:services/notifier/src/webhook.test.ts:generic-api-key:428

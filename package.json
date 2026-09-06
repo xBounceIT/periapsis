@@ -22,7 +22,7 @@
     "test:e2e:live:list": "corepack pnpm --filter @periapsis/web exec playwright test --config ../../tests/e2e/playwright.live.config.ts --list",
     "test:security": "corepack pnpm -r --if-present test:security",
     "test:performance-contract": "node --test tests/performance/*.test.mjs",
-    "test:operations": "node --test scripts/deploy/api-rate-limit-config.test.mjs scripts/deploy/prepare-compose-secrets.test.mjs scripts/deploy/validate-manifests.test.mjs scripts/operations/integration-runner.test.mjs scripts/operations/recovery-evidence.test.mjs scripts/operations/security-ci-wiring.test.mjs scripts/operations/workflow-shell-contract.test.mjs tests/e2e/live-acceptance-contract.test.mjs",
+    "test:operations": "node --test scripts/deploy/api-rate-limit-config.test.mjs scripts/deploy/database-task-packaging.test.mjs scripts/deploy/gitleaks-history.test.mjs scripts/deploy/node-image-packaging.test.mjs scripts/deploy/prepare-compose-secrets.test.mjs scripts/deploy/validate-manifests.test.mjs scripts/operations/integration-runner.test.mjs scripts/operations/recovery-evidence.test.mjs scripts/operations/security-ci-wiring.test.mjs scripts/operations/workflow-shell-contract.test.mjs tests/e2e/live-acceptance-contract.test.mjs",
     "build": "corepack pnpm -r --if-present build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

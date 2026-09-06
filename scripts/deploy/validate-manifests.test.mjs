@@ -773,7 +773,7 @@ test("Go packaging Dockerfiles close build context and runtime identity", () => 
 
 test("notifier packaging is pinned and fails closed without its entrypoint", () => {
   const valid = `
-ARG NODE_IMAGE=node:24.19.0-alpine3.23@sha256:deadbeef
+ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:deadbeef
 ENV CI=true
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY services/notifier/package.json services/notifier/package.json

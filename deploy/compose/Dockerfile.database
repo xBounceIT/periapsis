@@ -1,4 +1,8 @@
-FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995 AS dependencies
+ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca
+
+FROM ${NODE_IMAGE} AS build
+
+RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /workspace
@@ -14,10 +18,14 @@ COPY packages/tsconfig/ packages/tsconfig/
 COPY deploy/compose/database-task-config.mjs deploy/compose/database-task-config.mjs
 COPY deploy/compose/database-task.mjs deploy/compose/database-task.mjs
 
-RUN node --check deploy/compose/database-task-config.mjs \
+RUN corepack pnpm --filter @periapsis/db build:runtime \
+    && corepack pnpm --filter @periapsis/db deploy --legacy --prod --config.hoist-workspace-packages=false /out \
+    && test -f packages/db/dist/src/admin/migrate.js \
+    && test -f packages/db/dist/seeds/seed.js \
+    && node --check deploy/compose/database-task-config.mjs \
     && node --check deploy/compose/database-task.mjs
 
-FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
+FROM ${NODE_IMAGE}
 
 ARG REVISION=unknown
 ARG VERSION=development
@@ -29,11 +37,20 @@ LABEL org.opencontainers.image.description="Periapsis one-shot database migratio
       org.opencontainers.image.title="Periapsis Database Runner" \
       org.opencontainers.image.version=$VERSION
 
-RUN addgroup -S -g 10001 periapsis \
+RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 \
+    && addgroup -S -g 10001 periapsis \
     && adduser -S -D -H -u 10001 -G periapsis periapsis \
     && install -d -o 10001 -g 10001 -m 1770 /workspace /tmp
 
-COPY --from=dependencies --chown=10001:10001 /workspace /workspace
+# Only compiled task code, immutable data, and production dependencies cross stages.
+# Keep the source-relative layout used by the migration and SLA fixture loaders.
+COPY --from=build --chown=10001:10001 /out/package.json /workspace/packages/db/package.json
+COPY --from=build --chown=10001:10001 /out/node_modules /workspace/packages/db/node_modules
+COPY --from=build --chown=10001:10001 /workspace/packages/db/dist/ /workspace/packages/db/
+COPY --from=build --chown=10001:10001 /workspace/packages/db/migrations/ /workspace/packages/db/migrations/
+COPY --from=build --chown=10001:10001 /workspace/packages/db/seeds/sla-fixture.generated.json /workspace/packages/db/seeds/sla-fixture.generated.json
+COPY --from=build --chown=10001:10001 /workspace/deploy/compose/database-task-config.mjs /workspace/deploy/compose/database-task-config.mjs
+COPY --from=build --chown=10001:10001 /workspace/deploy/compose/database-task.mjs /workspace/deploy/compose/database-task.mjs
 
 RUN rm -rf /usr/local/lib/node_modules/corepack /usr/local/lib/node_modules/npm \
       /etc/apk /var/cache/apk \

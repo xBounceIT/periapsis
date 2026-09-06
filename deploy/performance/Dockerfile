@@ -1,4 +1,4 @@
-ARG NODE_IMAGE=node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
+ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca
 ARG POSTGRES_IMAGE=postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
 ARG GO_IMAGE=golang:1.26.7-alpine3.23@sha256:b17af760035fc2f338eed92d448a6c67f2d45438844fc6c60678fa5f99e44b57
 
@@ -17,6 +17,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     -o /out/performance-sla ./cmd/performance-sla
 
 FROM ${POSTGRES_IMAGE}
+
+# The PostgreSQL runtime uses the same stable Alpine 3.23 OpenSSL packages.
+RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
 
 ARG REVISION=unknown
 

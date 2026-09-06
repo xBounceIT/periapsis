@@ -45,7 +45,7 @@ test("performance workflow runs the real gate and always retains evidence", asyn
 test("performance image pins the exact Node and PostgreSQL runtimes", async () => {
   const dockerfile = await readRepositoryFile("deploy/performance/Dockerfile");
   for (const image of [
-    /node:24\.19\.0-alpine3\.23@sha256:[0-9a-f]{64}/,
+    /node:24\.20\.0-alpine3\.23@sha256:[0-9a-f]{64}/,
     /postgres:18\.6-alpine3\.23@sha256:[0-9a-f]{64}/,
     /golang:1\.26\.7-alpine3\.23@sha256:[0-9a-f]{64}/,
   ]) {

@@ -1,4 +1,8 @@
-FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995 AS build
+# Client assets and the Node-only server are architecture-independent outputs.
+FROM --platform=$BUILDPLATFORM node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca AS build
+
+# This immutable Node base still contains OpenSSL 3.5.7 on both architectures.
+RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /workspace
@@ -21,7 +25,7 @@ COPY packages/ui/ packages/ui/
 RUN corepack pnpm --filter @periapsis/contracts build \
     && corepack pnpm --filter @periapsis/web build
 
-FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
+FROM node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca
 
 ARG REVISION=unknown
 ARG VERSION=development
@@ -33,7 +37,8 @@ LABEL org.opencontainers.image.description="Periapsis static web and same-origin
       org.opencontainers.image.title="Periapsis Web" \
       org.opencontainers.image.version=$VERSION
 
-RUN addgroup -S -g 10001 periapsis \
+RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 \
+    && addgroup -S -g 10001 periapsis \
     && adduser -S -D -H -u 10001 -G periapsis periapsis \
     && install -d -o 10001 -g 10001 -m 1770 /app /tmp
 

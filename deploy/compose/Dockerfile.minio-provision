@@ -1,9 +1,11 @@
 ARG MC_IMAGE=minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
-ARG NODE_IMAGE=node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
+ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca
 
 FROM ${MC_IMAGE} AS minio-client
 
 FROM ${NODE_IMAGE}
+
+RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
 
 LABEL org.opencontainers.image.description="One-shot least-privilege MinIO provisioning for local Periapsis DFIR" \
       org.opencontainers.image.title="Periapsis MinIO provisioner"

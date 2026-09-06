@@ -88,6 +88,8 @@ jobs:
         with:
           node-version: 24.19.0
           check-latest: false
+          # This dependency-free job does not install the repository's pnpm manager.
+          package-manager-cache: false
       - name: Run dependency-free deployment contract tests
         run: |
           node --test scripts/deploy/validate-manifests.test.mjs
@@ -107,6 +109,7 @@ jobs:
       - name: Validate workflow syntax
         run: actionlint
       - name: Prepare private file-backed Compose secrets
+        id: prepare-compose-secrets
         run: |
           set -euo pipefail
           export PERIAPSIS_COMPOSE_SECRETS_DIR="${RUNNER_TEMP}/periapsis-compose-secrets"
@@ -154,7 +157,7 @@ jobs:
           probe_identity_provider /realms/periapsis-test/.well-known/openid-configuration '"issuer"'
           probe_identity_provider /realms/periapsis-test/protocol/saml/descriptor EntityDescriptor
       - name: Tear down authentication smoke profile
-        if: always()
+        if: ${{ always() && steps.prepare-compose-secrets.outcome == 'success' }}
         run: docker compose --file deploy/compose/compose.yaml --profile auth-test down --volumes --remove-orphans
       - name: Render and validate Kubernetes overlays
         run: |
@@ -204,6 +207,12 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+      - name: Install Node.js for secret-scan controls
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
       - name: Install checksum-verified Gitleaks
         run: |
           set -euo pipefail
@@ -212,6 +221,10 @@ jobs:
             https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${RUNNER_TEMP}/gitleaks.tar.gz" | sha256sum --check
           tar --extract --gzip --file "${RUNNER_TEMP}/gitleaks.tar.gz" --directory "${RUNNER_TEMP}" gitleaks
+      - name: Verify exact historical exceptions and fresh-secret detection
+        env:
+          PERIAPSIS_GITLEAKS_BINARY: ${{ runner.temp }}/gitleaks
+        run: node --test scripts/deploy/gitleaks-history.test.mjs
       - name: Scan Git history with redacted output
         run: |
           "${RUNNER_TEMP}/gitleaks" detect --source . --redact --no-banner --verbose

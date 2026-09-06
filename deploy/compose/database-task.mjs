@@ -11,7 +11,6 @@ import {
 const databasePackage = resolve("packages/db/package.json");
 const requireFromDatabasePackage = createRequire(databasePackage);
 const postgres = requireFromDatabasePackage("postgres");
-const tsxCli = requireFromDatabasePackage.resolve("tsx/cli");
 const mode = process.argv[2] ?? "migrate";
 
 try {
@@ -23,7 +22,7 @@ try {
   const databaseUrl = await administratorDatabaseUrl(environment);
 
   if (mode === "migrate") {
-    await runDatabaseScript("src/admin/migrate.ts", databaseUrl);
+    await runDatabaseScript("src/admin/migrate.js", databaseUrl);
     const passwords = {
       api: await readSecret("api_database_password"),
       worker: await readSecret("worker_database_password"),
@@ -43,7 +42,7 @@ try {
       { webhookPlainLocalOptIn },
     );
   } else if (mode === "seed") {
-    await runDatabaseScript("seeds/seed.ts", databaseUrl);
+    await runDatabaseScript("seeds/seed.js", databaseUrl);
   } else {
     throw Object.assign(new Error("unsupported database task"), {
       code: "UNSUPPORTED_TASK",
@@ -122,7 +121,7 @@ async function administratorDatabaseUrl(environment) {
 async function runDatabaseScript(relativeScript, databaseUrl) {
   const script = resolve("packages/db", relativeScript);
   await new Promise((resolveProcess, rejectProcess) => {
-    const child = spawn(process.execPath, [tsxCli, script], {
+    const child = spawn(process.execPath, [script], {
       cwd: resolve("packages/db"),
       env: {
         ...process.env,

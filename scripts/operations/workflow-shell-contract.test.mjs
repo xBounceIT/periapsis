@@ -191,3 +191,81 @@ test("both Compose workflows prepare file-backed secrets before the first authen
     );
   }
 });
+
+test("dependency-free secret preparation disables automatic package-manager caching", () => {
+  const setup = step(
+    job(security, "manifests"),
+    "Install Node.js for secret preparation",
+  );
+  assert.match(
+    setup,
+    /^        uses: actions\/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5$/mu,
+  );
+  assert.match(setup, /^          package-manager-cache: false$/mu);
+  // An explicit cache input takes precedence over the automatic-cache opt-out.
+  assert.doesNotMatch(setup, /^          cache:/mu);
+});
+
+test("authentication teardown requires prepared secrets but still runs after smoke failure", () => {
+  const manifests = job(security, "manifests");
+  const prepare = step(
+    manifests,
+    "Prepare private file-backed Compose secrets",
+  );
+  assert.match(prepare, /^        id: prepare-compose-secrets$/mu);
+  assert.doesNotMatch(prepare, /^        continue-on-error:/mu);
+  const teardown = step(manifests, "Tear down authentication smoke profile");
+  assert.match(
+    teardown,
+    /^        if: \$\{\{ always\(\) && steps\.prepare-compose-secrets\.outcome == 'success' \}\}$/mu,
+  );
+  assert.match(
+    teardown,
+    /^        run: docker compose --file deploy\/compose\/compose.yaml --profile auth-test down --volumes --remove-orphans$/mu,
+  );
+  const prepareIndex = manifests.indexOf(
+    "Prepare private file-backed Compose secrets",
+  );
+  const smokeIndex = manifests.indexOf(
+    "Smoke-test local LDAP, OIDC, and SAML providers",
+  );
+  const teardownIndex = manifests.indexOf(
+    "Tear down authentication smoke profile",
+  );
+  assert.ok(prepareIndex < smokeIndex && smokeIndex < teardownIndex);
+});
+
+test("full-history secret scanning executes positive controls with the verified binary", () => {
+  const secrets = job(security, "secrets");
+  assert.match(step(secrets, "Check out full history"), /fetch-depth: 0/u);
+  const setup = step(secrets, "Install Node.js for secret-scan controls");
+  assert.match(setup, /^          package-manager-cache: false$/mu);
+  assert.doesNotMatch(setup, /^          cache:/mu);
+  const installation = step(secrets, "Install checksum-verified Gitleaks");
+  assert.match(installation, /sha256sum --check/u);
+  assert.match(
+    installation,
+    /v8\.30\.1\/gitleaks_8\.30\.1_linux_x64\.tar\.gz/u,
+  );
+  const controls = step(
+    secrets,
+    "Verify exact historical exceptions and fresh-secret detection",
+  );
+  assert.match(
+    controls,
+    /^          PERIAPSIS_GITLEAKS_BINARY: \$\{\{ runner\.temp \}\}\/gitleaks$/mu,
+  );
+  assert.match(
+    controls,
+    /^        run: node --test scripts\/deploy\/gitleaks-history\.test\.mjs$/mu,
+  );
+  assert.doesNotMatch(controls, /^        (?:if|continue-on-error):/mu);
+  assert.ok(
+    secrets.indexOf("Install checksum-verified Gitleaks") <
+      secrets.indexOf("Verify exact historical exceptions"),
+  );
+  assert.ok(
+    secrets.indexOf("Verify exact historical exceptions") <
+      secrets.indexOf("Scan Git history with redacted output"),
+  );
+});

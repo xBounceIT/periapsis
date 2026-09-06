@@ -249,14 +249,55 @@ final-journal database gates and the remaining release boundaries.
       two web files that timed out remotely pass all 74 focused tests locally; measured
       rendering cost does not establish runner resource pressure or justify relaxing
       their timeout. See `.tmp/web-ci-timeout-diagnosis.md` for the controlled evidence.
-- [ ] Obtain green remote CI for the candidate. Gitleaks fixture/generated-source
-      false positives, the web ARM64 QEMU illegal-instruction failure, vulnerable OpenSSL
-      image libraries and unnecessary Go-based development binaries in the database-task
-      runtime image still need resolution. The exact fbe30c0 CI also reports two web test
-      timeouts and a database protected-configuration readiness timeout; do not weaken
+- [x] Repair the dependency-free deployment job's automatic pnpm cache failure and guard
+      authentication teardown on successful secret preparation. The pinned setup-node
+      action enabled package-manager caching from the root manifest without installing
+      pnpm; only that cache is disabled. Two workflow regressions preserve cleanup after
+      a later smoke failure. The helper itself was not reached in the failed ea00026 job.
+- [x] Review all 41 historical Gitleaks findings and pin only their 40 unique
+      commit/file/rule/line exceptions, with immutable historical source hashes. The
+      real full-history scan returns zero findings; positive controls detect 40 new
+      credentials at those coordinates and all 40 replacements in another commit.
+      Full-history CI now runs the controls with its checksum-verified scanner; ordinary
+      shallow source tests explicitly skip that integration proof. No path, rule, value,
+      or commitless exception is permitted. The documented pre-existing zero-context
+      Git diff limitation on PEM edits remains; do not claim exhaustive whole-file
+      credential detection. Evidence: `.tmp/gitleaks-history-review.md`.
+- [x] Isolate the database image's compiled runtime from build-time developer tools and
+      preserve exact SQL/journal/SLA assets. Five isolated-output tests verify the real
+      compiler graph, canonical migration bytes, imports, and production configuration.
+      Refresh immutable Node bases and install verified Alpine OpenSSL 3.5.8-r0 packages
+      in all affected stages, including the separately inspected PostgreSQL performance
+      base. Native web compilation copies only portable static/Node assets to the target
+      runtime. The expanded image/performance aggregate passes all 128 tests locally.
+      These are packaging proofs, not successful container scans or multi-arch execution.
+      The complete `pnpm verify` passes (`.tmp/verify-runtime-images-20260906.log`),
+      including all 2,152 web tests and runtime compilation. After the final workflow
+      wiring, all 100 operations tests pass with the real scanner enabled, no skips
+      (`.tmp/runtime-images-operations-complete.log`); focused lint, format, and pinned
+      actionlint/ShellCheck also pass. The first production export left pnpm's ignored
+      workspace state set to production-only; a frozen `--prod=false` install restored
+      the already-present developer dependencies without changing the lockfile.
+      A real production export from an isolated builder now disables workspace-package
+      hoisting: all seven dependency links are relative and confined to the runtime.
+      The exported JavaScript passes fresh PostgreSQL 18.6 migration twice, seed twice,
+      and role provisioning outside the checkout. The 353-table semantic seed snapshot
+      is stable apart from the four declared identity/tenant `updated_at` fields; all
+      four login roles have exact least privileges and pass positive/negative TCP SCRAM
+      authentication. Final readiness is true with 232 migrations and the canonical V50
+      digest. Sources stay unchanged; the owned cluster is stopped and four temporary
+      password files removed. Evidence:
+      `.tmp/periapsis-production-db-a54d7c53890b446eb2f2b1071ace43b7-proof.json`
+      and its `-control-proof.json`. Earlier harness failures remain recorded separately.
+      This native proof does not execute Docker or the `/run/secrets` deployment wrapper.
+      After the export-option correction, all 41 focused packaging tests pass again.
+- [ ] Obtain green remote CI for the candidate. The ea00026 PostgreSQL aggregate now
+      reaches the known direct SAML planning SQLSTATE 42702 instead of the previous
+      protected-configuration readiness timeout. Its web suite passes 2,151/2,152 tests;
+      the 50-member mention picker alone still times out at 5,000 ms. Do not weaken
       assertions or time budgets without diagnosis. API and worker multi-arch runtime,
-      SBOM and scans pass on fbe30c0. Repeat all affected image/Compose/acceptance gates on
-      the next candidate; do not add broad scanner suppressions.
+      SBOM and scans pass on ea00026. Repeat all affected image/Compose/acceptance gates
+      on the next candidate; local Docker remains unavailable.
 
 ## Release evidence to obtain
 

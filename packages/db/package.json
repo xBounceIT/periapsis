@@ -12,7 +12,8 @@
     "./testing": "./src/testing/fixtures.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc --noEmit && corepack pnpm build:runtime",
+    "build:runtime": "tsc -p tsconfig.runtime.json",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "tsx src/admin/migrate.ts",
     "db:provision": "tsx src/admin/provision-runtime-roles.ts",
