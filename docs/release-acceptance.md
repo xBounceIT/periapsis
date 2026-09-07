@@ -27,7 +27,7 @@ requires its external fixture. See the dated slice in `TASKS.md` for exact local
 
 The matrix retains earlier focused and final-journal results. Those labels do not
 carry forward to a new seal automatically: only the explicitly versioned evidence below
-applies to the named candidate. V54 is currently under verification, not production-validated.
+applies to the named candidate. V55 is currently under verification, not production-validated.
 
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -64,6 +64,18 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+### V55 tenant profile projection candidate
+
+Migration 0240 adds guarded user, security-group member and operator-team roster
+read ABIs using the effective tenant profile, with exact tenant/membership/user
+joins. LDAP contact data remains separate from the global authentication identity.
+The HTTP tenant-user profile permits absent email; no placeholder address is
+invented. Migration 0241 seals the 242-entry journal with catalog digest
+`761cebeea6b40784ee1a302f92729c8b7fdceef4e8452fbb83e8df0a4e23b045`, derived on
+PostgreSQL 18.6 UTF8/C. Native HTTP LDAP admission/session/profile checks pass
+with a controlled directory observation. Linux directory and browser acceptance
+and the complete PostgreSQL aggregate still require a retained green CI run.
 
 ### V54 local MFA policy recovery candidate
 

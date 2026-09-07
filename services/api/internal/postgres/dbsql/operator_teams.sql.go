@@ -370,7 +370,7 @@ SELECT roster.roster_entry_id::uuid AS roster_entry_id,
        roster.assignment_ended_at::timestamptz AS assignment_ended_at,
        roster.membership_id::uuid AS membership_id,
        roster.target_user_id::uuid AS target_user_id,
-       roster.email::text AS email,
+       coalesce(roster.email, '')::text AS email,
        roster.display_name::text AS display_name,
        roster.membership_status::text AS membership_status,
        roster.compatibility_role::text AS compatibility_role,
@@ -392,7 +392,7 @@ SELECT roster.roster_entry_id::uuid AS roster_entry_id,
        roster.roster_state::text AS roster_state,
        roster.version::integer AS version,
        roster.updated_at::timestamptz AS updated_at
-FROM app.get_tenant_operator_team_roster_entry(
+FROM app.get_tenant_operator_team_roster_entry_v2(
   $1::uuid,
   $2::uuid,
   $3::uuid
@@ -669,7 +669,7 @@ SELECT roster.roster_entry_id::uuid AS roster_entry_id,
        roster.assignment_ended_at::timestamptz AS assignment_ended_at,
        roster.membership_id::uuid AS membership_id,
        roster.target_user_id::uuid AS target_user_id,
-       roster.email::text AS email,
+       coalesce(roster.email, '')::text AS email,
        roster.display_name::text AS display_name,
        roster.membership_status::text AS membership_status,
        roster.compatibility_role::text AS compatibility_role,
@@ -691,7 +691,7 @@ SELECT roster.roster_entry_id::uuid AS roster_entry_id,
        roster.roster_state::text AS roster_state,
        roster.version::integer AS version,
        roster.updated_at::timestamptz AS updated_at
-FROM app.list_tenant_operator_team_roster_entries(
+FROM app.list_tenant_operator_team_roster_entries_v2(
   $1::uuid,
   $2::uuid,
   $3::uuid,

@@ -1666,7 +1666,10 @@ export type TenantAuthority = {
 
 export type TenantUserProfile = {
     id: string;
-    email: string;
+    /**
+     * Present only when the effective tenant profile has an email address.
+     */
+    email?: string;
     displayName: string;
     active: boolean;
 };

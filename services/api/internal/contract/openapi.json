@@ -10573,7 +10573,6 @@
                           "membershipId": "8072cc74-4782-4f2c-827c-699c48ce2092",
                           "user": {
                             "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
-                            "email": "user@example.com",
                             "displayName": "string",
                             "active": true
                           },
@@ -49050,7 +49049,6 @@
         "additionalProperties": false,
         "required": [
           "id",
-          "email",
           "displayName",
           "active"
         ],
@@ -49062,7 +49060,8 @@
           "email": {
             "type": "string",
             "format": "email",
-            "maxLength": 320
+            "maxLength": 320,
+            "description": "Present only when the effective tenant profile has an email address."
           },
           "displayName": {
             "type": "string",

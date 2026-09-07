@@ -33,6 +33,57 @@ func authorizationCurrentABIFixture(t *testing.T) (context.Context, *pgxpool.Poo
 
 func TestAuthorizationRepositoryGroupMemberLifecycleProjectionPostgreSQL(t *testing.T) {
 	ctx, admin, repository, fixture, actor := authorizationCurrentABIFixture(t)
+	// LDAP identities can have no global email and distinct tenant contact data.
+	if _, err := admin.Exec(ctx, `UPDATE public.users SET email=NULL WHERE id=$1`, fixture.targetUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `INSERT INTO public.tenant_user_profiles
+		(tenant_id,membership_id,user_id,display_name,email)
+		VALUES ($1,$2,$3,'Tenant analyst','tenant-analyst@periapsis.test')
+		ON CONFLICT (tenant_id,membership_id) DO UPDATE
+		SET display_name=EXCLUDED.display_name,email=EXCLUDED.email`,
+		fixture.tenantID, fixture.targetMemberID, fixture.targetUserID); err != nil {
+		t.Fatal(err)
+	}
+	other := seedAuthorizationIntegrationFixture(t, ctx, admin)
+	otherMembershipID := authorizationIntegrationUUID(t)
+	if _, err := admin.Exec(ctx, `INSERT INTO public.tenant_memberships
+		(id,tenant_id,user_id,role,status) VALUES ($1,$2,$3,'read_only','active')`,
+		otherMembershipID, other.tenantID, fixture.targetUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `INSERT INTO public.tenant_user_profiles
+		(tenant_id,membership_id,user_id,display_name,email)
+		VALUES ($1,$2,$3,'Other tenant analyst','other-analyst@periapsis.test')`,
+		other.tenantID, otherMembershipID, fixture.targetUserID); err != nil {
+		t.Fatal(err)
+	}
+	expectedEmail := "tenant-analyst@periapsis.test"
+	assertUserProfile := func(user authorization.TenantUserProfile) {
+		t.Helper()
+		if user.ID != fixture.targetUserID || user.Email != expectedEmail || user.DisplayName != "Tenant analyst" {
+			t.Fatal("tenant profile was missing or replaced by global/other-tenant contact data")
+		}
+	}
+	assertUserList := func() {
+		t.Helper()
+		service, err := authorization.NewService(repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := service.ListTenantUsers(ctx, actor, fixture.tenantID, authorization.PageInput{Limit: 100})
+		if err != nil || len(page.Items) != 2 {
+			t.Fatalf("effective tenant user page: count=%d, error=%v", len(page.Items), err)
+		}
+		for _, user := range page.Items {
+			if user.User.ID == fixture.targetUserID {
+				assertUserProfile(user.User)
+				return
+			}
+		}
+		t.Fatal("tenant user page omitted the federated identity")
+	}
+	assertUserList()
 	groupID := authorizationIntegrationUUID(t)
 	if _, err := repository.CreateTenantSecurityGroup(ctx, authorization.CreateTenantSecurityGroupParams{
 		Actor: actor, Audit: authorizationIntegrationAudit(t), OccurredAt: time.Now().UTC(), TenantID: fixture.tenantID,
@@ -52,6 +103,7 @@ func TestAuthorizationRepositoryGroupMemberLifecycleProjectionPostgreSQL(t *test
 	}
 	assertMember := func(label string, edge authorization.TenantSecurityGroupMembership, revision int64) {
 		t.Helper()
+		assertUserProfile(edge.Member.User)
 		wantTag, err := authorization.TenantMembershipLifecycleEntityTag(revision)
 		if err != nil {
 			t.Fatal(err)
@@ -63,6 +115,12 @@ func TestAuthorizationRepositoryGroupMemberLifecycleProjectionPostgreSQL(t *test
 		}
 	}
 	assertMember("create", created.Value, 1)
+	if _, err := admin.Exec(ctx, `UPDATE public.tenant_user_profiles SET email=NULL
+		WHERE tenant_id=$1 AND membership_id=$2`, fixture.tenantID, fixture.targetMemberID); err != nil {
+		t.Fatal(err)
+	}
+	expectedEmail = ""
+	assertUserList()
 	// A privileged fixture mutation exercises the real lifecycle revision trigger.
 	if _, err := admin.Exec(ctx, `UPDATE public.tenant_memberships SET status='suspended', updated_at=clock_timestamp() WHERE tenant_id=$1 AND id=$2`, fixture.tenantID, fixture.targetMemberID); err != nil {
 		t.Fatal(err)

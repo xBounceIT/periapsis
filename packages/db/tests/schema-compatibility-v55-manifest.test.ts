@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -9,9 +10,9 @@ import * as manifest from "../src/admin/schema-compatibility-manifest.gen.js";
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
 const migrationsRoot = resolve(repositoryRoot, "packages/db/migrations");
 const metaRoot = resolve(migrationsRoot, "meta");
-const repairTag = "0238_local_mfa_policy_recovery";
-const sealTag = "0239_v54_compatibility";
-const expectedCount = 240;
+const repairTag = "0240_tenant_profile_projections";
+const sealTag = "0241_v55_compatibility";
+const expectedCount = 242;
 const currentRoots = [
   ["schema_compatibility", "SchemaCompatibility"],
   ["release_runtime_schema_readiness", "ReleaseRuntimeReadiness"],
@@ -91,6 +92,13 @@ function readJournal(): JournalEntry[] {
   return value.entries;
 }
 
+function source(path: string): string {
+  return readFileSync(resolve(repositoryRoot, path), "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+}
+
 function migration(tag: string): string {
   // Preserve source bytes for PostgreSQL prosrc hashes.
   return readFileSync(resolve(migrationsRoot, `${tag}.sql`), "utf8");
@@ -141,51 +149,47 @@ function replaceOnce(value: string, from: string, to: string): string {
   return value.replace(from, to);
 }
 
-describe("schema compatibility V54 manifest", () => {
-  it("pins the exact complete 0000-0239 inventory and every packaged SQL byte hash", () => {
-    const journal = readJournal().slice(0, expectedCount);
-    const prefix = manifest.expectedMigrations.slice(0, expectedCount);
-    expect(manifest.expectedMigrationCount).toBeGreaterThanOrEqual(
-      expectedCount,
-    );
-    expect(prefix).toHaveLength(expectedCount);
+describe("schema compatibility V55 manifest", () => {
+  it("pins the exact complete 0000-0241 inventory and every packaged SQL byte hash", () => {
+    const journal = readJournal();
+    expect(manifest.expectedMigrationCount).toBe(expectedCount);
+    expect(manifest.expectedMigrations).toHaveLength(expectedCount);
     expect(journal).toHaveLength(expectedCount);
     expect(
       readdirSync(migrationsRoot)
         .filter((name) => name.endsWith(".sql"))
-        .toSorted()
-        .slice(0, expectedCount),
-    ).toEqual(prefix.map((entry) => `${entry.tag}.sql`));
+        .toSorted(),
+    ).toEqual(manifest.expectedMigrations.map((entry) => `${entry.tag}.sql`));
     expect(journal.slice(-2)).toEqual([
       {
-        idx: 238,
+        idx: 240,
         version: "7",
-        when: 1_788_796_559_023,
+        when: 1_788_800_885_606,
         tag: repairTag,
         breakpoints: true,
       },
       {
-        idx: 239,
+        idx: 241,
         version: "7",
-        when: 1_788_796_577_322,
+        when: 1_788_800_892_499,
         tag: sealTag,
         breakpoints: true,
       },
     ]);
-    expect(prefix.slice(-2)).toEqual([
+    expect(manifest.expectedMigrations.slice(-2)).toEqual([
       {
         tag: repairTag,
-        createdAt: 1_788_796_559_023,
-        hash: "ddfcaea709712cfdcbd699d3afc95bbe67ef651a3ed1ae90bfab120570c1ba46",
+        createdAt: 1_788_800_885_606,
+        hash: "137543b9e677d718f6d770d90444cb91761eba4d472d73e2e71f718f40a431ce",
       },
       {
         tag: sealTag,
-        createdAt: 1_788_796_577_322,
-        hash: "ceede4b64eb6939e61d97eb0fc9ba4e8ee8efe7bf78e5764327b0685340a3754",
+        createdAt: 1_788_800_892_499,
+        hash: "24f06f8135a5cbe2b0068a1720a92fc2cac524e14996af4cd2cf357659e737c9",
       },
     ]);
     expect(journal.map(({ idx, when, tag }) => ({ idx, when, tag }))).toEqual(
-      prefix.map((entry, idx) => ({
+      manifest.expectedMigrations.map((entry, idx) => ({
         idx,
         when: entry.createdAt,
         tag: entry.tag,
@@ -198,27 +202,52 @@ describe("schema compatibility V54 manifest", () => {
           (index === 0 || entry.when > journal[index - 1]!.when),
       ),
     ).toBe(true);
-    for (const entry of prefix) {
+    for (const entry of manifest.expectedMigrations) {
       expect(
         sha256(readFileSync(resolve(migrationsRoot, `${entry.tag}.sql`))),
         entry.tag,
       ).toBe(entry.hash);
     }
-    const latest = prefix.at(-1);
+    const latest = manifest.expectedMigrations.at(-1);
     expect(latest?.tag).toBe(sealTag);
-    expect(latest?.createdAt).toBe(1_788_796_577_322);
-    expect(latest?.hash).toBe(
-      "ceede4b64eb6939e61d97eb0fc9ba4e8ee8efe7bf78e5764327b0685340a3754",
+    expect(manifest.expectedMigrationCreatedAt).toBe(1_788_800_892_499);
+    expect(manifest.expectedMigrationHash).toBe(latest?.hash);
+    expect(manifest.expectedMigrationFingerprint).toBe(
+      manifest.expectedMigrations
+        .map((entry) => `${entry.createdAt}@${entry.hash}`)
+        .join(":"),
     );
-    expect(
-      sha256(
-        prefix.map((entry) => `${entry.createdAt}@${entry.hash}`).join(":"),
-      ),
-    ).toBe("56ccc3823199b9550145afe5348598239f047b53b3711130c3dca26227caaf7f");
+    expect(manifest.expectedMigrationFingerprint.split(":")).toHaveLength(
+      expectedCount,
+    );
   });
 
-  it("keeps both custom migration snapshots structurally identical to V53", () => {
-    const snapshots = ["0237", "0238", "0239"].map((version) => {
+  it("pins the same current catalog in both upgrade paths and the runtime suite", () => {
+    const catalogDigest =
+      /private_release_runtime_dependency_surface_hash_v55\(\)<>\s*'([a-f0-9]{64})'/u.exec(
+        migration(sealTag),
+      )?.[1];
+    assert(catalogDigest !== undefined);
+    expect(catalogDigest).not.toBe("0".repeat(64));
+    for (const name of [
+      "schema-compatibility-v54-upgrade.ts",
+      "schema-compatibility-v55-upgrade.ts",
+      "schema-compatibility-v55-runtime.ts",
+    ]) {
+      const runtimeSource = readFileSync(
+        resolve(repositoryRoot, "packages/db/tests/security", name),
+        "utf8",
+      );
+      const pinned =
+        /assert\.equal\(\s*(?:v55CatalogDigest|expectedCatalogDigest),\s*"([a-f0-9]{64})",\s*\)/u.exec(
+          runtimeSource,
+        )?.[1];
+      expect(pinned, name).toBe(catalogDigest);
+    }
+  });
+
+  it("keeps both custom migration snapshots structurally identical to V54", () => {
+    const snapshots = ["0239", "0240", "0241"].map((version) => {
       const value: unknown = JSON.parse(
         readFileSync(resolve(metaRoot, `${version}_snapshot.json`), "utf8"),
       );
@@ -240,29 +269,29 @@ describe("schema compatibility V54 manifest", () => {
     }
   });
 
-  it("source-attests every V54 root and refuses an unsealed zero dependency digest", () => {
+  it("source-attests every V55 root and refuses an unsealed zero dependency digest", () => {
     const seal = migration(sealTag);
     for (const [name, constant] of currentRoots) {
       expect(manifest).toHaveProperty(
-        `expected${constant}V54SourceHash`,
-        sha256(readRoutine(seal, `${name}_v54`).body),
+        `expected${constant}V55SourceHash`,
+        sha256(readRoutine(seal, `${name}_v55`).body),
       );
     }
     const sealer = readRoutine(seal, "seal_schema_compatibility_manifest");
-    expect(manifest.expectedSealSchemaCompatibilityManifestV54SourceHash).toBe(
+    expect(manifest.expectedSealSchemaCompatibilityManifestV55SourceHash).toBe(
       sha256(sealer.body),
     );
-    expect(sealer.body).toContain("p_expected_count IS DISTINCT FROM 240");
+    expect(sealer.body).toContain("p_expected_count IS DISTINCT FROM 242");
     expect(sealer.body).toContain(
-      "p_expected_latest_created_at IS DISTINCT FROM 1788796577322",
+      "p_expected_latest_created_at IS DISTINCT FROM 1788800892499",
     );
-    expect(sealer.body).toContain("(:[0-9]+@[0-9a-f]{64}){239}$");
+    expect(sealer.body).toContain("(:[0-9]+@[0-9a-f]{64}){241}$");
     const readiness = readRoutine(
       seal,
-      "private_release_runtime_schema_readiness_v54",
+      "private_release_runtime_schema_readiness_v55",
     );
     const digest =
-      /app\.private_release_runtime_dependency_surface_hash_v54\(\)<>\s*'([0-9a-f]{64})'/u.exec(
+      /app\.private_release_runtime_dependency_surface_hash_v55\(\)<>\s*'([0-9a-f]{64})'/u.exec(
         readiness.body,
       )?.[1];
     expect(digest).toMatch(/^[0-9a-f]{64}$/u);
@@ -279,20 +308,20 @@ describe("schema compatibility V54 manifest", () => {
     );
   });
 
-  it("preserves the complete catalog transcript except exact V53 retirement rows and four named self exclusions", () => {
+  it("preserves the complete catalog transcript except exact V54 retirement rows and four named self exclusions", () => {
     const predecessor = readRoutine(
-      migration("0237_v53_compatibility"),
-      "private_release_runtime_dependency_surface_hash_v53",
+      migration("0239_v54_compatibility"),
+      "private_release_runtime_dependency_surface_hash_v54",
     ).body;
     const current = readRoutine(
       migration(sealTag),
-      "private_release_runtime_dependency_surface_hash_v54",
+      "private_release_runtime_dependency_surface_hash_v55",
     ).body;
     let normalized = current;
     for (const [name] of currentRoots) {
       normalized = normalized.replaceAll(
+        `app.${name}_v55()`,
         `app.${name}_v54()`,
-        `app.${name}_v53()`,
       );
     }
     for (const name of ["rotated_acl_function", "rotated_config_function"]) {
@@ -315,16 +344,16 @@ describe("schema compatibility V54 manifest", () => {
         ),
       ].map((match) => match[1]),
     ).toEqual([
-      "app.schema_compatibility_v54()",
-      "app.private_release_runtime_dependency_surface_hash_v54()",
-      "app.private_release_runtime_schema_readiness_v54()",
+      "app.schema_compatibility_v55()",
+      "app.private_release_runtime_dependency_surface_hash_v55()",
+      "app.private_release_runtime_schema_readiness_v55()",
       "app.seal_schema_compatibility_manifest(bigint,bigint,text,text)",
     ]);
     expect(current).not.toMatch(/proname\s*(?:NOT LIKE|<>)/u);
   });
 
-  it("normalizes only the fourteen exact V53 ACL pairs and three actual V53 root configuration states", () => {
-    const predecessor = migration("0237_v53_compatibility");
+  it("normalizes only the fourteen exact V54 ACL pairs and three actual V54 root configuration states", () => {
+    const predecessor = migration("0239_v54_compatibility");
     const seal = migration(sealTag);
     const oldACL = cteRows(predecessor, "rotated_acl_function");
     const newACL = cteRows(seal, "rotated_acl_function");
@@ -362,7 +391,7 @@ describe("schema compatibility V54 manifest", () => {
       ].map(([name], index) => {
         const owner = index === 11 ? notifierOwner : migrator;
         return [
-          `app.${name}_v53()`,
+          `app.${name}_v54()`,
           [
             aclHash(owner, grants[index]!),
             aclHash(owner, index === 11 ? [migrator] : []),
@@ -374,15 +403,15 @@ describe("schema compatibility V54 manifest", () => {
     const newConfig = cteRows(seal, "rotated_config_function");
     expect(newConfig.slice(0, oldConfig.length)).toEqual(oldConfig);
     const fingerprint = manifest.expectedMigrations
-      .slice(0, 238)
+      .slice(0, 240)
       .map((entry) => `${entry.createdAt}@${entry.hash}`)
       .join(":");
     expect(sha256(fingerprint)).toBe(
-      "eb872be0647c3eb0d9dd4df549e2ad204f0caa6fdaacea2f0f6c3d805f8de1a5",
+      "56ccc3823199b9550145afe5348598239f047b53b3711130c3dca26227caaf7f",
     );
     expect(newConfig.slice(oldConfig.length)).toEqual([
       [
-        "app.schema_compatibility_v53()",
+        "app.schema_compatibility_v54()",
         ["UNSEALED", fingerprint, "RETIRED"].map((value) =>
           sha256(
             `{search_path=pg_catalog,app.schema_compatibility_fingerprint=${value}}`,
@@ -391,21 +420,116 @@ describe("schema compatibility V54 manifest", () => {
       ],
     ]);
     expect(seal).toMatch(
-      /ALTER FUNCTION app\.schema_compatibility_v53\(\)\s+SET app\.schema_compatibility_fingerprint='RETIRED'/u,
+      /ALTER FUNCTION app\.schema_compatibility_v54\(\)\s+SET app\.schema_compatibility_fingerprint='RETIRED'/u,
     );
-    expect(seal).not.toMatch(/DROP FUNCTION app\.[a-z_]+_v(?:49|5[0123])\(/u);
+    expect(seal).not.toMatch(/DROP FUNCTION app\.[a-z_]+_v(?:49|5[01234])\(/u);
     const release = readRoutine(
       seal,
-      "release_runtime_schema_readiness_v54",
+      "release_runtime_schema_readiness_v55",
     ).body;
-    expect(release).toContain("SELECT count(*)=10 AND coalesce(bool_and(");
-    for (let version = 44; version <= 53; version++) {
+    expect(release).toContain("SELECT count(*)=11 AND coalesce(bool_and(");
+    for (let version = 44; version <= 54; version++) {
       expect(release).toContain(
         `'app.schema_compatibility_v${version}()'::regprocedure`,
       );
     }
-    expect(manifest.expectedRetiredSchemaCompatibilityV53SourceHash).toBe(
-      sha256(readRoutine(predecessor, "schema_compatibility_v53").body),
+    expect(manifest.expectedRetiredSchemaCompatibilityV54SourceHash).toBe(
+      sha256(readRoutine(predecessor, "schema_compatibility_v54").body),
     );
+  });
+
+  it("wires the serving API, worker, notifier and canonical migration runner to V55", () => {
+    for (const path of [
+      "services/api/internal/postgres/health.go",
+      "services/worker/internal/postgres/health.go",
+    ]) {
+      const serving = source(path);
+      expect(serving, path).toContain("from app.schema_compatibility_v55()");
+      expect(serving, path).toContain(
+        "expectedSchemaCompatibilityV55SourceHash",
+      );
+      expect(serving, path).not.toContain(
+        "from app.schema_compatibility_v54()",
+      );
+    }
+    const notifier = source("services/notifier/src/postgres-repository.ts");
+    expect(notifier).toContain(
+      "FROM app.notification_dispatch_readiness_v55() AS readiness",
+    );
+    expect(notifier).toContain("expectedSchemaCompatibilityV55SourceHash");
+    expect(notifier).not.toContain(
+      "FROM app.notification_dispatch_readiness_v54() AS readiness",
+    );
+    const runner = source("packages/db/src/admin/schema-migration.ts");
+    expect(runner).toContain(
+      "expectedSealSchemaCompatibilityManifestV55SourceHash",
+    );
+    expect(runner).not.toContain(
+      "expectedSealSchemaCompatibilityManifestV54SourceHash",
+    );
+  });
+
+  it("keeps the selected non-upgrade runtime proofs anchored to the current V55 root", () => {
+    const databasePackage: unknown = JSON.parse(
+      source("packages/db/package.json"),
+    );
+    if (!isRecord(databasePackage) || !isRecord(databasePackage.scripts)) {
+      throw new Error("Database package scripts are malformed");
+    }
+    const scripts = databasePackage.scripts;
+    const aggregate = scripts["test:security"];
+    if (typeof aggregate !== "string") {
+      throw new Error("Database security aggregate is missing");
+    }
+    const selectedScripts = aggregate.split(/\s*&&\s*/u).map((command) => {
+      const match = /^corepack pnpm run (test:security:[a-z0-9-]+)$/u.exec(
+        command,
+      );
+      if (match?.[1] === undefined) {
+        throw new Error(
+          "Database security aggregate has an unrecognized command",
+        );
+      }
+      return match[1];
+    });
+    expect(selectedScripts).toContain("test:security:schema-compatibility-v55");
+    expect(selectedScripts).not.toContain(
+      "test:security:schema-compatibility-v54",
+    );
+    const files = selectedScripts
+      .map((script) => {
+        const command = scripts[script];
+        if (typeof command !== "string") {
+          throw new Error(
+            `Selected database security script is missing: ${script}`,
+          );
+        }
+        const match = /^tsx (tests\/security\/[a-z0-9-]+\.ts)$/u.exec(command);
+        if (match?.[1] === undefined) {
+          throw new Error(
+            `Selected database security source is unrecognized: ${script}`,
+          );
+        }
+        return match[1];
+      })
+      .filter((name) => !name.endsWith("-upgrade.ts"))
+      .toSorted();
+    expect(files).toContain(
+      "tests/security/schema-compatibility-v55-runtime.ts",
+    );
+    for (const file of files) {
+      const runtime = source(`packages/db/${file}`);
+      const historicalCalls = [
+        ...runtime.matchAll(/app\.schema_compatibility_v([0-9]+)\(\)/gu),
+      ].filter((match) => Number(match[1]) < 55);
+      if (historicalCalls.length === 0) continue;
+      expect(runtime, file).toContain("app.schema_compatibility_v55()");
+      expect(runtime, file).not.toMatch(
+        /FROM\s+app\.schema_compatibility_v(?:[0-4]?[0-9]|5[01234])\(\)\s+AS\s+current(?:_projection)?\b/iu,
+      );
+      expect(runtime, file).not.toMatch(
+        /SELECT\s+applied_count[\s\S]{0,160}?FROM\s+app\.schema_compatibility_v(?:[0-4]?[0-9]|5[01234])\(\)/iu,
+      );
+    }
   });
 });

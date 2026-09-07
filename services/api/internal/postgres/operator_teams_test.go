@@ -392,6 +392,7 @@ func TestOperatorTeamRosterRevokeUsesStrongProjectionAndSerializableTransaction(
 	rosterID := uuid.Must(uuid.NewV7())
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	row := validOperatorTeamRosterTestRow(teamID, epochID, rosterID, actor.UserID, now)
+	row.Email = ""
 	record, err := gotOperatorTeamRosterRecord(row)
 	if err != nil {
 		t.Fatalf("gotOperatorTeamRosterRecord() error = %v", err)

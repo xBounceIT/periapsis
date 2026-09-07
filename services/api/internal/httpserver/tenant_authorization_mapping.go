@@ -188,6 +188,11 @@ func scopedPermissionInputs(values []contract.TenantPermissionGrant) ([]authoriz
 }
 
 func mapTenantUser(value authorization.TenantUserSummary) (contract.TenantUserSummary, error) {
+	var email *openapi_types.Email
+	if value.User.Email != "" {
+		address := openapi_types.Email(value.User.Email)
+		email = &address
+	}
 	status := contract.TenantUserSummaryMembershipStatus(value.MembershipStatus)
 	legacyRole := contract.LegacyTenantMembershipRole(value.LegacyMembershipRole)
 	if !status.Valid() || !legacyRole.Valid() {
@@ -197,7 +202,7 @@ func mapTenantUser(value authorization.TenantUserSummary) (contract.TenantUserSu
 		TenantId: value.TenantID, MembershipId: value.MembershipID,
 		MembershipStatus: status, LegacyMembershipRole: legacyRole,
 		User: contract.TenantUserProfile{
-			Id: value.User.ID, Email: openapi_types.Email(value.User.Email),
+			Id: value.User.ID, Email: email,
 			DisplayName: value.User.DisplayName, Active: value.User.Active,
 		},
 		LifecycleRevision: value.LifecycleRevision,

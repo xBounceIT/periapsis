@@ -23,7 +23,7 @@ const (
 	failOIDCAuthenticationTransactionSQL   = `select app.fail_oidc_authentication_transaction_v1($1::jsonb)`
 	createSAMLAuthenticationTransactionSQL = `select app.create_saml_authentication_transaction_v1($1::jsonb)`
 	lookupSAMLAuthenticationTransactionSQL = `select app.lookup_saml_authentication_transaction_v1($1::jsonb)`
-	federatedAuthenticationReadinessSQL    = `select app.federated_authentication_schema_readiness_v54()`
+	federatedAuthenticationReadinessSQL    = `select app.federated_authentication_schema_readiness_v55()`
 
 	maximumFederatedAuthenticationWireBytes = 2 * 1024 * 1024
 )

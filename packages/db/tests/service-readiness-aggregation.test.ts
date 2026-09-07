@@ -5,19 +5,19 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  expectedAPIRuntimeReadinessV54SourceHash,
-  expectedWorkerRuntimeReadinessV54SourceHash,
+  expectedAPIRuntimeReadinessV55SourceHash,
+  expectedWorkerRuntimeReadinessV55SourceHash,
 } from "../src/admin/schema-compatibility-manifest.gen.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const migration = readFileSync(
-  resolve(root, "packages/db/migrations/0238_local_mfa_policy_recovery.sql"),
+  resolve(root, "packages/db/migrations/0240_tenant_profile_projections.sql"),
   "utf8",
 );
 const cases = [
   {
     service: "api",
-    hash: expectedAPIRuntimeReadinessV54SourceHash,
+    hash: expectedAPIRuntimeReadinessV55SourceHash,
     size: 8,
     leaves: [
       "platform_local_account_runtime_schema_readiness_v1",
@@ -29,7 +29,7 @@ const cases = [
   },
   {
     service: "worker",
-    hash: expectedWorkerRuntimeReadinessV54SourceHash,
+    hash: expectedWorkerRuntimeReadinessV55SourceHash,
     size: 5,
     leaves: [
       "private_sla_system_principal_catalog_ready_v1",
@@ -43,7 +43,7 @@ const cases = [
 
 describe("service readiness aggregation", () => {
   for (const { service, hash, size, leaves, releaseSlots } of cases) {
-    const name = `${service}_runtime_schema_readiness_v54`;
+    const name = `${service}_runtime_schema_readiness_v55`;
     const definition = new RegExp(
       `CREATE FUNCTION app\\.${name}\\(\\)([\\s\\S]*?)AS \\$function\\$([\\s\\S]*?)\\$function\\$;([\\s\\S]*?)--> statement-breakpoint`,
       "u",
@@ -67,9 +67,9 @@ describe("service readiness aggregation", () => {
       const body = definition![2]!;
       expect(
         [...body.matchAll(/app\.([a-z_0-9]+)\(\)/gu)].map((match) => match[1]),
-      ).toEqual(["release_runtime_schema_readiness_v54", ...leaves]);
+      ).toEqual(["release_runtime_schema_readiness_v55", ...leaves]);
       expect(body).toContain(
-        "release_ready := app.release_runtime_schema_readiness_v54();",
+        "release_ready := app.release_runtime_schema_readiness_v55();",
       );
       const returns = [
         ...body.matchAll(/RETURN ARRAY\[([\s\S]*?)\]::boolean\[\];/gu),
@@ -96,7 +96,7 @@ describe("service readiness aggregation", () => {
 
     it(`${service} stays inside the full transcript and has an independently attested serving call`, () => {
       const seal = readFileSync(
-        resolve(root, "packages/db/migrations/0239_v54_compatibility.sql"),
+        resolve(root, "packages/db/migrations/0241_v55_compatibility.sql"),
         "utf8",
       );
       const exclusions =

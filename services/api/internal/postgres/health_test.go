@@ -19,7 +19,7 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 		mutate    func(*stubSchemaRow)
 		wantReady bool
 	}{
-		{name: "exact v54 state", wantReady: true},
+		{name: "exact v55 state", wantReady: true},
 		{name: "empty journal", mutate: func(row *stubSchemaRow) {
 			row.appliedCount = 0
 			row.latestCreatedAt = pgtype.Int8{}
@@ -110,7 +110,7 @@ func TestHealthCheckerClassifiesReadinessFailuresWithoutQueryDetails(t *testing.
 	}
 }
 
-func TestHealthCheckerRequiresEveryV54RuntimeAndTrustedRoot(t *testing.T) {
+func TestHealthCheckerRequiresEveryV55RuntimeAndTrustedRoot(t *testing.T) {
 	for index := range 8 {
 		t.Run(fmt.Sprintf("runtime_%02d", index+1), func(t *testing.T) {
 			row := exactStubSchemaRow()
@@ -145,9 +145,9 @@ func TestHealthCheckerPassesExpectedMigrationFingerprintAsFirstArgument(t *testi
 	}
 }
 
-func TestSchemaCompatibilityQuerySealsV54TrustedSet(t *testing.T) {
-	if len(expectedTrustedFunctionSourceHashes) != 20 {
-		t.Fatalf("trusted source hash count = %d, want 20", len(expectedTrustedFunctionSourceHashes))
+func TestSchemaCompatibilityQuerySealsV55TrustedSet(t *testing.T) {
+	if len(expectedTrustedFunctionSourceHashes) != 21 {
+		t.Fatalf("trusted source hash count = %d, want 21", len(expectedTrustedFunctionSourceHashes))
 	}
 	if expectedTrustedFunctionSourceHashes[15] != expectedRetiredSchemaCompatibilityV50SourceHash {
 		t.Fatal("retired v50 root is not bound to its exact generated source hash")
@@ -155,17 +155,17 @@ func TestSchemaCompatibilityQuerySealsV54TrustedSet(t *testing.T) {
 	if expectedTrustedFunctionSourceHashes[16] != expectedRetiredSchemaCompatibilityV51SourceHash {
 		t.Fatal("retired v51 root is not bound to its exact generated source hash")
 	}
-	if expectedTrustedFunctionSourceHashes[17] != expectedAPIRuntimeReadinessV54SourceHash {
+	if expectedTrustedFunctionSourceHashes[17] != expectedAPIRuntimeReadinessV55SourceHash {
 		t.Fatal("api aggregate is not bound to its exact generated source hash")
 	}
 	for _, required := range []string{
-		"from app.schema_compatibility_v54()",
+		"from app.schema_compatibility_v55()",
 		"'app.schema_compatibility_fingerprint=' || $1::text",
 		"(2, 'retired', 'app.schema_compatibility_v49()'",
 		"(16, 'retired_v50', 'app.schema_compatibility_v50()'",
 		"(17, 'retired_v51', 'app.schema_compatibility_v51()'",
-		"(18, 'api_aggregate', 'app.api_runtime_schema_readiness_v54()'",
-		"app.api_runtime_schema_readiness_v54() AS array",
+		"(18, 'api_aggregate', 'app.api_runtime_schema_readiness_v55()'",
+		"app.api_runtime_schema_readiness_v55() AS array",
 		"'boolean[]', " + trustedAPIACL,
 		"'app.schema_compatibility_fingerprint=RETIRED'",
 		"'journal'",
@@ -179,7 +179,7 @@ func TestSchemaCompatibilityQuerySealsV54TrustedSet(t *testing.T) {
 		"function.provariadic = 0",
 		"function.prosupport = 0",
 		"function.proretset = (expected.function_key in (",
-		"'compatibility', 'retired', 'retired_v50', 'retired_v51', 'retired_v52', 'retired_v53', 'journal'",
+		"'compatibility', 'retired', 'retired_v50', 'retired_v51', 'retired_v52', 'retired_v53', 'retired_v54', 'journal'",
 		"function.procost = 100::real",
 		"function.prorows = case when function.proretset",
 		"function.protrftypes is null",
@@ -200,16 +200,16 @@ func TestSchemaCompatibilityQuerySealsV54TrustedSet(t *testing.T) {
 		"function_acl.privilege_type = 'EXECUTE'",
 		"not function_acl.is_grantable",
 		"array_agg(source_hash order by ordinal)",
-		"count(*) = 20 and coalesce(bool_and(catalog_ready), false)",
+		"count(*) = 21 and coalesce(bool_and(catalog_ready), false)",
 		trustedAPIACL,
 		trustedSLARotationACL,
-		"app.federated_authentication_schema_readiness_v54()",
-		"app.platform_oidc_direct_runtime_schema_readiness_v54()",
-		"app.platform_saml_direct_runtime_schema_readiness_v54()",
-		"app.platform_local_account_runtime_schema_readiness_v54()",
-		"app.ticket_bulk_runtime_schema_readiness_v54()",
-		"app.ticket_export_runtime_schema_readiness_v54()",
-		"app.ticket_metadata_runtime_schema_readiness_v54()",
+		"app.federated_authentication_schema_readiness_v55()",
+		"app.platform_oidc_direct_runtime_schema_readiness_v55()",
+		"app.platform_saml_direct_runtime_schema_readiness_v55()",
+		"app.platform_local_account_runtime_schema_readiness_v55()",
+		"app.ticket_bulk_runtime_schema_readiness_v55()",
+		"app.ticket_export_runtime_schema_readiness_v55()",
+		"app.ticket_metadata_runtime_schema_readiness_v55()",
 		"app.private_rotate_sla_readiness_v48()",
 	} {
 		if !strings.Contains(schemaCompatibilityQuery, required) {
@@ -223,8 +223,8 @@ func TestSchemaCompatibilityQuerySealsV54TrustedSet(t *testing.T) {
 	if got := strings.Count(schemaCompatibilityQuery, trustedReleaseACL); got != 1 {
 		t.Fatalf("release trusted-root ACL count = %d, want 1", got)
 	}
-	if got := strings.Count(schemaCompatibilityQuery, trustedOwnerACL); got != 9 {
-		t.Fatalf("owner-only trusted-root ACL count = %d, want 9", got)
+	if got := strings.Count(schemaCompatibilityQuery, trustedOwnerACL); got != 10 {
+		t.Fatalf("owner-only trusted-root ACL count = %d, want 10", got)
 	}
 	if got := strings.Count(schemaCompatibilityQuery, trustedAPIACL); got != 6 {
 		t.Fatalf("API-only trusted-root ACL count = %d, want 6", got)
@@ -240,20 +240,20 @@ func TestSchemaCompatibilityQuerySealsV54TrustedSet(t *testing.T) {
 		{"app.schema_compatibility_v49()", 1},
 		{"app.schema_compatibility_v50()", 1},
 		{"app.schema_compatibility_v51()", 1},
-		{"app.schema_compatibility_v54()", 2},
-		{"app.api_runtime_schema_readiness_v54()", 2},
+		{"app.schema_compatibility_v55()", 2},
+		{"app.api_runtime_schema_readiness_v55()", 2},
 		{"app.private_v47_migration_convergence_schema_readiness_v1()", 1},
-		{"app.private_schema_compatibility_journal_v54()", 1},
-		{"app.private_release_runtime_dependency_surface_hash_v54()", 1},
-		{"app.private_release_runtime_schema_readiness_v54()", 1},
-		{"app.release_runtime_schema_readiness_v54()", 1},
-		{"app.federated_authentication_schema_readiness_v54()", 1},
-		{"app.platform_oidc_direct_runtime_schema_readiness_v54()", 1},
-		{"app.platform_saml_direct_runtime_schema_readiness_v54()", 1},
-		{"app.platform_local_account_runtime_schema_readiness_v54()", 1},
-		{"app.ticket_bulk_runtime_schema_readiness_v54()", 1},
-		{"app.ticket_export_runtime_schema_readiness_v54()", 1},
-		{"app.ticket_metadata_runtime_schema_readiness_v54()", 1},
+		{"app.private_schema_compatibility_journal_v55()", 1},
+		{"app.private_release_runtime_dependency_surface_hash_v55()", 1},
+		{"app.private_release_runtime_schema_readiness_v55()", 1},
+		{"app.release_runtime_schema_readiness_v55()", 1},
+		{"app.federated_authentication_schema_readiness_v55()", 1},
+		{"app.platform_oidc_direct_runtime_schema_readiness_v55()", 1},
+		{"app.platform_saml_direct_runtime_schema_readiness_v55()", 1},
+		{"app.platform_local_account_runtime_schema_readiness_v55()", 1},
+		{"app.ticket_bulk_runtime_schema_readiness_v55()", 1},
+		{"app.ticket_export_runtime_schema_readiness_v55()", 1},
+		{"app.ticket_metadata_runtime_schema_readiness_v55()", 1},
 		{"app.private_rotate_sla_readiness_v48()", 1},
 	}
 	for _, root := range roots {

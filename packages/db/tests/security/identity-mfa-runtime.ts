@@ -363,7 +363,7 @@ try {
   const [readiness] = await asApi(
     (transaction) =>
       transaction<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v54() AS ready
+      SELECT app.release_runtime_schema_readiness_v55() AS ready
     `,
   );
   assert.equal(readiness?.ready, true);
@@ -1418,7 +1418,7 @@ try {
            retired_projection.applied_count::integer AS retired_count,
            retired_projection.latest_hash AS retired_hash,
            retired_projection.migration_fingerprint AS retired_fingerprint
-    FROM app.schema_compatibility_v54() AS current_projection
+    FROM app.schema_compatibility_v55() AS current_projection
     CROSS JOIN app.schema_compatibility_v47() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v46() AS retired_projection
   `;

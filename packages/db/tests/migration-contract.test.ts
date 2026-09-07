@@ -279,6 +279,8 @@ describe("PostgreSQL migration chain", () => {
       "0237_v53_compatibility.sql",
       "0238_local_mfa_policy_recovery.sql",
       "0239_v54_compatibility.sql",
+      "0240_tenant_profile_projections.sql",
+      "0241_v55_compatibility.sql",
     ]);
   });
 

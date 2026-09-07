@@ -1681,6 +1681,20 @@
       "when": 1788796577322,
       "tag": "0239_v54_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1788800885606,
+      "tag": "0240_tenant_profile_projections",
+      "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1788800892499,
+      "tag": "0241_v55_compatibility",
+      "breakpoints": true
     }
   ]
 }

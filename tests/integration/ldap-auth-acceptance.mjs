@@ -576,10 +576,8 @@ const ldapSession = await request("/api/v1/auth/session", {
 expectStatus(ldapSession, 200, "LDAP session resolution");
 assert(
   ldapSession.body?.authenticationMethod === "ldap" &&
-    ldapSession.body?.activeTenantId === tenantId &&
-    ldapSession.body?.user?.email === directoryUser.email &&
-    ldapSession.body?.user?.displayName === directoryUser.displayName,
-  "LDAP login must import the profile and issue a tenant-selected LDAP session",
+    ldapSession.body?.activeTenantId === tenantId,
+  "LDAP login must issue a tenant-selected LDAP session",
 );
 const ldapUserId = requiredIdentifier(
   ldapSession.body?.user?.id,
@@ -642,10 +640,7 @@ expectStatus(
 );
 assert(
   secondOperatorSession.body?.authenticationMethod === "ldap" &&
-    secondOperatorSession.body?.activeTenantId === tenantId &&
-    secondOperatorSession.body?.user?.email === directorySecondOperator.email &&
-    secondOperatorSession.body?.user?.displayName ===
-      directorySecondOperator.displayName,
+    secondOperatorSession.body?.activeTenantId === tenantId,
   "second LDAP operator must be independently imported into the same tenant",
 );
 const secondOperatorUserId = requiredIdentifier(
@@ -673,14 +668,11 @@ const importedUsers = await administratorRequest(
   `/api/v1/tenants/${tenantId}/users?limit=100`,
 );
 expectStatus(importedUsers, 200, "tenant user projection");
-const importedProfile = importedUsers.body?.items?.find(
-  (item) => item.user?.id === ldapUserId,
-);
-assert(
-  importedProfile?.membershipStatus === "active" &&
-    importedProfile?.user?.email === directoryUser.email &&
-    importedProfile?.user?.displayName === directoryUser.displayName,
-  "tenant user projection must contain the active imported LDAP profile",
+assertImportedLDAPProfile(importedUsers.body?.items, ldapUserId, directoryUser);
+assertImportedLDAPProfile(
+  importedUsers.body?.items,
+  secondOperatorUserId,
+  directorySecondOperator,
 );
 
 const groupMemberships = await administratorRequest(
@@ -754,13 +746,22 @@ const customerSession = await request("/api/v1/auth/session", {
 });
 expectStatus(customerSession, 200, "LDAP customer session resolution");
 assert(
-  customerSession.body?.user?.email === directoryCustomer.email &&
+  customerSession.body?.authenticationMethod === "ldap" &&
     customerSession.body?.activeTenantId === tenantId,
-  "LDAP customer session must carry the imported profile and tenant",
+  "LDAP customer session must select the intended tenant",
 );
 const customerUserId = requiredIdentifier(
   customerSession.body?.user?.id,
   "LDAP customer user ID",
+);
+const customerProfiles = await administratorRequest(
+  `/api/v1/tenants/${tenantId}/users?limit=100`,
+);
+expectStatus(customerProfiles, 200, "LDAP customer tenant profile");
+assertImportedLDAPProfile(
+  customerProfiles.body?.items,
+  customerUserId,
+  directoryCustomer,
 );
 const customerAuthority = await request(
   `/api/v1/tenants/${tenantId}/me/authority`,
@@ -1477,6 +1478,18 @@ async function ensureRecentAdministratorAssurance(liveTenantId) {
   expectStatus(selected, 200, "administrator tenant selection after MFA");
   administratorCookie = refreshedCookie(selected, administratorCookie);
   administratorCSRF = requiredSessionCSRF(selected.body);
+}
+
+function assertImportedLDAPProfile(items, userId, directoryIdentity) {
+  // ADR 0009 keeps imported contact data in the tenant profile, separate from
+  // the platform identity returned by the authentication session endpoint.
+  const profile = items?.find((item) => item.user?.id === userId);
+  assert(
+    profile?.membershipStatus === "active" &&
+      profile?.user?.email === directoryIdentity.email &&
+      profile?.user?.displayName === directoryIdentity.displayName,
+    "tenant user projection must contain the active imported LDAP profile",
+  );
 }
 
 async function publishAcceptanceBaseline(liveTenantId) {
@@ -2691,10 +2704,17 @@ async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
   );
   assert(
     session.body?.activeTenantId === liveTenantId &&
-      session.body?.authenticationMethod === "ldap" &&
-      session.body?.user?.email === directoryIsolationUser.email &&
-      session.body?.user?.displayName === directoryIsolationUser.displayName,
+      session.body?.authenticationMethod === "ldap",
     "Globex isolation session must belong to the dedicated LDAP identity",
+  );
+  const profiles = await administratorRequest(
+    `/api/v1/tenants/${liveTenantId}/users?limit=100`,
+  );
+  expectStatus(profiles, 200, "Globex LDAP tenant profile");
+  assertImportedLDAPProfile(
+    profiles.body?.items,
+    userId,
+    directoryIsolationUser,
   );
   const memberships = await request(
     "/api/v1/auth/tenant-memberships?limit=100",

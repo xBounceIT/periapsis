@@ -763,9 +763,9 @@ function MembershipLifecycleDialog({
           <DialogHeader>
             <DialogTitle>{action} tenant membership</DialogTitle>
             <DialogDescription>
-              {action} access for {user.user.displayName} ({user.user.email}).
-              This action is tenant-scoped and requires an exact current
-              membership revision.
+              {action} access for {user.user.displayName} (
+              {user.user.email ?? "No email"}). This action is tenant-scoped and
+              requires an exact current membership revision.
             </DialogDescription>
           </DialogHeader>
 
@@ -2704,7 +2704,7 @@ function MembershipInventory({
               <TableCell>
                 <span className="role-name-cell">
                   <strong>{item.user.displayName}</strong>
-                  <small>{item.user.email}</small>
+                  <small>{item.user.email ?? "No email"}</small>
                 </span>
               </TableCell>
               <TableCell>
@@ -2731,7 +2731,7 @@ function MembershipInventory({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    aria-label={`Review access for ${item.user.displayName} (${item.user.email})`}
+                    aria-label={`Review access for ${item.user.displayName} (${item.user.email ?? "No email"})`}
                     onClick={() => openUserAccess(item)}
                   >
                     <KeyRound aria-hidden="true" /> Access
@@ -2752,7 +2752,7 @@ function MembershipInventory({
                         item.membershipStatus === "active"
                           ? "Suspend"
                           : "Reactivate"
-                      } membership for ${item.user.displayName} (${item.user.email})`}
+                      } membership for ${item.user.displayName} (${item.user.email ?? "No email"})`}
                       onClick={() => openMembershipLifecycle(item)}
                     >
                       {item.membershipStatus === "active" ? (
@@ -2921,7 +2921,7 @@ function UserGrantHistory({
         <UserRound aria-hidden="true" />
         <span>
           <strong>{user.user.displayName}</strong>
-          <small>{user.user.email}</small>
+          <small>{user.user.email ?? "No email"}</small>
         </span>
         <Badge variant="outline">{formatStatus(user.membershipStatus)}</Badge>
         <Badge variant={user.user.active ? "secondary" : "outline"}>

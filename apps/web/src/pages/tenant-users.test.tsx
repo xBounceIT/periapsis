@@ -41,6 +41,26 @@ afterEach(() => {
 });
 
 describe("TenantUsersPage", () => {
+  it("renders a federated tenant profile without inventing an email", async () => {
+    const user = userFixture();
+    delete user.user.email;
+    renderUsers(
+      createPhaseTwoApi({
+        getTenantAuthority: async () => authorityFixture(["user.read"]),
+        listTenantUsers: async () => ({ items: [user] }),
+        listUserRoleGrants: async () => ({ items: [] }),
+      }),
+      vi.fn(),
+      true,
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Review access for ${user.user.displayName} (No email)`,
+      }),
+    ).toBeVisible();
+    expect(screen.getByText("No email")).toBeVisible();
+  });
+
   it("keeps initial authority pending and clears ready user state before a read-permission loss settles", async () => {
     const user = userFixture();
     const initialAuthority = createDeferred<TenantAuthorityView>();

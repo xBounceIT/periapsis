@@ -221,6 +221,8 @@ export const tenantMemberships = pgTable(
   ],
 ).enableRLS();
 
+// Migration 0240 exposes this effective tenant projection through the guarded
+// user/group/roster read ABIs; email remains optional for federated identities.
 export const tenantUserProfiles = pgTable(
   "tenant_user_profiles",
   {

@@ -562,7 +562,7 @@ SELECT edge.group_membership_id::uuid AS group_membership_id,
        edge.group_updated_at::timestamptz AS group_updated_at,
        edge.membership_id::uuid AS membership_id,
        edge.target_user_id::uuid AS target_user_id,
-       edge.email::text AS email,
+       coalesce(edge.email, '')::text AS email,
        edge.display_name::text AS display_name,
        edge.membership_status::text AS membership_status,
        edge.compatibility_role::text AS compatibility_role,
@@ -585,7 +585,7 @@ SELECT edge.group_membership_id::uuid AS group_membership_id,
        edge.updated_at::timestamptz AS updated_at,
        edge.managed_by_authorization_api::boolean AS managed_by_authorization_api,
        edge.membership_lifecycle_revision::integer AS membership_lifecycle_revision
-FROM app.get_tenant_security_group_membership_v3(
+FROM app.get_tenant_security_group_membership_v4(
   $1::uuid,
   $2::uuid
 ) AS edge(
@@ -1148,7 +1148,7 @@ SELECT edge.group_membership_id::uuid AS group_membership_id,
        edge.group_updated_at::timestamptz AS group_updated_at,
        edge.membership_id::uuid AS membership_id,
        edge.target_user_id::uuid AS target_user_id,
-       edge.email::text AS email,
+       coalesce(edge.email, '')::text AS email,
        edge.display_name::text AS display_name,
        edge.membership_status::text AS membership_status,
        edge.compatibility_role::text AS compatibility_role,
@@ -1171,7 +1171,7 @@ SELECT edge.group_membership_id::uuid AS group_membership_id,
        edge.updated_at::timestamptz AS updated_at,
        edge.managed_by_authorization_api::boolean AS managed_by_authorization_api,
        edge.membership_lifecycle_revision::integer AS membership_lifecycle_revision
-FROM app.list_tenant_security_group_memberships_v3(
+FROM app.list_tenant_security_group_memberships_v4(
   $1::uuid,
   $2::uuid,
   $3::boolean,
@@ -1519,7 +1519,7 @@ func (q *Queries) ListTenantAuthorizationSecurityGroups(ctx context.Context, arg
 const listTenantAuthorizationUsers = `-- name: ListTenantAuthorizationUsers :many
 SELECT tenant_user.membership_id::uuid AS membership_id,
        tenant_user.user_id::uuid AS user_id,
-       tenant_user.email::text AS email,
+       coalesce(tenant_user.email, '')::text AS email,
        tenant_user.display_name::text AS display_name,
        tenant_user.membership_status::text AS membership_status,
        tenant_user.compatibility_role::text AS compatibility_role,
@@ -1527,7 +1527,7 @@ SELECT tenant_user.membership_id::uuid AS membership_id,
        tenant_user.lifecycle_revision::integer AS lifecycle_revision,
        tenant_user.created_at::timestamptz AS created_at,
        tenant_user.updated_at::timestamptz AS updated_at
-FROM app.list_tenant_users_v2(
+FROM app.list_tenant_users_v3(
   $1::uuid,
   $2::integer
 ) AS tenant_user(

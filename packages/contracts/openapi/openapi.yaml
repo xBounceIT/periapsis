@@ -24946,7 +24946,7 @@ components:
     TenantUserProfile:
       type: object
       additionalProperties: false
-      required: [id, email, displayName, active]
+      required: [id, displayName, active]
       properties:
         id:
           type: string
@@ -24955,6 +24955,7 @@ components:
           type: string
           format: email
           maxLength: 320
+          description: Present only when the effective tenant profile has an email address.
         displayName:
           type: string
           minLength: 1

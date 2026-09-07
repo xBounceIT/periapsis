@@ -508,7 +508,7 @@ func (s *Service) validStoredRole(role TenantRole, tenantID uuid.UUID) bool {
 func validTenantUserSummary(user TenantUserSummary, tenantID uuid.UUID) bool {
 	if user.TenantID != tenantID || !validUUIDv7(user.MembershipID) || !validUUIDv7(user.User.ID) ||
 		!knownMembershipStatus(user.MembershipStatus) || !knownLegacyMembershipRole(user.LegacyMembershipRole) ||
-		!validEmail(user.User.Email) || !validBoundedText(strings.TrimSpace(user.User.DisplayName), 1, 160) ||
+		(user.User.Email != "" && !validEmail(user.User.Email)) || !validBoundedText(strings.TrimSpace(user.User.DisplayName), 1, 160) ||
 		user.LifecycleRevision < 1 || user.LifecycleRevision > maximumResourceVersion ||
 		user.CreatedAt.IsZero() || user.UpdatedAt.IsZero() || user.UpdatedAt.Before(user.CreatedAt) {
 		return false

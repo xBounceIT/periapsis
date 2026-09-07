@@ -68,6 +68,34 @@ test("LDAP acceptance selects the session cookie among ceremony cleanup headers"
   }
 });
 
+test("LDAP acceptance verifies the matching active tenant profile", () => {
+  const start = integration.indexOf("function assertImportedLDAPProfile(");
+  const end = integration.indexOf(
+    "async function publishAcceptanceBaseline(",
+    start,
+  );
+  assert.ok(start >= 0 && end > start);
+  const verifyProfile = runInNewContext(`(${integration.slice(start, end)})`, {
+    assert: (condition, message) => assert.ok(condition, message),
+  });
+  const expected = { email: "analyst@periapsis.test", displayName: "Analyst" };
+  const profile = {
+    membershipStatus: "active",
+    user: { id: "analyst", ...expected },
+  };
+  verifyProfile([profile], "analyst", expected);
+  for (const items of [
+    undefined,
+    [],
+    [{ ...profile, membershipStatus: "revoked" }],
+    [{ ...profile, user: { ...profile.user, id: "another-user" } }],
+    [{ ...profile, user: { ...profile.user, email: undefined } }],
+    [{ ...profile, user: { ...profile.user, displayName: "Other" } }],
+  ]) {
+    assert.throws(() => verifyProfile(items, "analyst", expected));
+  }
+});
+
 test("live Phase 3 acceptance uses the composed API and database without interception", () => {
   assert.doesNotMatch(specification, /\.(?:route|routeFromHAR)\s*\(/u);
   assert.doesNotMatch(

@@ -2774,7 +2774,7 @@ function RosterMembershipField({
         <SelectContent>
           {activeUsers.map((user) => (
             <SelectItem key={user.membershipId} value={user.membershipId}>
-              {user.user.displayName} · {user.user.email}
+              {user.user.displayName} · {user.user.email ?? "No email"}
             </SelectItem>
           ))}
         </SelectContent>

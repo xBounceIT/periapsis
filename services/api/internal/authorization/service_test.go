@@ -403,6 +403,7 @@ func TestServiceTenantUserPageCursorUsesMembershipID(t *testing.T) {
 		serviceTestUser(serviceTestID(51), serviceTestID(61)),
 	}
 	users[0].MembershipStatus = MembershipStatusInvited
+	users[0].User.Email = ""
 	repository := &serviceRepositoryStub{
 		resolveAuthorityFunc: func(ResolveAuthorityParams) (TenantAuthority, error) {
 			return serviceTestAuthority(TenantPermissionUserRead), nil

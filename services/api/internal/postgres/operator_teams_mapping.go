@@ -335,7 +335,7 @@ func mapOperatorTeamRosterEntry(
 	if err != nil {
 		return operatorteam.RosterEntry{}, err
 	}
-	if !validOperatorTeamText(record.email, 1, 320, true) ||
+	if (record.email != "" && !validOperatorTeamText(record.email, 1, 320, true)) ||
 		!validOperatorTeamText(record.displayName, 1, 160, true) ||
 		!knownOperatorTeamCompatibilityRole(record.compatibilityRole) {
 		return operatorteam.RosterEntry{}, invalidOperatorTeamProjection("invalid roster member projection")

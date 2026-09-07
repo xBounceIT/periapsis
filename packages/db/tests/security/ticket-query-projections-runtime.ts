@@ -416,7 +416,7 @@ try {
 
       await asApi(transaction, fixture.tenant, fixture.user, async (sql) => {
         const [readiness] = await sql<{ ready: boolean }[]>`
-            SELECT app.release_runtime_schema_readiness_v54() AS ready
+            SELECT app.release_runtime_schema_readiness_v55() AS ready
           `;
         assert.equal(readiness?.ready, true, "projection readiness is false");
 

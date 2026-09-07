@@ -10,7 +10,7 @@ import {
   expectedMigrationFingerprint,
   expectedMigrationHash,
   expectedMigrations,
-  expectedSealSchemaCompatibilityManifestV54SourceHash,
+  expectedSealSchemaCompatibilityManifestV55SourceHash,
   supportedLegacyV45MigrationCount,
   supportedLegacyV45MigrationReplacements,
 } from "../src/admin/schema-compatibility-manifest.gen.js";
@@ -150,7 +150,7 @@ describe("canonical schema migration preflight", () => {
     expect(latestMigrationIsReleaseCompatibilitySeal([])).toBe(false);
   });
 
-  it("source-attests the exact V54 sealer before invoking it", async () => {
+  it("source-attests the exact V55 sealer before invoking it", async () => {
     const statements: { text: string; values: unknown[] }[] = [];
     const sql = vi.fn(
       async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -171,7 +171,7 @@ describe("canonical schema migration preflight", () => {
       "procedure.proconfig IS NOT DISTINCT FROM",
     );
     expect(statements[0]?.values).toEqual([
-      expectedSealSchemaCompatibilityManifestV54SourceHash,
+      expectedSealSchemaCompatibilityManifestV55SourceHash,
     ]);
     expect(statements[1]?.text).toContain(
       "app.seal_schema_compatibility_manifest",
@@ -185,7 +185,7 @@ describe("canonical schema migration preflight", () => {
     expect(statements[2]).toEqual(statements[1]);
   });
 
-  it("fails closed without invoking a drifted V54 sealer", async () => {
+  it("fails closed without invoking a drifted V55 sealer", async () => {
     const sql = vi.fn(async () => [{ value: false }]);
 
     await expect(
@@ -409,7 +409,7 @@ describe("canonical schema migration preflight", () => {
       "0184_platform_saml_direct_runtime",
       "0199_ticket_watcher_runtime",
       "0220_api_request_rate_limits",
-      "0239_v54_compatibility",
+      "0241_v55_compatibility",
     ]);
     expect(batches.flat()).toEqual(migrations);
   });

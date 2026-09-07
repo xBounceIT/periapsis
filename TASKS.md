@@ -13,6 +13,21 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] The tenant-user API also reads the nullable global email and returns 503
+      for LDAP identities. Migration 0240 adds tenant-profile user/group/roster
+      read ABIs; 0241 seals V55 without rewriting published migrations. SQL
+      readers and the HTTP contract accept absent email. Native HTTP admission,
+      session resolution and imported tenant profile now pass. Retain Linux
+      acceptance and the PostgreSQL aggregate for this candidate. Run
+      `34144629182` cancelled that aggregate at the exact 30-minute job limit,
+      before its final three checks; allow 60 minutes for the complete gate.
+- [ ] Run `34144629182` reaches real LDAP login and session resolution, then
+      incorrectly expects tenant email in the global authentication identity.
+      ADR 0009 keeps LDAP contact data in tenant profiles; the native database
+      confirms the global email is absent and the tenant email/name are correct.
+      Verify all four LDAP acceptance identities through the tenant user API,
+      retaining session method/tenant checks and active membership/profile checks.
+      Complete the remaining composed acceptance on Linux.
 - [ ] Run `34143162684` passes all 24 upgrades, HTTPS bootstrap/login, runtime
       reprovisioning and full-profile health. Real LDAP authentication now returns
       303, but acceptance selects the first `Set-Cookie`, which clears the MFA

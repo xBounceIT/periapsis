@@ -930,7 +930,7 @@ function MembershipPanel({
                 )
               }
               state={edge.state}
-              subtitle={edge.member.user.email}
+              subtitle={edge.member.user.email ?? "No email"}
               title={edge.member.user.displayName}
               effectiveAuthorityBlockers={membershipAuthorityBlockers(edge)}
               version={edge.version}
@@ -1260,7 +1260,8 @@ function AddMembershipForm({
                     {users.state.kind === "ready"
                       ? users.state.items.map((user) => (
                           <SelectItem key={user.user.id} value={user.user.id}>
-                            {user.user.displayName} · {user.user.email}
+                            {user.user.displayName} ·{" "}
+                            {user.user.email ?? "No email"}
                           </SelectItem>
                         ))
                       : null}
