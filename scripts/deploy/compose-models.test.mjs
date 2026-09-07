@@ -173,6 +173,11 @@ function resolved(result) {
 
 function assertApplicationHardening(model) {
   assertAddressPools(model);
+  assert.equal(
+    model.services.worker.environment
+      .PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID,
+    "01890f00-0000-7000-8000-0000000000f1",
+  );
   const publicOrigin = new URL(
     model.services.api.environment.PERIAPSIS_PUBLIC_URL,
   );
@@ -578,3 +583,19 @@ for (const variable of [...tlsVariables, ...proxyVariables]) {
     );
   });
 }
+
+test("Compose preserves an explicitly selected ticket runtime principal", async (t) => {
+  const inputs = await fixture(t);
+  const principal = "01890f00-0000-7000-8000-0000000000f2";
+  const model = resolved(
+    render(inputs, "compose.yaml", "minimal", {
+      ...inputs.tls,
+      PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID: principal,
+    }),
+  );
+  assert.equal(
+    model.services.worker.environment
+      .PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID,
+    principal,
+  );
+});

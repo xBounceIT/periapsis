@@ -107,6 +107,7 @@ const ticketSearchDocument = `to_tsvector('simple'::regconfig,
 // every mutation to the bounded SECURITY DEFINER ABI. No caller-supplied
 // authorization fact is persisted or trusted by this adapter.
 type TicketingRepository struct {
+	pool      *pgxpool.Pool
 	begin     transactionBeginner
 	authority *AuthorizationRepository
 	newID     func() (uuid.UUID, error)
@@ -114,6 +115,7 @@ type TicketingRepository struct {
 
 func NewTicketingRepository(pool *pgxpool.Pool) *TicketingRepository {
 	return &TicketingRepository{
+		pool:  pool,
 		begin: poolTransactionBeginner(pool), authority: NewAuthorizationRepository(pool), newID: uuid.NewV7,
 	}
 }

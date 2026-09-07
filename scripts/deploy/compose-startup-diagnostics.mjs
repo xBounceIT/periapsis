@@ -21,6 +21,49 @@ const runtimeErrors = new Set([
   "validate worker database role",
   "database connection is not a least-privileged worker role",
 ]);
+const runtimeDependencies = new Set([
+  "postgresql",
+  "protected_authentication_configuration",
+  "api_credential_keyring",
+  "identity_keyring",
+  "notification_keyring",
+  "dfir_object_storage",
+  "dfir_malware_scanner",
+  "ticket_operations",
+  "platform_local_accounts",
+  "federated_authentication",
+]);
+const workerFailures = new Set([
+  "audit operations worker is not configured",
+  "ticket runtime is not configured",
+  "DFIR scan cycle failed",
+  "DFIR orphan cleanup cycle failed",
+  "custom-field import cycle failed",
+  "custom-field import readiness failed",
+  "audit operations cycle failed",
+  "audit operations readiness failed",
+  "ticket runtime readiness failed",
+  "ticket export storage readiness failed",
+  "ticket export spool reconciliation failed",
+  "ticket work queue discovery failed",
+  "SLA trigger action execution failed",
+  "SLA event ingress failed",
+  "SLA evaluation failed",
+]);
+const workerFailureCodes = new Set([
+  "retention_signing_key_missing",
+  "service_identity_missing",
+  "dependency_unavailable",
+  "database_abi_unavailable",
+  "storage_unavailable",
+  "canceled",
+  "deadline_exceeded",
+  "fence_lost",
+  "invalid_projection",
+  "invalid_input",
+  "unavailable",
+  "internal",
+]);
 const compose = [
   "compose",
   "--file",
@@ -181,6 +224,28 @@ function minioEvent(line) {
 function runtimeEvent(service, line) {
   try {
     const entry = JSON.parse(line);
+    if (entry?.level === "WARN") {
+      if (
+        service === "api" &&
+        entry.msg === "readiness dependency unavailable"
+      ) {
+        return {
+          kind: "runtime_readiness",
+          dependency: runtimeDependencies.has(entry.dependency)
+            ? entry.dependency
+            : "UNCLASSIFIED",
+        };
+      }
+      if (service === "worker" && workerFailures.has(entry.msg)) {
+        return {
+          kind: "worker_readiness",
+          operation: entry.msg,
+          failure: workerFailureCodes.has(entry.failure)
+            ? entry.failure
+            : "UNCLASSIFIED",
+        };
+      }
+    }
     if (entry?.level !== "ERROR" || entry.msg !== `${service} stopped`)
       return null;
     return {

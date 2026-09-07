@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/periapsis-im/periapsis/services/worker/internal/customfieldimport"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,10 +35,17 @@ func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
 		t.Fatal("cannot create readiness test pool")
 	}
 	defer pool.Close()
+	identity := customfieldimport.Identity{
+		ServiceAccountID: uuid.MustParse("01890f00-0000-7000-8000-0000000000f1"),
+		WorkerID:         uuid.Must(uuid.NewV7()),
+	}
 	for name, ready := range map[string]func(context.Context) error{
 		"SLA events":        NewSLAEventRepository(pool).Ready,
 		"SLA actions":       NewSLAActionRepository(pool).Ready,
 		"ticket operations": NewTicketRuntimeRepository(pool).Ready,
+		"configured import principal": func(ctx context.Context) error {
+			return NewCustomFieldImportWorkerRepository(pool).Ready(ctx, identity)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := ready(ctx); err != nil {

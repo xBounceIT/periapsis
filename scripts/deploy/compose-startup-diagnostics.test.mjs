@@ -19,6 +19,47 @@ const state = {
 };
 const canary = "private-canary-never-print";
 
+test("readiness diagnostics preserve only finite dependency and failure labels", () => {
+  const api = redactComposeStartupLogs(
+    "api",
+    JSON.stringify({
+      level: "WARN",
+      msg: "readiness dependency unavailable",
+      dependency: "ticket_operations",
+      error: canary,
+    }),
+  );
+  assert.deepEqual(api.events, [
+    { kind: "runtime_readiness", dependency: "ticket_operations" },
+  ]);
+  const worker = redactComposeStartupLogs(
+    "worker",
+    JSON.stringify({
+      level: "WARN",
+      msg: "SLA event ingress failed",
+      failure: canary,
+      error: canary,
+    }),
+  );
+  assert.deepEqual(worker.events, [
+    {
+      kind: "worker_readiness",
+      operation: "SLA event ingress failed",
+      failure: "UNCLASSIFIED",
+    },
+  ]);
+  const unknown = redactComposeStartupLogs(
+    "api",
+    JSON.stringify({
+      level: "WARN",
+      msg: "readiness dependency unavailable",
+      dependency: canary,
+    }),
+  );
+  assert.equal(unknown.events[0].dependency, "UNCLASSIFIED");
+  assert.ok(!JSON.stringify([api, worker, unknown]).includes(canary));
+});
+
 function success(stdout = "", stderr = "") {
   return { status: 0, signal: null, stdout, stderr };
 }

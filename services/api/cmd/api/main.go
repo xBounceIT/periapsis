@@ -534,6 +534,7 @@ func run(logger *slog.Logger) (returnErr error) {
 		return errors.New("initialize notification keyring readiness")
 	}
 	readinessChecker := &protectedConfigReadiness{
+		logger:                logger,
 		database:              postgres.NewHealthChecker(pool),
 		authentication:        authenticationService,
 		credentialKeyring:     credentialKeyringReadiness,
@@ -700,6 +701,7 @@ func clearNotifierPreviewSourceConfig(cfg *config.Config) {
 }
 
 type protectedConfigReadiness struct {
+	logger                *slog.Logger
 	database              httpserver.ReadinessChecker
 	authentication        protectedConfigurationVerifier
 	credentialKeyring     credentialKeyringVerifier
@@ -760,7 +762,14 @@ func (c *protectedConfigReadiness) Check(ctx context.Context) []postgres.Depende
 		}
 		return []postgres.DependencyCheck{{Name: "readiness_probe", Ready: false}}
 	}
-	checks := c.database.Check(ctx)
+	var checks []postgres.DependencyCheck
+	if scoped, ok := c.database.(interface {
+		CheckWithContext(context.Context) (context.Context, []postgres.DependencyCheck)
+	}); ok {
+		ctx, checks = scoped.CheckWithContext(ctx)
+	} else {
+		checks = c.database.Check(ctx)
+	}
 	databaseReady := len(checks) > 0
 	for _, check := range checks {
 		if !check.Ready {
@@ -866,6 +875,13 @@ func (c *protectedConfigReadiness) Check(ctx context.Context) []postgres.Depende
 		})
 	}
 	c.cached = append(c.cached[:0], checks...)
+	if c.logger != nil {
+		for _, check := range checks {
+			if !check.Ready {
+				c.logger.Warn("readiness dependency unavailable", "dependency", check.Name)
+			}
+		}
+	}
 	c.checkedAt = time.Now()
 	return append([]postgres.DependencyCheck(nil), checks...)
 }

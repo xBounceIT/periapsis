@@ -39,6 +39,12 @@ account identity, not an application-generated fallback. If it is absent, the
 process may serve liveness and metrics, but ticket runtime readiness and the
 overall worker readiness remain false.
 
+The local Compose deployment explicitly selects the enabled global principal
+`01890f00-0000-7000-8000-0000000000f1` installed by the canonical ticket runtime
+migration. This identifier is non-secret and is distinct from tenant service
+accounts. An explicit `PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID` overrides
+that local default; the database still validates that the principal is enabled.
+
 Exports reuse the hardened worker S3 configuration (`PERIAPSIS_S3_ENDPOINT`,
 `PERIAPSIS_S3_REGION`, `PERIAPSIS_S3_BUCKET`, access-key/secret-key `_FILE`
 mounts in production, optional session token/CA/private-egress policy, and

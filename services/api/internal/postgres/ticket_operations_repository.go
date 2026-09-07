@@ -121,6 +121,9 @@ func (repository *TicketingRepository) ReadyTicketOperations(ctx context.Context
 	if ctx == nil || ctx.Err() != nil || repository == nil || repository.begin == nil {
 		return application.ErrUnavailable
 	}
+	if runtimeVerifiedInProbe(ctx, repository.pool) {
+		return nil
+	}
 	operationContext, cancel := context.WithTimeout(ctx, savedViewDatabaseTimeout)
 	defer cancel()
 	ready, err := withinTransactionWithOptions(

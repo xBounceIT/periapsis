@@ -56,6 +56,26 @@ final-journal database gates and the remaining release boundaries.
       contract (`.tmp/ci-fix/verify-readiness.log`,
       `.tmp/ci-fix/operations-readiness.log`,
       `.tmp/ci-fix/verify-readiness-remaining.log`).
+- [x] Remove duplicate API readiness attestations within one bounded probe.
+      A native run with correctly provisioned runtime-role attributes reaches
+      the two-second deadline before ticket/local-account checks. Reuse the
+      complete v52 aggregate only for the same PostgreSQL pool and original
+      live probe context; keep standalone repository checks and authorization
+      unchanged. PostgreSQL integration proves all five adapters reuse the
+      aggregate without acquiring another connection (0.41s aggregate versus
+      3.01s of repeated adapter checks in this local sample). Cover canceled
+      probes, different pools and failed refreshes, and emit only finite
+      readiness dependency/failure labels in Compose failure diagnostics.
+      Evidence: `.tmp/ci-fix/probe-postgres.log`; fresh Docker confirmation is pending.
+- [x] Wire the migration-installed global ticket runtime principal into local
+      Compose. Without its identifier the worker deliberately leaves ticket
+      and custom-field import readiness false. Preserve explicit overrides,
+      retain fail-closed worker behavior, and exercise the configured principal
+      through the real PostgreSQL custom-field import adapter.
+      The full local gate passes (`.tmp/ci-fix/verify-probe.log`); all 15 resolved
+      Compose models and native principal checks pass. CI `34110348026` completes
+      every job except Docker successfully, including the complete PostgreSQL
+      security suite. The updated Compose startup still needs a fresh runner.
 
 - [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
       remove `pull-request-fast.yml` and guard expensive jobs/steps by event.

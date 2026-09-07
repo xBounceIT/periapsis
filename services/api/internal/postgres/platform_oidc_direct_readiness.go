@@ -11,6 +11,9 @@ func (repository *FederatedAuthRepository) ReadyDirectPlatformOIDC(ctx context.C
 	if repository == nil || repository.queryer == nil || ctx == nil || ctx.Err() != nil {
 		return errFederatedAuthPersistence
 	}
+	if runtimeVerifiedInProbe(ctx, repository.queryer) {
+		return nil
+	}
 	var ready bool
 	if err := repository.queryer.QueryRow(ctx, platformOIDCDirectReadinessSQL).Scan(&ready); err != nil ||
 		ctx.Err() != nil || !ready {

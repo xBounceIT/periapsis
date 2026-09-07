@@ -25,19 +25,37 @@ func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, ready := range map[string]func(context.Context) error{
+	repositories := map[string]func(context.Context) error{
 		"federated":         federated.CheckFederatedAuthenticationReadiness,
 		"oidc":              federated.ReadyDirectPlatformOIDC,
 		"saml":              saml.ReadyDirectPlatformSAML,
 		"local accounts":    local.ReadyPlatformLocalAccounts,
 		"ticket operations": NewTicketingRepository(pool).ReadyTicketOperations,
-	} {
+	}
+	for name, ready := range repositories {
 		t.Run(name, func(t *testing.T) {
 			if err := ready(ctx); err != nil {
 				t.Fatalf("current repository readiness failed: %v", err)
 			}
 		})
 	}
+	t.Run("aggregate probe reuses verified results", func(t *testing.T) {
+		probe, finish := context.WithTimeout(ctx, 10*time.Second)
+		defer finish()
+		probe, checks := NewHealthChecker(pool).CheckWithContext(probe)
+		if len(checks) != 1 || !checks[0].Ready || !runtimeVerifiedInProbe(probe, pool) {
+			t.Fatal("full schema attestation did not establish probe evidence")
+		}
+		acquisitions := pool.Stat().AcquireCount()
+		for name, ready := range repositories {
+			if err := ready(probe); err != nil {
+				t.Fatalf("%s failed inside verified probe: %v", name, err)
+			}
+		}
+		if pool.Stat().AcquireCount() != acquisitions {
+			t.Fatal("repository repeated database work already covered by the aggregate")
+		}
+	})
 	var retiredCallable bool
 	if err := pool.QueryRow(ctx, `SELECT has_function_privilege(current_user,
 		'app.federated_authentication_schema_readiness_v51()', 'EXECUTE')`).Scan(&retiredCallable); err != nil {

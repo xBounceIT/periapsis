@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -255,6 +256,37 @@ type HealthChecker struct {
 // NewHealthChecker returns a PostgreSQL health checker.
 func NewHealthChecker(pool SchemaQuerier) HealthChecker {
 	return HealthChecker{pool: pool}
+}
+
+type verifiedRuntimeKey struct{}
+
+type verifiedRuntime struct {
+	pool  *pgxpool.Pool
+	probe context.Context
+}
+
+// CheckWithContext shares the fully attested V52 projection only with repository
+// readiness checks in this bounded probe and against this exact connection pool.
+// Request authorization and ordinary repository operations never use this evidence.
+func (c HealthChecker) CheckWithContext(ctx context.Context) (context.Context, []DependencyCheck) {
+	ctx = context.WithValue(ctx, verifiedRuntimeKey{}, verifiedRuntime{})
+	checks := c.Check(ctx)
+	pool, ok := c.pool.(*pgxpool.Pool)
+	deadline, bounded := ctx.Deadline()
+	if ok && pool != nil && bounded && time.Until(deadline) <= 30*time.Second &&
+		ctx.Err() == nil && len(checks) == 1 && checks[0].Ready {
+		ctx = context.WithValue(ctx, verifiedRuntimeKey{}, verifiedRuntime{pool: pool, probe: ctx})
+	}
+	return ctx, checks
+}
+
+func runtimeVerifiedInProbe(ctx context.Context, queryer any) bool {
+	if ctx == nil || ctx.Err() != nil {
+		return false
+	}
+	pool, ok := queryer.(*pgxpool.Pool)
+	evidence, _ := ctx.Value(verifiedRuntimeKey{}).(verifiedRuntime)
+	return ok && pool != nil && evidence.pool == pool && evidence.probe != nil && evidence.probe.Err() == nil
 }
 
 // Check reports PostgreSQL connectivity and exact current migration compatibility.

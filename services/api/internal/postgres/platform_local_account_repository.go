@@ -176,6 +176,9 @@ func (repository *PlatformLocalAccountRepository) ReadyPlatformLocalAccounts(ctx
 	if repository == nil || repository.queryer == nil || ctx == nil {
 		return errors.New("platform local-account repository is unavailable")
 	}
+	if runtimeVerifiedInProbe(ctx, repository.queryer) {
+		return nil
+	}
 	var ready bool
 	if err := repository.queryer.QueryRow(ctx, platformLocalAccountReadinessSQL).Scan(&ready); err != nil || !ready {
 		return errors.New("platform local-account runtime schema is not ready")
