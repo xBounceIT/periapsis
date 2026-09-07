@@ -1,0 +1,9 @@
+FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+
+# Linux refuses to exec the official binary's CAP_NET_BIND_SERVICE file
+# capability outside the bounding set. Compose uses only unprivileged ports.
+# Remove it at build time; keep cap_drop: ALL and no-new-privileges at runtime.
+RUN setcap -r /usr/bin/caddy \
+    && test -z "$(getcap /usr/bin/caddy)"
+
+USER 10001:10001

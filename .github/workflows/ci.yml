@@ -341,7 +341,7 @@ jobs:
         run: node --test scripts/deploy/compose-models.test.mjs
       - name: Build application and database images
         run: |
-          docker compose --file deploy/compose/compose.yaml --profile auth-test build api worker web migration ldap-tls openldap identity-provider minio minio-provision
+          docker compose --file deploy/compose/compose.yaml --profile auth-test build api worker web edge migration ldap-tls openldap identity-provider minio minio-provision
           docker build \
             --file deploy/images/Dockerfile.notifier \
             --build-arg REVISION="${PERIAPSIS_IMAGE_REVISION}" \
@@ -351,6 +351,9 @@ jobs:
       - name: Verify image users and web runtime contents
         run: |
           set -euo pipefail
+          docker run --rm --init --user 10001:10001 --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --entrypoint caddy \
+            "periapsis/edge:${PERIAPSIS_IMAGE_TAG}" version
           api_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint /healthcheck "periapsis/api:${PERIAPSIS_IMAGE_TAG}" --print-uid)"
           worker_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint /healthcheck "periapsis/worker:${PERIAPSIS_IMAGE_TAG}" --print-uid)"
           web_uid="$(docker run --rm --read-only --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "periapsis/web:${PERIAPSIS_IMAGE_TAG}" -p 'process.getuid()')"

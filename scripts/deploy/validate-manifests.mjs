@@ -46,6 +46,7 @@ const requiredFiles = [
   "deploy/compose/database-task.mjs",
   "deploy/compose/database-task-config.mjs",
   "deploy/compose/Dockerfile.database",
+  "deploy/compose/Dockerfile.edge",
   "deploy/compose/Dockerfile.keycloak",
   "deploy/compose/Dockerfile.ldap-tls",
   "deploy/compose/Dockerfile.openldap-test",
@@ -536,7 +537,8 @@ export function validateComposeDevelopmentTLS(
     ]),
     ...requireMarkers(edge, `${composePath} edge service`, [
       "<<: *application-security",
-      "image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+      "image: periapsis/edge:${PERIAPSIS_IMAGE_TAG:-development}",
+      "dockerfile: deploy/compose/Dockerfile.edge",
       "./edge/Caddyfile:/etc/caddy/Caddyfile:ro",
       "./edge/storage-cors.caddy:/etc/caddy/storage-cors.caddy:ro",
       "source: dev_tls_certificate",

@@ -618,6 +618,13 @@ test("edge errors retain only fixed categories and never configuration values", 
   assert.deepEqual(
     redactComposeStartupLogs(
       "edge",
+      `[FATAL tini (7)] exec ${canary} failed: Operation not permitted`,
+    ).events,
+    [{ kind: "edge_startup", observedReason: "operation_not_permitted" }],
+  );
+  assert.deepEqual(
+    redactComposeStartupLogs(
+      "edge",
       `Error: loading initial config: ${canary}: permission denied`,
     ).events,
     [{ kind: "edge_startup", observedReason: "permission_denied" }],

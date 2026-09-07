@@ -36,7 +36,10 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     stop_grace_period: 30s
-    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.edge
+    image: periapsis/edge:${PERIAPSIS_IMAGE_TAG:-development}
     entrypoint: [/bin/sh, /etc/caddy/reverse-proxy-entrypoint.sh]
     environment:
       PERIAPSIS_IDP_PORT: ${PERIAPSIS_IDP_PORT:-18090}

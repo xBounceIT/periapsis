@@ -13,6 +13,13 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34120394216` shows the edge exits before serving HTTPS. The pinned
+      official Caddy image history confirms `cap_net_bind_service=+ep` on its
+      executable, incompatible with the required empty capability bounding set.
+      Derive the TLS and external-proxy edge from that same digest and remove
+      the file capability at build time. Preserve UID/GID 10001, read-only root,
+      no-new-privileges and `cap_drop: ALL`. CI must execute `caddy version` under
+      those restrictions before stack startup, then exercise actual HTTPS.
 - [x] Run `34119421135` confirms healthy API, web and worker containers. Its
       host HTTPS probe runs immediately after the edge starts because the health
       loop omits the edge. Include edge health before the host probe, and retain

@@ -298,7 +298,9 @@ export function redactComposeStartupLogs(service, source) {
           ? minioEvent(line)
           : service === "api" || service === "worker"
             ? runtimeEvent(service, line)
-            : service === "edge" && line.startsWith("Error:")
+            : service === "edge" &&
+                (line.startsWith("Error:") ||
+                  /^\[FATAL tini \([0-9]{1,10}\)\] exec /u.test(line))
               ? {
                   kind: "edge_startup",
                   observedReason:

@@ -189,6 +189,12 @@ dedicated root-owned directory, `chown 10001:10001`, and mode `0400`). Docker De
 handles the secret mount inside its VM. Copy only `rootCA.pem`: mkcert's CA private key
 must never be copied, mounted, or committed.
 
+The edge image derives from pinned Caddy 2.11.4 and removes its executable file
+capability during the build. This lets Caddy start with `cap_drop: ALL` and
+`no-new-privileges` on the configured unprivileged ports; both TLS and external-proxy
+profiles use this image. CI executes the binary under these restrictions before
+starting the stack.
+
 The pinned Caddy edge mounts the leaf certificate, key, and public CA through Compose
 secrets. It runs as UID/GID 10001 with a read-only root, no Linux capabilities, and only
 explicit `/tmp`, `/data`, and `/config` tmpfs mounts. It accepts TLS 1.2 or 1.3 and does

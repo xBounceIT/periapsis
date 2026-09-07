@@ -64,7 +64,7 @@ test("CI transpiles the live spec and provisions its isolated browser runner", (
   assert.match(workflow, /--profile full up --detach --no-build --wait/u);
   assert.match(
     workflow,
-    /build api worker web migration ldap-tls openldap identity-provider minio minio-provision/u,
+    /build api worker web edge migration ldap-tls openldap identity-provider minio minio-provision/u,
   );
   assert.match(
     workflow,

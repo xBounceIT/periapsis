@@ -172,6 +172,11 @@ function resolved(result) {
 }
 
 function assertApplicationHardening(model) {
+  assert.equal(
+    model.services.edge.build.dockerfile,
+    "deploy/compose/Dockerfile.edge",
+  );
+  assert.match(model.services.edge.image, /^periapsis\/edge:/u);
   assertAddressPools(model);
   assert.equal(
     model.services.api.environment.PERIAPSIS_READINESS_TIMEOUT,

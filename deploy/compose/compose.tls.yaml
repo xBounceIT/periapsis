@@ -39,7 +39,10 @@ services:
   edge:
     <<: *application-security
     profiles: *runtime-profiles
-    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.edge
+    image: periapsis/edge:${PERIAPSIS_IMAGE_TAG:-development}
     environment:
       PERIAPSIS_IDP_PORT: ${PERIAPSIS_IDP_PORT:-18090}
       PERIAPSIS_MINIO_API_PORT: ${PERIAPSIS_MINIO_API_PORT:-19000}
