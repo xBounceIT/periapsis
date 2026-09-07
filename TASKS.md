@@ -76,6 +76,24 @@ final-journal database gates and the remaining release boundaries.
       Compose models and native principal checks pass. CI `34110348026` completes
       every job except Docker successfully, including the complete PostgreSQL
       security suite. The updated Compose startup still needs a fresh runner.
+- [x] Reproduce run `34112717759` using the actual Compose role provisioner:
+      its inactive notifier placeholder lacked the sealed connection limit and
+      membership, invalidating every runtime attestation. Initialize and repair
+      inactive placeholders to the canonical shape without activating them or
+      replacing credentials. Preserve active logins during minimal reprovisioning.
+      The old provisioner fails the native API/worker readiness cases; the repaired
+      provisioner passes (`.tmp/ci-fix/provision-before.log`,
+      `.tmp/ci-fix/provision-after.log`). Add a dedicated real PostgreSQL CI
+      regression for legacy placeholder repair, repeated minimal provisioning,
+      notifier activation, and preservation of active notifier access.
+      The real regression passes (`.tmp/ci-fix/provision-regression.log`).
+      Full verification exposed an independent LDAP test race: its 100ms
+      operation budget could expire before TLS completed under parallel package
+      load. Give that blocked-bind test one second for setup/operation while
+      retaining the timeout category, secret clearing and server-close assertions.
+      Twenty repetitions pass, followed by the complete uncached Go suite.
+      The full local gate is covered by `.tmp/ci-fix/verify-roles.log` and
+      `.tmp/ci-fix/verify-roles-go.log`; Actionlint also passes.
 
 - [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
       remove `pull-request-fast.yml` and guard expensive jobs/steps by event.

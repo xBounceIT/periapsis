@@ -216,16 +216,25 @@ async function provisionRuntimeLogins(databaseUrl, passwords, options) {
     await sql.begin(async (transaction) => {
       await transaction.unsafe(`
         DO $provision$
+        DECLARE runtime_role record;
         BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'periapsis_api_login') THEN
-            CREATE ROLE "periapsis_api_login";
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'periapsis_worker_login') THEN
-            CREATE ROLE "periapsis_worker_login";
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'periapsis_notifier_login') THEN
-            CREATE ROLE "periapsis_notifier_login";
-          END IF;
+          FOR runtime_role IN
+            SELECT * FROM (VALUES
+              ('periapsis_api_login', 'periapsis_api', 40),
+              ('periapsis_worker_login', 'periapsis_worker', 20),
+              ('periapsis_notifier_login', 'periapsis_notifier', 20)
+            ) AS expected(login_name, group_name, connection_limit)
+          LOOP
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = runtime_role.login_name) THEN
+              EXECUTE format('CREATE ROLE %I NOLOGIN', runtime_role.login_name);
+            END IF;
+            -- Pending logins must match the sealed role shape too. Preserve
+            -- existing credentials and never disable an already active login.
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = runtime_role.login_name AND NOT rolcanlogin) THEN
+              EXECUTE format('ALTER ROLE %I CONNECTION LIMIT %s', runtime_role.login_name, runtime_role.connection_limit);
+              EXECUTE format('GRANT %I TO %I WITH ADMIN FALSE, INHERIT TRUE, SET TRUE', runtime_role.group_name, runtime_role.login_name);
+            END IF;
+          END LOOP;
         END
         $provision$
       `);

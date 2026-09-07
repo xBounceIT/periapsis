@@ -6,6 +6,22 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
+test("Compose provisioning is checked on its isolated PostgreSQL cluster", async () => {
+  const workflow = await readFile(
+    resolve(root, ".github/workflows/ci.yml"),
+    "utf8",
+  );
+  assert.match(
+    workflow,
+    /PERIAPSIS_COMPOSE_PROVISION_TEST_DATABASE_URL: .*@127\.0\.0\.1:5433\/periapsis\?sslmode=disable/u,
+  );
+  assert.ok(
+    workflow.includes(
+      "run: node scripts/deploy/compose-runtime-provisioning.mjs",
+    ),
+  );
+});
+
 test("Go verification reruns source contracts outside module directories", async () => {
   const manifest = JSON.parse(
     await readFile(resolve(root, "package.json"), "utf8"),
