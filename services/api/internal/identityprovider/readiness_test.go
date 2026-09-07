@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	identity "github.com/periapsis-im/periapsis/modules/identity"
 )
@@ -51,7 +52,39 @@ func TestKeyringReadinessVerifierFailsClosedAndPreservesCancellation(t *testing.
 	}
 }
 
+func TestKeyringReadinessVerifierRetriesTransientFalseAndBoundsMismatch(t *testing.T) {
+	for _, succeeds := range []bool{true, false} {
+		stub := &keyringEvidenceVerifierStub{verified: succeeds, falseCalls: 2}
+		verifier, err := NewKeyringReadinessVerifier(stub, testIdentityKeyring(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = verifier.Verify(context.Background())
+		if succeeds && (err != nil || stub.calls != 3) {
+			t.Fatalf("transient verification: calls=%d error=%v", stub.calls, err)
+		}
+		if !succeeds && (!errors.Is(err, ErrIdentityKeyringUnavailable) || stub.calls != 11) {
+			t.Fatalf("persistent mismatch: calls=%d error=%v", stub.calls, err)
+		}
+	}
+}
+
+func TestKeyringReadinessVerifierCancelsRetryWait(t *testing.T) {
+	stub := &keyringEvidenceVerifierStub{}
+	verifier, err := NewKeyringReadinessVerifier(stub, testIdentityKeyring(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := verifier.Verify(ctx); !errors.Is(err, context.DeadlineExceeded) || stub.calls != 1 {
+		t.Fatalf("retry cancellation: calls=%d error=%v", stub.calls, err)
+	}
+}
+
 type keyringEvidenceVerifierStub struct {
+	calls         int
+	falseCalls    int
 	verified      bool
 	err           error
 	activeVersion int16
@@ -60,6 +93,7 @@ type keyringEvidenceVerifierStub struct {
 }
 
 func (s *keyringEvidenceVerifierStub) VerifyIdentityKeyring(_ context.Context, evidence identity.ReadinessEvidence) (bool, error) {
+	s.calls++
 	s.activeVersion = evidence.ActiveVersion
 	s.versions = make([]int16, len(evidence.Versions))
 	s.verifiers = make([][]byte, len(evidence.Versions))
@@ -67,5 +101,5 @@ func (s *keyringEvidenceVerifierStub) VerifyIdentityKeyring(_ context.Context, e
 		s.versions[index] = version.KeyVersion
 		s.verifiers[index] = append([]byte(nil), version.Verifier[:]...)
 	}
-	return s.verified, s.err
+	return s.verified && s.calls > s.falseCalls, s.err
 }

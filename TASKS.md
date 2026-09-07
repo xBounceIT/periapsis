@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34127843591` intermittently fails ordinary TOTP login with a 503 and
+      retains an immediate identity-keyring readiness failure. The sealed keyring
+      verifier returns false on NOWAIT contention with ordinary session writes.
+      Retry false results up to ten times with cancellable 25ms waits, retaining
+      fail-closed behavior until a positive database verification. A fresh native
+      PostgreSQL regression holds the real session write lock, proves the initial
+      denial and then successful verification after release, rolling back all
+      generated key bindings (`.tmp/ci-fix/identity-contention-native.log`).
+      Persistent mismatch, cancellation, all Go tests and vet pass.
 - [ ] Resolve full-profile notifier health on Linux: run `34126074120` passes
       minimal HTTPS authentication and stale-membership reprovisioning, then
       reports an unhealthy notifier while Keycloak is healthy. Native PostgreSQL

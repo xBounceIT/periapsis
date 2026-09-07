@@ -3,6 +3,7 @@ package identityprovider
 import (
 	"context"
 	"errors"
+	"time"
 
 	identity "github.com/periapsis-im/periapsis/modules/identity"
 )
@@ -39,18 +40,35 @@ func (v *KeyringReadinessVerifier) Verify(ctx context.Context) error {
 	if err != nil {
 		return ErrIdentityKeyringUnavailable
 	}
-	verified, err := v.verifier.VerifyIdentityKeyring(ctx, evidence)
-	clearReadinessEvidence(evidence)
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	defer clearReadinessEvidence(evidence)
+	// The sealed verifier returns false when its NOWAIT session-table locks
+	// collide with a normal login or idle touch. Briefly retry that result;
+	// only a positive database verification may authorize readiness.
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return ErrIdentityKeyringUnavailable
+		verified, err := v.verifier.VerifyIdentityKeyring(ctx, evidence)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			return ErrIdentityKeyringUnavailable
+		}
+		if verified {
+			return nil
+		}
+		if attempt == 10 {
+			return ErrIdentityKeyringUnavailable
+		}
+		timer := time.NewTimer(25 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	if !verified {
-		return ErrIdentityKeyringUnavailable
-	}
-	return nil
 }
 
 func clearReadinessEvidence(evidence identity.ReadinessEvidence) {

@@ -2,9 +2,13 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"os"
 	"testing"
 	"time"
+
+	identity "github.com/periapsis-im/periapsis/modules/identity"
+	"github.com/periapsis-im/periapsis/services/api/internal/identityprovider"
 )
 
 func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
@@ -64,4 +68,58 @@ func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
 	if retiredCallable {
 		t.Fatal("the retired readiness ABI must remain inaccessible")
 	}
+	t.Run("identity verification tolerates a short session write lock", func(t *testing.T) {
+		admin := authorizationIntegrationPool(t, ctx, databaseURL, "")
+		defer admin.Close()
+		writer, err := admin.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = writer.Rollback(ctx) }()
+		if _, err := writer.Exec(ctx, "LOCK TABLE public.auth_sessions IN ROW EXCLUSIVE MODE"); err != nil {
+			t.Fatal(err)
+		}
+		reader, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// All keyring bindings created by the proof roll back with this transaction.
+		defer func() { _ = reader.Rollback(ctx) }()
+		var root [32]byte
+		if _, err := rand.Read(root[:]); err != nil {
+			t.Fatal(err)
+		}
+		defer clear(root[:])
+		keyring, err := identity.NewKeyring(1, map[int16][]byte{1: root[:]})
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidence, err := keyring.ReadinessEvidence()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			for i := range evidence.Versions {
+				clear(evidence.Versions[i].Verifier[:])
+			}
+		}()
+		databaseVerifier := NewIdentityKeyringEvidenceVerifier(reader)
+		verified, err := databaseVerifier.VerifyIdentityKeyring(ctx, evidence)
+		if err != nil || verified {
+			t.Fatalf("NOWAIT verification must deny the held write lock: verified=%t error=%v", verified, err)
+		}
+		verifier, err := identityprovider.NewKeyringReadinessVerifier(databaseVerifier, keyring)
+		if err != nil {
+			t.Fatal(err)
+		}
+		released := make(chan error, 1)
+		time.AfterFunc(75*time.Millisecond, func() { released <- writer.Rollback(ctx) })
+		verifyErr := verifier.Verify(ctx)
+		if err := <-released; err != nil {
+			t.Fatal(err)
+		}
+		if verifyErr != nil {
+			t.Fatalf("verification did not recover after the session writer released: %v", verifyErr)
+		}
+	})
 }
