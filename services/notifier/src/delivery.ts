@@ -468,21 +468,17 @@ export class NotificationDeliveryWorker {
         this.#recordOutcome("uncertain", claim, classified.failureClass);
         return "uncertain";
       }
+      const failedAt = requireInstant(this.#now(), "worker.now");
       const nextAt =
         classified.retrySafety === "safe"
-          ? nextRetryAt(
-              claim.retry,
-              claim.attempt,
-              requireInstant(this.#now(), "worker.now"),
-              claim.id,
-            )
+          ? nextRetryAt(claim.retry, claim.attempt, failedAt, claim.id)
           : null;
       if (nextAt !== null) {
         await this.#repository.retry(
           claim,
           classified.failureClass,
           nextAt,
-          requireInstant(this.#now(), "worker.now"),
+          failedAt,
           reserved,
           parentSignal,
         );

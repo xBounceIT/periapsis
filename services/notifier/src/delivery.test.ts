@@ -99,6 +99,32 @@ describe("notification delivery worker", () => {
     expect(uncertainRepository.retries).toHaveLength(0);
   });
 
+  it("uses one failure instant for the minimum retry delay while the clock advances", async () => {
+    const input = deliveryClaimInput();
+    const claim = createDeliveryClaim({
+      ...input,
+      retry: { ...input.retry, initialDelayMs: 1_000, jitterPercent: 0 },
+    });
+    const repository = new FakeRepository([claim]);
+    let tick = now.getTime();
+    const { worker } = workerWith(
+      repository,
+      {
+        async send() {
+          throw new DeliveryProviderError("connectivity", "safe");
+        },
+      },
+      {},
+      () => new Date(tick++),
+    );
+    expect((await worker.runOnce(new AbortController().signal)).retried).toBe(
+      1,
+    );
+    const retry = repository.retries[0];
+    expect(retry).toBeDefined();
+    expect(retry!.nextAttemptAt.getTime() - retry!.at.getTime()).toBe(1_000);
+  });
+
   it("leaves response-lost completion for fenced replay instead of resending", async () => {
     const claim = deliveryClaim();
     const repository = new FakeRepository([claim]);
@@ -272,8 +298,11 @@ class FakeRepository implements DeliveryRepository {
   completeError: Error | undefined;
   completed: Array<{ response: SanitizedProviderResponse }> = [];
   replays = 0;
-  retries: Array<{ failureClass: DeliveryFailureClass; nextAttemptAt: Date }> =
-    [];
+  retries: Array<{
+    failureClass: DeliveryFailureClass;
+    nextAttemptAt: Date;
+    at: Date;
+  }> = [];
   deadLetters: Array<{
     failureClass: DeliveryFailureClass | "submission_uncertain";
   }> = [];
@@ -313,8 +342,9 @@ class FakeRepository implements DeliveryRepository {
     _claim: DeliveryClaim,
     failureClass: DeliveryFailureClass,
     nextAttemptAt: Date,
+    at: Date,
   ): Promise<void> {
-    this.retries.push({ failureClass, nextAttemptAt });
+    this.retries.push({ failureClass, nextAttemptAt, at });
   }
 
   async deadLetter(
@@ -331,6 +361,7 @@ function workerWith(
   overrides: Partial<
     ConstructorParameters<typeof NotificationDeliveryWorker>[0]["options"]
   > = {},
+  clock: () => Date = () => new Date(now),
 ) {
   const logs: unknown[] = [];
   return {
@@ -363,7 +394,7 @@ function workerWith(
         maximumOutputBytes: 256 * 1_024,
         ...overrides,
       },
-      now: () => new Date(now),
+      now: clock,
     }),
   };
 }

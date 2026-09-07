@@ -96,7 +96,7 @@ interface DrizzleCancelableQueryTag {
   ): CancelableQuery<T>;
 }
 
-type PostgresQueryParameter = null | boolean | number | string | Date;
+type PostgresQueryParameter = null | boolean | number | string;
 
 interface DatabaseErrorShape {
   readonly code?: unknown;
@@ -1116,12 +1116,16 @@ function toPostgresQueryParameters(
   values: readonly unknown[],
 ): PostgresQueryParameter[] {
   return values.map((value) => {
+    // Drizzle installs pass-through timestamp serializers in postgres-js.
+    // Raw SQL parameters therefore need the same ISO encoding as typed columns.
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+      return value.toISOString();
+    }
     if (
       value === null ||
       typeof value === "boolean" ||
       typeof value === "number" ||
-      typeof value === "string" ||
-      value instanceof Date
+      typeof value === "string"
     ) {
       return value;
     }

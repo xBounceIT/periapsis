@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
@@ -13,8 +14,51 @@ import {
   type NotificationTemplateInput,
 } from "./template.js";
 import { id } from "./test/fixtures.js";
+import { SafeNotificationPreviewer } from "./http.js";
 
 describe("sandboxed notification templates", () => {
+  it("renders the actual Compose customer preview fixture with safe custom fields and CSS", () => {
+    const integration = readFileSync(
+      new URL(
+        "../../../tests/integration/ldap-auth-acceptance.mjs",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const prepare = integration.indexOf(
+      "async function prepareNotificationAcceptance(",
+    );
+    const start = integration.indexOf("  const context = {", prepare);
+    const end = integration.indexOf("  const preview = await", start);
+    expect(start).toBeGreaterThan(prepare);
+    expect(end).toBeGreaterThan(start);
+    const encoded: unknown = runInNewContext(
+      `(() => { ${integration.slice(start, end)}
+        const template = { ...richTemplate, id: templateID, tenantId, version: 1 };
+        delete template.sampleData;
+        return JSON.stringify({audience: "customer", template, context: context.customer});
+      })()`,
+      {
+        uniqueSuffix: "fixture",
+        directoryCustomer: { email: "customer@example.invalid" },
+        templateID: id(1),
+        tenantId: id(2),
+      },
+    );
+    if (typeof encoded !== "string")
+      throw new Error("Preview fixture did not serialize");
+    const request: unknown = JSON.parse(encoded);
+    const rendered = new SafeNotificationPreviewer().preview(request);
+    expect(rendered.subject).toBe(
+      "Case CASE-42 for Acme at_risk live-e2e-host",
+    );
+    expect(rendered.html).toContain("live-e2e-host");
+    expect(rendered.html).toContain("#123456");
+    expect(rendered.html).toMatch(/font-weight:\s*600/u);
+    expect(rendered.html).not.toMatch(/<\s*script\b|\sonclick\s*=/iu);
+    expect(rendered.plainText).toContain("at_risk");
+  });
+
   it("supports bounded conditions and loops while auto-escaping dynamic data", () => {
     const template = createNotificationTemplate(templateInput());
     const rendered = renderNotificationTemplate(

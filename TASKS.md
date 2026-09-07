@@ -13,6 +13,21 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34154984623` passes real LDAP and SMTP creation, then rejects the
+      customer template preview because acceptance omits `context.customer`.
+      Preserve the audience boundary; put custom fields under the Case object,
+      use an allowed HTML wrapper for CSS, and exercise this exact fixture with
+      the actual notifier renderer before repeating Compose acceptance.
+- [ ] Native replay exposes the notifier's nested `ERR_INVALID_ARG_TYPE`:
+      Drizzle replaces postgres-js timestamp serializers with pass-through
+      functions, but raw SQL still supplied Date objects. Encode valid dates
+      as ISO strings at the shared parameter boundary and reject invalid dates.
+      Cover fanout, email and webhook claims and verify the native runtime.
+      The runtime now completes polling iterations without the previous errors.
+- [ ] The real SMTP failure path also exposes a retry timestamp race: computing
+      the next attempt and persisting failure with separate clock reads can
+      violate the database's one-second minimum. Email and webhook workers now
+      share one failure instant; advancing-clock regressions cover both paths.
 - [ ] The native notification preflight catches update-only password/DKIM clearing
       flags in the first SMTP creation request. Correct the acceptance payload;
       retain the application's rejection of clearing secrets during creation.

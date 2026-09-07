@@ -97,6 +97,34 @@ describe("notification webhook delivery worker", () => {
     expect(repository.deadLetterWebhook).not.toHaveBeenCalled();
   });
 
+  it("keeps the minimum retry delay tied to one failure instant", async () => {
+    const input = webhookClaimInput();
+    const claim = createWebhookDeliveryClaim({
+      ...input,
+      retry: { ...input.retry, initialDelayMs: 1_000, jitterPercent: 0 },
+    });
+    const repository = repositoryFor([claim]);
+    let tick = now.getTime();
+    const worker = workerFor(
+      repository,
+      {
+        async send() {
+          throw new DeliveryProviderError("connectivity", "safe");
+        },
+      },
+      disabledTestTracing,
+      defaultPolicyGate(),
+      () => new Date(tick++),
+    );
+    expect((await worker.runOnce(new AbortController().signal)).retried).toBe(
+      1,
+    );
+    expect(repository.retryWebhook).toHaveBeenCalledOnce();
+    const [, , nextAt, failedAt] = vi.mocked(repository.retryWebhook).mock
+      .calls[0]!;
+    expect(nextAt.getTime() - failedAt.getTime()).toBe(1_000);
+  });
+
   it("dead-letters an ambiguous reserved submission without retrying it", async () => {
     const claim = webhookClaim();
     const repository = repositoryFor([claim]);
@@ -407,6 +435,7 @@ function workerFor(
   transport: WebhookTransport,
   tracing: NotificationTracing = disabledTestTracing,
   urlPolicyGate: WebhookUrlPolicyAttemptGate = defaultPolicyGate(),
+  clock: () => Date = () => new Date(now),
 ): NotificationWebhookDeliveryWorker {
   const telemetry: DeliveryTelemetry = { record: vi.fn() };
   const logger: DeliveryLogger = { info: vi.fn(), error: vi.fn() };
@@ -430,7 +459,7 @@ function workerFor(
       heartbeatIntervalMs: 1_000,
       deliveryTimeoutMs: 4_000,
     },
-    now: () => new Date(now),
+    now: clock,
   });
 }
 

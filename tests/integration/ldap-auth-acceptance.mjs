@@ -3633,20 +3633,25 @@ async function prepareNotificationAcceptance(
   );
 
   const context = {
-    case: { number: "CASE-42", title: "Endpoint investigation" },
-    contact: { firstName: "Acme", email: directoryCustomer.email },
-    sla: { state: "at_risk", dueAt: "2026-12-24T15:30:00Z" },
-    custom: { host: "live-e2e-host" },
+    customer: {
+      case: {
+        number: "CASE-42",
+        title: "Endpoint investigation",
+        customFields: { host: "live-e2e-host" },
+      },
+      contact: { firstName: "Acme", email: directoryCustomer.email },
+      sla: { state: "at_risk", dueAt: "2026-12-24T15:30:00Z" },
+    },
   };
   const richTemplate = {
     key: `live_case_update_${uniqueSuffix}`,
     name: "Live Case update",
     language: "en",
     subject:
-      "Case {{case.number}} for {{contact.firstName}} {{sla.state}} {{custom.host}}",
-    html: '<section class="case" onclick="steal()"><strong>{{case.title}}</strong><script>steal()</script><span>{{contact.email}}</span><span>{{sla.dueAt}}</span><span>{{custom.host}}</span></section>',
+      "Case {{case.number}} for {{contact.firstName}} {{sla.state}} {{case.customFields.host}}",
+    html: '<div class="case" onclick="steal()"><strong>{{case.title}}</strong><script>steal()</script><span>{{contact.email}}</span><span>{{sla.dueAt}}</span><span>{{case.customFields.host}}</span></div>',
     plainText:
-      "Case {{case.number}} for {{contact.firstName}} is {{sla.state}} at {{custom.host}}",
+      "Case {{case.number}} for {{contact.firstName}} is {{sla.state}} at {{case.customFields.host}}",
     css: ".case { color: #123456; font-weight: 600; }",
     sampleData: context,
   };
@@ -3663,7 +3668,7 @@ async function prepareNotificationAcceptance(
       preview.body?.subject?.includes("Acme") &&
       preview.body?.html?.includes("live-e2e-host") &&
       preview.body?.html?.includes("#123456") &&
-      preview.body?.html?.includes("font-weight: 600") &&
+      /font-weight:\s*600/u.test(preview.body?.html ?? "") &&
       preview.body?.plainText?.includes("at_risk") &&
       !/<\s*script\b|\sonclick\s*=/iu.test(preview.body?.html ?? ""),
     "notification preview must render all domains and strip executable markup",
@@ -3694,7 +3699,7 @@ async function prepareNotificationAcceptance(
   assert(
     captured.html.includes("live-e2e-host") &&
       captured.html.includes("#123456") &&
-      captured.html.includes("font-weight: 600") &&
+      /font-weight:\s*600/u.test(captured.html) &&
       captured.text.includes("CASE-42") &&
       !/<\s*script\b|\sonclick\s*=/iu.test(captured.html),
     "Mailpit must capture sanitized HTML and generated plain text",

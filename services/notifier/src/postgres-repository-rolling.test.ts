@@ -70,6 +70,32 @@ describe("PostgreSQL notification rolling compatibility", () => {
     database.statements.length = 0;
   });
 
+  it("encodes claim timestamps for Drizzle's pass-through postgres-js serializers", async () => {
+    const repository = createRepository();
+    const now = new Date("2026-09-07T12:34:56.789Z");
+    const input = {
+      workerId: id(1),
+      limit: 4,
+      leaseDurationMs: 30_000,
+      now,
+      signal: new AbortController().signal,
+    };
+    database.outcomes.push({ rows: [] }, { rows: [] }, { rows: [] });
+    await repository.claimFanoutBatch(input);
+    await repository.claimBatch(input);
+    await repository.claimWebhookBatch(input);
+    expect(database.parameters).toHaveLength(3);
+    for (const parameters of database.parameters) {
+      expect(parameters.at(-1)).toBe("2026-09-07T12:34:56.789Z");
+      expect(parameters.some((value) => value instanceof Date)).toBe(false);
+    }
+    await expect(
+      repository.claimBatch({ ...input, now: new Date(Number.NaN) }),
+    ).rejects.toMatchObject({ code: "notification_validation_failed" });
+    expect(database.parameters).toHaveLength(3);
+    await repository.close();
+  });
+
   it("falls back from the SMTP pin, readiness, and completion successors only on undefined_function", async () => {
     const repository = createRepository();
     database.outcomes.push(
