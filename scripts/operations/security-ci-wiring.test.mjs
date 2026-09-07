@@ -20,6 +20,16 @@ test("Compose provisioning is checked on its isolated PostgreSQL cluster", async
       "run: node scripts/deploy/compose-runtime-provisioning.mjs",
     ),
   );
+  const lifecycleProof = workflow.search(
+    /run: pnpm --filter @periapsis\/db test:security\r?\n/u,
+  );
+  assert.ok(lifecycleProof >= 0);
+  assert.ok(
+    workflow.indexOf(
+      "run: node scripts/deploy/compose-runtime-provisioning.mjs",
+    ) > lifecycleProof,
+    "Compose provisioning must run after the fresh-role lifecycle proof",
+  );
 });
 
 test("Go verification reruns source contracts outside module directories", async () => {

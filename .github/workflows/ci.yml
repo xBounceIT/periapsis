@@ -722,10 +722,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5433/periapsis?sslmode=disable
         run: pnpm --filter @periapsis/db db:migrate
-      - name: Verify Compose runtime provisioning preserves the schema seal
-        env:
-          PERIAPSIS_COMPOSE_PROVISION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5433/periapsis?sslmode=disable
-        run: node scripts/deploy/compose-runtime-provisioning.mjs
       - name: Provision least-privileged runtime logins
         env:
           DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis?sslmode=disable
@@ -873,6 +869,12 @@ jobs:
           PERIAPSIS_NOTIFICATION_SECURITY_NOTIFIER_DATABASE_URL: postgresql://periapsis_notifier_login:periapsis-notifier-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_notifications?sslmode=disable
           PERIAPSIS_NOTIFICATION_SECURITY_API_DATABASE_URL: postgresql://periapsis_api_login:periapsis-api-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_notifications?sslmode=disable
         run: pnpm --filter @periapsis/db test:security
+      # The readiness lifecycle proof requires absent runtime logins and drops
+      # its roles on completion. Run the Compose provisioning proof afterward.
+      - name: Verify Compose runtime provisioning preserves the schema seal
+        env:
+          PERIAPSIS_COMPOSE_PROVISION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5433/periapsis?sslmode=disable
+        run: node scripts/deploy/compose-runtime-provisioning.mjs
       - name: Prove tenant isolation and append-only audit
         run: docker exec -i "${{ job.services.postgres.id }}" psql -X -v ON_ERROR_STOP=1 -U postgres -d periapsis_rls < tests/security/rls.sql
       - name: Exercise PostgreSQL API admission, authorization, and shared DFIR repositories

@@ -13,6 +13,20 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run the new Compose provisioning regression after the existing readiness
+      lifecycle proof, which requires absent runtime login roles and removes
+      its temporary roles on completion. Run `34116943594` exposed their ordering
+      conflict on the isolated port-5433 cluster. Preserve both assertions and
+      add a CI ordering contract; do not reuse the main security cluster.
+- [x] Run `34116943594` confirms API readiness after the Compose deadline fix,
+      then exposes the web entrypoint exiting before startup. Reproduce the
+      `TrustedProxySet` temporal-dead-zone error with the compiled Node entrypoint;
+      move CLI startup below module initialization. Add a subprocess regression
+      that executes the real source entrypoint and probes its HTTP liveness.
+      All 12 server tests, web lint and typecheck pass locally
+      (`.tmp/ci-fix/web-entrypoint.log`), followed by a complete `pnpm verify`
+      (`.tmp/ci-fix/verify-web-entrypoint.log`) and HTTP 200 from the rebuilt
+      JavaScript entrypoint. Linux Compose acceptance remains required.
 - [x] Separate dynamic Compose address pools from static service/proxy IPs on
       frontend, identity and storage. The storage worker could otherwise claim
       the API address during concurrent startup. Validate the resolved TLS and

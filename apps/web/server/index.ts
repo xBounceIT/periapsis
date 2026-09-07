@@ -144,13 +144,6 @@ export function startWebServer(): void {
   }
 }
 
-if (
-  process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
-  startWebServer();
-}
-
 async function route(
   request: IncomingMessage,
   response: ServerResponse,
@@ -851,4 +844,12 @@ function writeLog(
     ...fields,
   })}\n`;
   (level === "error" ? process.stderr : process.stdout).write(line);
+}
+
+// Start only after class declarations and module state have been initialized.
+if (
+  process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  startWebServer();
 }
