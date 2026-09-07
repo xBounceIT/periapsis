@@ -143,6 +143,8 @@ jobs:
         run: go vet ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
       - name: Vet shell-free healthcheck
         run: go vet ./deploy/compose/healthcheck.go
+      - name: Test shell-free healthcheck budgets
+        run: go test -count=1 ./deploy/compose/healthcheck.go ./deploy/compose/healthcheck_test.go
       - name: Test without the release race detector
         if: github.event_name == 'pull_request'
         run: go test -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...

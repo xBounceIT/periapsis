@@ -168,6 +168,7 @@ services:
       PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE: /run/secrets/notifier_preview_token
       PERIAPSIS_PUBLIC_URL: https://localhost:${PERIAPSIS_WEB_PORT:-8443}
       PERIAPSIS_REQUEST_TIMEOUT: ${PERIAPSIS_REQUEST_TIMEOUT:-15s}
+      PERIAPSIS_READINESS_TIMEOUT: ${PERIAPSIS_READINESS_TIMEOUT:-10s}
       PERIAPSIS_S3_ACCESS_KEY_FILE: /run/secrets/minio_access_key
       PERIAPSIS_S3_ALLOW_PLAINTEXT_LOCAL: "true"
       PERIAPSIS_S3_BUCKET: periapsis-evidence
@@ -195,8 +196,9 @@ services:
         - CMD
         - /healthcheck
         - http://127.0.0.1:8080/health/ready
+        - ${PERIAPSIS_HEALTHCHECK_TIMEOUT:-12s}
       interval: 10s
-      timeout: 3s
+      timeout: ${PERIAPSIS_HEALTHCHECK_TIMEOUT:-12s}
       retries: 6
       start_period: 5s
     depends_on:

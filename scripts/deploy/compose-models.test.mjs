@@ -174,6 +174,12 @@ function resolved(result) {
 function assertApplicationHardening(model) {
   assertAddressPools(model);
   assert.equal(
+    model.services.api.environment.PERIAPSIS_READINESS_TIMEOUT,
+    "10s",
+  );
+  assert.equal(model.services.api.healthcheck.test.at(-1), "12s");
+  assert.equal(model.services.api.healthcheck.timeout, "12s");
+  assert.equal(
     model.services.worker.environment
       .PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID,
     "01890f00-0000-7000-8000-0000000000f1",
@@ -598,4 +604,21 @@ test("Compose preserves an explicitly selected ticket runtime principal", async 
       .PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID,
     principal,
   );
+});
+
+test("Compose preserves coordinated readiness and HTTP probe budgets", async (t) => {
+  const inputs = await fixture(t);
+  const model = resolved(
+    render(inputs, "compose.yaml", "minimal", {
+      ...inputs.tls,
+      PERIAPSIS_READINESS_TIMEOUT: "7s",
+      PERIAPSIS_HEALTHCHECK_TIMEOUT: "9s",
+    }),
+  );
+  assert.equal(
+    model.services.api.environment.PERIAPSIS_READINESS_TIMEOUT,
+    "7s",
+  );
+  assert.equal(model.services.api.healthcheck.test.at(-1), "9s");
+  assert.equal(model.services.api.healthcheck.timeout, "9s");
 });

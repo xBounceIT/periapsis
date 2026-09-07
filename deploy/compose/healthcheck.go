@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,11 +17,19 @@ func main() {
 		fmt.Println(os.Getuid())
 		return
 	}
-	if len(os.Args) != 2 {
+	if len(os.Args) != 2 && len(os.Args) != 3 {
 		os.Exit(2)
 	}
+	probeTimeout := 2 * time.Second
+	if len(os.Args) == 3 {
+		var err error
+		probeTimeout, err = parseProbeTimeout(os.Args[2])
+		if err != nil {
+			os.Exit(2)
+		}
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, os.Args[1], nil)
@@ -48,4 +57,12 @@ func main() {
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		os.Exit(1)
 	}
+}
+
+func parseProbeTimeout(value string) (time.Duration, error) {
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 || timeout > time.Minute {
+		return 0, errors.New("probe timeout must be positive and at most one minute")
+	}
+	return timeout, nil
 }

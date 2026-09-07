@@ -98,6 +98,16 @@ final-journal database gates and the remaining release boundaries.
       worker. API PostgreSQL readiness still fails. Retain finite failure
       categories and bounded latency in its diagnostic output to distinguish
       deadline exhaustion from catalog/runtime or migration mismatches.
+- [x] Run `34115704986` confirms every API PostgreSQL failure is a deadline at
+      exactly 2,000ms while the worker is healthy. Set the local Compose API
+      readiness budget to 10s and coordinate its HTTP/container probe at 12s.
+      The shell-free probe accepts an optional bounded timeout; existing callers
+      retain their two-second default. Cover timeout validation and resolved
+      default/overridden Compose budgets without weakening schema attestation.
+      All Go tests/vet, 16 actual Compose models, operational checks, formatting
+      and Actionlint pass. A delayed local HTTP server verifies the compiled
+      probe succeeds/fails according to its configured deadline and rejects
+      unbounded/invalid values. Fresh Docker confirmation remains pending.
 
 - [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
       remove `pull-request-fast.yml` and guard expensive jobs/steps by event.

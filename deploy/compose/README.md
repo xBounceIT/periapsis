@@ -208,6 +208,12 @@ the worker additionally receives all bounded synchronization lease, backoff, tim
 absence-batch, and parallelism settings. Reserved, link-local, loopback, metadata,
 multicast, and documentation ranges remain rejected by application policy.
 
+The local API readiness check performs the full database schema attestation under
+`PERIAPSIS_READINESS_TIMEOUT` (default `10s`). Its HTTP probe and container healthcheck
+use `PERIAPSIS_HEALTHCHECK_TIMEOUT` (default `12s`). Keep the latter longer when
+overriding these budgets, so the probe can receive the readiness result. Other
+services retain their existing probe timeouts.
+
 ## Local evidence storage and scanner
 
 Every runtime profile starts local MinIO and ClamAV because DFIR readiness must fail closed

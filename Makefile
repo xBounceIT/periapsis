@@ -23,6 +23,7 @@ typecheck:
 test:
 	$(PNPM) test
 	go test -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
+	go test -count=1 ./deploy/compose/healthcheck.go ./deploy/compose/healthcheck_test.go
 
 test-integration:
 	$(PNPM) test:integration
