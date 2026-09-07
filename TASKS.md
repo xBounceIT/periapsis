@@ -13,6 +13,19 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Separate dynamic Compose address pools from static service/proxy IPs on
+      frontend, identity and storage. The storage worker could otherwise claim
+      the API address during concurrent startup. Validate the resolved TLS and
+      external-proxy models in every profile and retain redacted API/worker
+      startup diagnostics as well as migration/provisioning diagnostics.
+      Local `pnpm verify`, 28 focused model/diagnostic tests and Actionlint pass;
+      evidence: `.tmp/ci-fix/verify.log` and `.tmp/ci-fix/focused.log`.
+- [ ] Confirm the address-pool repair on a fresh Linux/Docker CI run. Run
+      `34104325346` failed during Docker network setup (`Address already in use`);
+      `34057493882` instead reached API startup and exited with code 1 without
+      API diagnostics. Also retain a separate investigation of scheduled
+      performance run `34100419297`: its SLA adapter failed `database_preflight`.
+
 - [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
       remove `pull-request-fast.yml` and guard expensive jobs/steps by event.
       Run the complete operations aggregate on both PRs and main/tag candidates.

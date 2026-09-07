@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { BlockList } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -171,6 +172,7 @@ function resolved(result) {
 }
 
 function assertApplicationHardening(model) {
+  assertAddressPools(model);
   assertMailpitHostPublication(model);
   for (const name of [
     "api",
@@ -234,6 +236,34 @@ function assertApplicationHardening(model) {
       (secret) => typeof secret.file === "string" && !secret.environment,
     ),
   );
+}
+
+function assertAddressPools(model) {
+  for (const name of ["frontend", "identity", "storage"]) {
+    const [config] = model.networks[name].ipam.config;
+    assert.ok(config.ip_range, `${name} needs a separate dynamic pool`);
+    const [address, prefix] = config.ip_range.split("/");
+    const pool = new BlockList();
+    pool.addSubnet(address, Number(prefix), "ipv4");
+    assert.ok(
+      !pool.check(config.gateway, "ipv4"),
+      `${name} gateway outside pool`,
+    );
+    const staticAddresses = new Set();
+    for (const [service, definition] of Object.entries(model.services)) {
+      const fixed = definition.networks?.[name]?.ipv4_address;
+      if (!fixed) continue;
+      assert.ok(
+        !pool.check(fixed, "ipv4"),
+        `${service}/${name} static IP outside dynamic pool`,
+      );
+      assert.ok(
+        !staticAddresses.has(fixed),
+        `${service}/${name} unique static IP`,
+      );
+      staticAddresses.add(fixed);
+    }
+  }
 }
 
 function assertMailpitHostPublication(model) {

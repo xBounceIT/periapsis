@@ -1,8 +1,32 @@
 import { spawnSync } from "node:child_process";
 import { stripVTControlCharacters } from "node:util";
 
-const services = ["minio-provision", "migration", "minio", "postgres"];
-const oneShotServices = new Set(["minio-provision", "migration"]);
+const services = [
+  "minio-provision",
+  "migration",
+  "minio",
+  "postgres",
+  "api",
+  "worker",
+];
+const loggedServices = new Set([
+  "minio-provision",
+  "migration",
+  "api",
+  "worker",
+]);
+const runtimeErrors = new Set([
+  "validate API database role",
+  "validate worker database role",
+  "database connection is not a least-privileged API role",
+  "database connection is not a least-privileged worker role",
+  "parse database configuration",
+  "create database pool",
+  "load API OpenTelemetry configuration",
+  "initialize API OpenTelemetry runtime",
+  "initialize authentication service",
+  "initialize protected authentication material",
+]);
 const compose = [
   "compose",
   "--file",
@@ -160,6 +184,20 @@ function minioEvent(line) {
   return { kind: "minio_startup", operation, observedReason: reason };
 }
 
+function runtimeEvent(service, line) {
+  try {
+    const entry = JSON.parse(line);
+    if (entry?.level !== "ERROR" || entry.msg !== `${service} stopped`)
+      return null;
+    return {
+      kind: "runtime_startup",
+      error: runtimeErrors.has(entry.error) ? entry.error : "UNCLASSIFIED",
+    };
+  } catch {
+    return null;
+  }
+}
+
 // These are observed, allowlisted log markers, not a claim to infer every root
 // cause. The provisioning shell has silent exit-1 branches that remain unknown.
 export function redactComposeStartupLogs(service, source) {
@@ -174,7 +212,9 @@ export function redactComposeStartupLogs(service, source) {
         ? databaseEvent(line)
         : service === "minio-provision"
           ? minioEvent(line)
-          : null;
+          : service === "api" || service === "worker"
+            ? runtimeEvent(service, line)
+            : null;
     if (event) events.push(event);
     else redactedLines += 1;
   }
@@ -231,7 +271,7 @@ export function collectComposeStartupDiagnostics(execute = spawnSync) {
       const result = {
         service,
         state: "unavailable",
-        logs: oneShotServices.has(service) ? "unavailable" : "not-collected",
+        logs: loggedServices.has(service) ? "unavailable" : "not-collected",
       };
       const lookup = docker(
         [...compose, "ps", "--all", "--quiet", service],
@@ -244,7 +284,7 @@ export function collectComposeStartupDiagnostics(execute = spawnSync) {
         execute,
       );
       if (inspected) result.state = safeState(inspected.stdout);
-      if (oneShotServices.has(service)) {
+      if (loggedServices.has(service)) {
         const logs = docker(["logs", "--tail", "100", container], execute);
         if (logs)
           result.logs = redactComposeStartupLogs(

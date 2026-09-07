@@ -196,6 +196,12 @@ not enable HTTP access logging. Caddy terminates TLS while the private, containe
 web, Keycloak, MinIO, and API hops remain HTTP. The API receives only the public CA file
 and allows the local Keycloak port `18090` for federated HTTPS validation.
 
+The frontend, identity and storage networks reserve separate dynamic address pools
+with `ip_range`; fixed proxy/service addresses remain outside those pools. This
+prevents startup order from assigning a static address to a dynamic endpoint (for
+example, the storage worker claiming the API address). Existing deployments need
+their Compose networks recreated to apply IPAM changes; preserve named volumes.
+
 LDAP private-network access is explicitly limited to the dedicated local identity subnet
 `172.30.241.0/28`. The API and worker receive identical LDAP SSRF/concurrency/port bounds;
 the worker additionally receives all bounded synchronization lease, backoff, timeout,

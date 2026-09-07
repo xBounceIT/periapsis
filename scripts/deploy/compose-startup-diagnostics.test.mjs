@@ -519,7 +519,33 @@ test("empty, unknown and oversized logs cannot invent a cause or bypass bounds",
   );
 });
 
-test("collector uses at most ten bounded read-only commands for four fixed services", () => {
+test("runtime startup diagnostics retain reviewed failures and redact arbitrary errors", () => {
+  for (const service of ["api", "worker"]) {
+    const source = [
+      {
+        level: "ERROR",
+        msg: `${service} stopped`,
+        error: "create database pool",
+        token: canary,
+      },
+      { level: "ERROR", msg: `${service} stopped`, error: canary },
+      { level: "ERROR", msg: `${service} stopped`, error: { value: canary } },
+      { level: "INFO", msg: `${service} started`, address: canary },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+    assert.deepEqual(redactComposeStartupLogs(service, source), {
+      events: [
+        { kind: "runtime_startup", error: "create database pool" },
+        { kind: "runtime_startup", error: "UNCLASSIFIED" },
+        { kind: "runtime_startup", error: "UNCLASSIFIED" },
+      ],
+      redactedLines: 1,
+    });
+  }
+});
+
+test("collector uses at most sixteen bounded read-only commands for six fixed services", () => {
   const calls = [];
   const result = collectComposeStartupDiagnostics((command, args, options) => {
     calls.push({ command, args, options });
@@ -533,9 +559,9 @@ test("collector uses at most ten bounded read-only commands for four fixed servi
   assert.equal(result.profile, "minimal");
   assert.deepEqual(
     result.services.map((entry) => entry.service),
-    ["minio-provision", "migration", "minio", "postgres"],
+    ["minio-provision", "migration", "minio", "postgres", "api", "worker"],
   );
-  assert.equal(calls.length, 10);
+  assert.equal(calls.length, 16);
   for (const call of calls) {
     assert.equal(call.command, "docker");
     assert.deepEqual(call.options, {
@@ -568,10 +594,10 @@ test("collector uses at most ten bounded read-only commands for four fixed servi
       assert.deepEqual(call.args, ["logs", "--tail", "100", container]);
     }
   }
-  assert.equal(calls.filter((call) => call.args[0] === "logs").length, 2);
+  assert.equal(calls.filter((call) => call.args[0] === "logs").length, 4);
   for (const entry of result.services) assert.deepEqual(entry.state, state);
   assert.deepEqual(
-    result.services.slice(2).map((entry) => entry.logs),
+    result.services.slice(2, 4).map((entry) => entry.logs),
     ["not-collected", "not-collected"],
   );
   assert.doesNotMatch(JSON.stringify(result), new RegExp(canary, "u"));
@@ -591,7 +617,7 @@ test("failed, overflowing, timed-out and ambiguous lookups cannot expose raw out
       calls += 1;
       return failed;
     });
-    assert.equal(calls, 4);
+    assert.equal(calls, 6);
     assert.ok(result.services.every((entry) => entry.state === "unavailable"));
     assert.doesNotMatch(JSON.stringify(result), new RegExp(canary, "u"));
   }
@@ -648,7 +674,7 @@ function assertWorkflow(source) {
   );
   assert.equal(
     job.slice(begin, end),
-    `${diagnostic}        if: \${{ failure() && (steps.minimal-stack-start.outcome == 'failure' || steps.minimal-stack-start.outcome == 'success') }}\n        timeout-minutes: 1\n        run: node scripts/deploy/compose-startup-diagnostics.mjs\n`,
+    `${diagnostic}        if: \${{ failure() && (steps.minimal-stack-start.outcome == 'failure' || steps.minimal-stack-start.outcome == 'success') }}\n        timeout-minutes: 2\n        run: node scripts/deploy/compose-startup-diagnostics.mjs\n`,
   );
   assert.match(
     job,

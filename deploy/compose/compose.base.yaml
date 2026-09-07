@@ -805,11 +805,16 @@ networks:
     ipam:
       config:
         - subnet: 172.30.240.0/29
+          gateway: 172.30.240.1
+          # Keep automatic endpoints outside the trusted static proxy addresses.
+          ip_range: 172.30.240.6/32
   identity:
     internal: true
     ipam:
       config:
         - subnet: 172.30.241.0/28
+          gateway: 172.30.241.1
+          ip_range: 172.30.241.8/29
   integrations:
     internal: true
   # Docker does not publish ports for a container attached only to internal
@@ -822,6 +827,9 @@ networks:
     ipam:
       config:
         - subnet: 172.30.242.0/28
+          gateway: 172.30.242.1
+          # The worker must not claim the API's .4 before the API starts.
+          ip_range: 172.30.242.8/29
   clamav-updates: {}
 
 secrets:

@@ -439,7 +439,7 @@ jobs:
           test "${memberships}" = "${expected}"
       - name: Collect bounded redacted minimal startup diagnostics
         if: ${{ failure() && (steps.minimal-stack-start.outcome == 'failure' || steps.minimal-stack-start.outcome == 'success') }}
-        timeout-minutes: 1
+        timeout-minutes: 2
         run: node scripts/deploy/compose-startup-diagnostics.mjs
       - name: Stop minimal stack
         if: always()
