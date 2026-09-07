@@ -41,9 +41,9 @@ func (querier *ticketRuntimeTestQuerier) QueryRow(
 	return row
 }
 
-func ticketRuntimeBoolRow(value bool) pgx.Row {
+func ticketRuntimeReadinessRow(value []bool) pgx.Row {
 	return ticketRuntimeTestRow(func(destinations ...any) error {
-		*destinations[0].(*bool) = value
+		*destinations[0].(*[]bool) = value
 		return nil
 	})
 }
@@ -65,19 +65,23 @@ func ticketRuntimeTestEntity(t *testing.T, suffix string) kernel.EntityID {
 }
 
 func TestTicketRuntimeReadinessRequiresBothABIs(t *testing.T) {
-	querier := &ticketRuntimeTestQuerier{rows: []pgx.Row{ticketRuntimeBoolRow(true), ticketRuntimeBoolRow(true)}}
+	querier := &ticketRuntimeTestQuerier{rows: []pgx.Row{ticketRuntimeReadinessRow([]bool{true, false, false, true, true})}}
 	repository := NewTicketRuntimeRepository(querier)
 	if err := repository.Ready(context.Background()); err != nil {
 		t.Fatalf("Ready() error = %v", err)
 	}
-	if len(querier.queries) != 2 || querier.queries[0] != ticketBulkReadinessQuery ||
-		querier.queries[1] != ticketExportReadinessQuery {
+	if len(querier.queries) != 1 || querier.queries[0] != ticketRuntimeReadinessQuery {
 		t.Fatalf("readiness queries = %#v", querier.queries)
 	}
 
-	querier = &ticketRuntimeTestQuerier{rows: []pgx.Row{ticketRuntimeBoolRow(false)}}
-	if err := NewTicketRuntimeRepository(querier).Ready(context.Background()); err == nil || len(querier.queries) != 1 {
-		t.Fatalf("missing bulk ABI = (%v, queries:%#v)", err, querier.queries)
+	for _, flags := range [][]bool{
+		nil, {true}, {true, true, true, true}, {true, true, true, true, true, true},
+		{false, true, true, true, true}, {true, true, true, false, true}, {true, true, true, true, false},
+	} {
+		querier = &ticketRuntimeTestQuerier{rows: []pgx.Row{ticketRuntimeReadinessRow(flags)}}
+		if err := NewTicketRuntimeRepository(querier).Ready(context.Background()); err == nil {
+			t.Fatalf("incomplete attestation or ticket ABI was accepted: %v", flags)
+		}
 	}
 	if err := (*TicketRuntimeRepository)(nil).Ready(context.Background()); err == nil {
 		t.Fatal("typed-nil repository readiness failed open")
@@ -85,6 +89,31 @@ func TestTicketRuntimeReadinessRequiresBothABIs(t *testing.T) {
 	var typedNilPool *ticketRuntimeTestQuerier
 	if err := NewTicketRuntimeRepository(typedNilPool).Ready(context.Background()); err == nil {
 		t.Fatal("typed-nil database dependency readiness failed open")
+	}
+}
+
+func TestTicketRuntimeReadinessPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	querier := &ticketRuntimeTestQuerier{}
+	if err := NewTicketRuntimeRepository(querier).Ready(ctx); !errors.Is(err, context.Canceled) || len(querier.queries) != 0 {
+		t.Fatalf("canceled probe = %v, queries = %d", err, len(querier.queries))
+	}
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		querier = &ticketRuntimeTestQuerier{rows: []pgx.Row{ticketRuntimeTestRow(func(...any) error { return cause })}}
+		if err := NewTicketRuntimeRepository(querier).Ready(context.Background()); !errors.Is(err, cause) {
+			t.Fatalf("readiness lost context failure: %v", err)
+		}
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	querier = &ticketRuntimeTestQuerier{rows: []pgx.Row{ticketRuntimeTestRow(func(destinations ...any) error {
+		*destinations[0].(*[]bool) = []bool{true, true, true, true, true}
+		cancel()
+		return nil
+	})}}
+	if err := NewTicketRuntimeRepository(querier).Ready(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatal("probe accepted a result after cancellation")
 	}
 }
 

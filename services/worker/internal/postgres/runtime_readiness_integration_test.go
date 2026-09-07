@@ -48,8 +48,16 @@ func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			acquisitions := pool.Stat().AcquireCount()
+			started := time.Now()
 			if err := ready(ctx); err != nil {
 				t.Fatalf("current repository readiness failed: %v", err)
+			}
+			if name == "ticket operations" {
+				if pool.Stat().AcquireCount() != acquisitions+1 {
+					t.Fatal("ticket readiness repeated the release attestation")
+				}
+				t.Logf("ticket aggregate completed in %s", time.Since(started))
 			}
 		})
 	}

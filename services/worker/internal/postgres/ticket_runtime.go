@@ -44,8 +44,7 @@ const (
 	ticketExportReconcileFinalizeQuery = `SELECT response FROM app.finalize_ticket_export_artifact_reconciliation_v2($1::jsonb)`
 	ticketExportReconcileFailureQuery  = `SELECT response FROM app.report_ticket_export_artifact_reconciliation_failure_v2($1::jsonb)`
 	ticketExportReconcileMetricsQuery  = `SELECT response FROM app.read_ticket_export_reconciliation_metrics_v2($1::jsonb)`
-	ticketBulkReadinessQuery           = `SELECT app.ticket_bulk_runtime_schema_readiness_v52()`
-	ticketExportReadinessQuery         = `SELECT app.ticket_export_runtime_schema_readiness_v52()`
+	ticketRuntimeReadinessQuery        = `SELECT app.worker_runtime_schema_readiness_v52()`
 )
 
 type TicketRuntimeRepository struct {
@@ -276,15 +275,24 @@ type TicketExportReconciliationMetrics struct {
 }
 
 func (repository *TicketRuntimeRepository) Ready(ctx context.Context) error {
-	if repository == nil || ticketRuntimeDependencyIsNil(repository.pool) || ctx == nil || ctx.Err() != nil {
+	if repository == nil || ticketRuntimeDependencyIsNil(repository.pool) || ctx == nil {
 		return errors.New("ticket runtime database ABI is unavailable")
 	}
-	var bulkReady, exportReady bool
-	if err := repository.pool.QueryRow(ctx, ticketBulkReadinessQuery).Scan(&bulkReady); err != nil || !bulkReady || ctx.Err() != nil {
-		return errors.New("ticket bulk database ABI is unavailable")
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if err := repository.pool.QueryRow(ctx, ticketExportReadinessQuery).Scan(&exportReady); err != nil || !exportReady || ctx.Err() != nil {
-		return errors.New("ticket export database ABI is unavailable")
+	// The sealed worker projection attests the release once, then checks both
+	// ticket ABIs. Separate v52 wrappers each repeat the full catalog attestation.
+	var ready []bool
+	err := repository.pool.QueryRow(ctx, ticketRuntimeReadinessQuery).Scan(&ready)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return contextErr
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if err != nil || len(ready) != 5 || !ready[0] || !ready[3] || !ready[4] {
+		return errors.New("ticket runtime database ABI is unavailable")
 	}
 	return nil
 }

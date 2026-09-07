@@ -478,6 +478,7 @@ func run(logger *slog.Logger) (runErr error) {
 				ctx,
 				postgres.NewHealthChecker(pool, identityReadiness),
 				cfg.PollInterval,
+				cfg.DatabaseTimeout,
 				&ready,
 				metrics,
 				telemetryRuntime,
@@ -1792,12 +1793,13 @@ func monitorDatabase(
 	ctx context.Context,
 	checker readinessChecker,
 	interval time.Duration,
+	timeout time.Duration,
 	ready *workerReadiness,
 	metrics *telemetry.Metrics,
 	tracer identitysync.OperationTracer,
 ) {
 	check := func() {
-		checkContext, cancel := context.WithTimeout(ctx, 2*time.Second)
+		checkContext, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		finishTrace := func(error) {}
 		if tracer != nil {

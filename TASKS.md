@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34118176844` starts the minimal API and web successfully but the
+      worker repeatedly rejects ticket readiness. Replace its separate bulk and
+      export v52 attestations with the existing sealed worker projection, still
+      requiring release, bulk and export readiness. Preserve context failures
+      instead of reporting them as generic internal failures. Use the configured
+      database deadline in the worker monitor instead of an independent fixed
+      two-second cutoff. Focused cancellation, projection and monitor tests,
+      all Go tests and vet pass; native PostgreSQL verifies one ticket query
+      in 0.43s (`.tmp/ci-fix/worker-aggregate-postgres.log`).
 - [x] Run the new Compose provisioning regression after the existing readiness
       lifecycle proof, which requires absent runtime login roles and removes
       its temporary roles on completion. Run `34116943594` exposed their ordering

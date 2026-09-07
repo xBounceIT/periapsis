@@ -52,6 +52,36 @@ func TestParseLogLevel(t *testing.T) {
 	}
 }
 
+type readinessCheckerFunc func(context.Context) bool
+
+func (check readinessCheckerFunc) Check(ctx context.Context) bool { return check(ctx) }
+
+func TestDatabaseMonitorUsesConfiguredBudgetAndCancelsProbe(t *testing.T) {
+	for _, timeout := range []time.Duration{3 * time.Second, 7 * time.Second} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			started := time.Now()
+			var probe context.Context
+			checker := readinessCheckerFunc(func(checkContext context.Context) bool {
+				probe = checkContext
+				deadline, ok := probe.Deadline()
+				if !ok || deadline.Before(started.Add(timeout)) || deadline.After(time.Now().Add(timeout)) {
+					t.Error("database monitor did not use its configured timeout")
+				}
+				cancel()
+				return false
+			})
+			ready := &workerReadiness{}
+			ready.database.Store(true)
+			monitorDatabase(ctx, checker, time.Hour, timeout, ready, &telemetry.Metrics{}, nil)
+			if probe == nil || probe.Err() == nil || ready.database.Load() {
+				t.Fatal("failed database probe was not canceled or remained ready")
+			}
+		})
+	}
+}
+
 func TestDatabasePoolConfigPinsUTCRuntimeParameters(t *testing.T) {
 	want := map[string]string{
 		"application_name":                    "periapsis-worker",
