@@ -2016,6 +2016,8 @@ export const slaOverrides = pgTable(
     aggregateVersion: integer("aggregate_version").notNull(),
     policyId: uuid("policy_id").notNull(),
     policyVersion: integer("policy_version").notNull(),
+    // API authority snapshots read both live epochs through the tenant-bound
+    // read_sla_authority_epochs_v1 ABI; runtime roles cannot query identity state.
     permissionEpoch: bigint("permission_epoch", { mode: "bigint" }).notNull(),
     subjectEpoch: bigint("subject_epoch", { mode: "bigint" }).notNull(),
     previousSnapshot: jsonb("previous_snapshot").$type<JSONRecord>().notNull(),

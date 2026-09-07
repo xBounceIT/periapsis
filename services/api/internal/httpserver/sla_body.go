@@ -17,7 +17,7 @@ import (
 
 // slaRawJSON marks a bounded, duplicate-free subtree whose exact discriminated
 // shape is validated by the SLA mapper. It is never persisted or logged raw.
-type slaRawJSON json.RawMessage
+type slaRawJSON = json.RawMessage
 
 type slaMinuteIntervalBody struct {
 	StartMinute int `json:"startMinute"`
@@ -253,7 +253,7 @@ func validateSLAJSONShape(value any, destinationType reflect.Type) error {
 	for destinationType.Kind() == reflect.Pointer {
 		destinationType = destinationType.Elem()
 	}
-	if destinationType == reflect.TypeOf(slaRawJSON{}) || destinationType == reflect.TypeOf(json.RawMessage{}) {
+	if destinationType == reflect.TypeOf(slaRawJSON{}) {
 		return nil
 	}
 	if destinationType == reflect.TypeOf(uuid.UUID{}) || destinationType == reflect.TypeOf(time.Time{}) {

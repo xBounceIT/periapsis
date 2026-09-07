@@ -31,8 +31,8 @@ describe("Phase 2B.2b hardening schema-readiness rotation", () => {
     expect(migration).toContain(
       'GRANT EXECUTE ON FUNCTION "app"."schema_compatibility_v5"() TO "periapsis_api", "periapsis_worker"',
     );
-    expect(apiHealth).toContain("from app.schema_compatibility_v56()");
-    expect(workerHealth).toContain("from app.schema_compatibility_v56()");
+    expect(apiHealth).toContain("from app.schema_compatibility_v57()");
+    expect(workerHealth).toContain("from app.schema_compatibility_v57()");
     expect(apiHealth).not.toContain("from app.schema_compatibility_v51()");
     expect(workerHealth).not.toContain("from app.schema_compatibility_v51()");
     expect(apiHealth).not.toContain("from app.schema_compatibility_v49()");

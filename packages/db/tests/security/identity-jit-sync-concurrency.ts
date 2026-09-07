@@ -315,7 +315,7 @@ try {
     }[]
   >`SELECT applied_count::text, latest_created_at::text, latest_hash,
            migration_fingerprint
-    FROM app.schema_compatibility_v56()`;
+    FROM app.schema_compatibility_v57()`;
   assert.equal(compatibility?.applied_count, String(expectedMigrationCount));
   assert.equal(
     compatibility.latest_created_at,

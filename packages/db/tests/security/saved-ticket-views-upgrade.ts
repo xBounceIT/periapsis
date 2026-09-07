@@ -92,8 +92,8 @@ assert.equal(
   predecessor.hash,
   "3f4ccd0e67f21c3e3b72ab76b1cbe0c7265a9fa8d872af8c4a8f00047cd976aa",
 );
-assert.equal(expectedMigrationCount, 244);
-assert.equal(expectedMigrationCreatedAt, 1788805357439);
+assert.equal(expectedMigrationCount, 246);
+assert.equal(expectedMigrationCreatedAt, 1788810622327);
 const predecessorFingerprint = expectedMigrations
   .slice(0, predecessorIndex + 1)
   .map((entry) => `${entry.createdAt}@${entry.hash}`)
@@ -181,13 +181,13 @@ try {
            predecessor_projection.latest_hash AS predecessor_hash,
            predecessor_projection.migration_fingerprint AS predecessor_fingerprint,
            retired_projection.applied_count::integer AS retired_count,
-           app.release_runtime_schema_readiness_v56() AS release_ready,
+           app.release_runtime_schema_readiness_v57() AS release_ready,
            app.ticket_saved_views_schema_readiness_v1() AS saved_views_ready,
            app.sla_schema_readiness_v1() AS sla_ready,
            app.federated_authentication_schema_readiness_v1() AS federation_ready,
            app.identity_mfa_schema_readiness_v1() AS identity_ready,
            app.identity_mfa_device_management_readiness_v1() AS device_ready
-    FROM app.schema_compatibility_v56() AS current_projection
+    FROM app.schema_compatibility_v57() AS current_projection
     CROSS JOIN app.schema_compatibility_v28() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v27() AS retired_projection
   `;

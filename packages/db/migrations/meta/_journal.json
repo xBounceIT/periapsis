@@ -1709,6 +1709,20 @@
       "when": 1788805357439,
       "tag": "0243_v56_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1788810602581,
+      "tag": "0244_sla_authority_epochs",
+      "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1788810622327,
+      "tag": "0245_v57_compatibility",
+      "breakpoints": true
     }
   ]
 }

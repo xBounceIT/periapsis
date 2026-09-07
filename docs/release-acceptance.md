@@ -27,7 +27,7 @@ requires its external fixture. See the dated slice in `TASKS.md` for exact local
 
 The matrix retains earlier focused and final-journal results. Those labels do not
 carry forward to a new seal automatically: only the explicitly versioned evidence below
-applies to the named candidate. V56 is currently under verification, not production-validated.
+applies to the named candidate. V57 is currently under verification, not production-validated.
 
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -64,6 +64,25 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+### V57 SLA authority candidate
+
+Migration 0244 replaces the API's forbidden direct identity-table read with an
+API-only epoch reader restricted to the current tenant and membership. Migration
+0245 seals the 246-entry journal with catalog digest
+`5633d06c399acd3bfc79f5fc09333230b4a4826f81077e496f5118a42f102fdc`.
+The V56-to-V57 upgrade and native PostgreSQL SLA security suite pass, including
+foreign-scope rejection and continued denial of direct table access. SLA use
+cases check freshly evaluated authority after its repository call, with tests
+for expiry, future evaluation and clock rollback. The HTTP decoder preserves
+raw JSON objects for rules, warnings and actions while retaining exact-shape
+validation. Native API acceptance passes notification administration/preview and
+SLA calendar, policy, column and holiday/pause/resume simulation requests. Actual
+Mailpit delivery and final Linux acceptance remain
+pending. On the preceding V56 commit, CI `34154984623` passes the complete
+PostgreSQL migration/RLS job; deployment run `34154984620` passes all seven jobs.
+Its Compose job exposes the notification preview fixture failure addressed in
+this candidate, alongside notifier timestamp encoding and retry-clock repairs.
 
 ### V56 LDAP session authority candidate
 

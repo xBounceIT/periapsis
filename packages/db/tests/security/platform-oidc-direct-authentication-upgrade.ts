@@ -152,8 +152,8 @@ assert.equal(
   journal.entries.at(181)?.tag,
   "0181_platform_oidc_direct_administration_compatibility",
 );
-assert.equal(expectedMigrationCount, 244);
-assert.equal(expectedMigrationCreatedAt, 1788805357439);
+assert.equal(expectedMigrationCount, 246);
+assert.equal(expectedMigrationCreatedAt, 1788810622327);
 assert.equal(expectedMigrationCount, expectedMigrations.length);
 assert.equal(expectedMigrationHash, expectedMigrations.at(-1)?.hash);
 assert.equal(

@@ -170,10 +170,10 @@ async function directReadiness(role: RuntimeRole): Promise<boolean> {
   const [row] = await asRole(role, (transaction) =>
     role === "periapsis_api"
       ? transaction<{ ready: boolean }[]>`
-            SELECT app.platform_oidc_direct_runtime_schema_readiness_v56() AS ready
+            SELECT app.platform_oidc_direct_runtime_schema_readiness_v57() AS ready
           `
       : transaction<{ ready: boolean }[]>`
-            SELECT app.release_runtime_schema_readiness_v56() AS ready
+            SELECT app.release_runtime_schema_readiness_v57() AS ready
           `,
   );
   assert(row);
@@ -1529,7 +1529,7 @@ async function assertAclTamperFailsClosed(): Promise<void> {
         "GRANT EXECUTE ON FUNCTION app.resolve_platform_oidc_authentication_configuration_v1(jsonb) TO periapsis_worker",
       );
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.platform_oidc_direct_runtime_schema_readiness_v56() AS ready
+        SELECT app.platform_oidc_direct_runtime_schema_readiness_v57() AS ready
       `;
       assert.equal(tampered?.ready, false);
       throw new RollbackAclTamper("rollback callback ACL tamper");

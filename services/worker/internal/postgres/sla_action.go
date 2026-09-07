@@ -59,7 +59,7 @@ SELECT metrics.observed_at, metrics.pending_actions,
 FROM app.read_sla_trigger_action_queue_metrics_v1() AS metrics
 `
 
-const slaActionReadinessQuery = `SELECT app.sla_trigger_action_runtime_schema_readiness_v56()`
+const slaActionReadinessQuery = `SELECT app.sla_trigger_action_runtime_schema_readiness_v57()`
 
 type slaActionQuerier interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)

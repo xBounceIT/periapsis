@@ -113,7 +113,7 @@ async function dispatchReadiness(): Promise<{
         role_safe: boolean;
         schema_safe: boolean;
       }[]
-    >`SELECT * FROM app.notification_dispatch_readiness_v56()`;
+    >`SELECT * FROM app.notification_dispatch_readiness_v57()`;
     assert(row, "notification readiness returned no row");
     return {
       queueDepth: Number(row.queue_depth),

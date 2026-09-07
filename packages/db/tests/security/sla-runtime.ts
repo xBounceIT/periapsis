@@ -326,7 +326,7 @@ try {
       await transaction`DELETE FROM public.sla_evaluation_jobs`;
       await assertQueueMetricsPlans(transaction);
       const [readiness] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v56() AS ready
+        SELECT app.release_runtime_schema_readiness_v57() AS ready
       `;
       assert.equal(readiness?.ready, true, "SLA readiness is not current");
       const [emptyMetrics] = await asWorker(
@@ -483,6 +483,61 @@ try {
           `;
         });
       });
+
+      const expectedEpochs = await transaction`
+        SELECT state.revision::text AS permission_epoch, profile.version::text AS subject_epoch
+        FROM public.tenant_authorization_states AS state
+        JOIN public.tenant_user_profiles AS profile ON profile.tenant_id=state.tenant_id
+          AND profile.membership_id=${fixture.membership}::uuid
+        WHERE state.tenant_id=${fixture.tenant}::uuid
+      `;
+      const apiEpochs = await asApi(
+        transaction,
+        fixture.tenant,
+        fixture.user,
+        (sql) => sql`
+        SELECT permission_epoch::text, subject_epoch::text
+        FROM app.read_sla_authority_epochs_v1(${fixture.tenant}::uuid, ${fixture.membership}::uuid)
+      `,
+      );
+      assert.equal(apiEpochs.length, 1);
+      assert.deepEqual([...apiEpochs], [...expectedEpochs]);
+      await serially(
+        [
+          [fixture.foreignTenant, fixture.membership],
+          [fixture.tenant, fixture.foreignMembership],
+        ] as const,
+        async ([tenant, membership]) => {
+          await expectSqlState(
+            transaction.savepoint((sql) =>
+              asApi(
+                sql,
+                fixture.tenant,
+                fixture.user,
+                (api) => api`
+            SELECT * FROM app.read_sla_authority_epochs_v1(${tenant}::uuid, ${membership}::uuid)
+          `,
+              ),
+            ),
+            "42501",
+            "SLA epoch reader must reject a foreign tenant or membership",
+          );
+        },
+      );
+      await expectSqlState(
+        transaction.savepoint((sql) =>
+          asApi(
+            sql,
+            fixture.tenant,
+            fixture.user,
+            (api) => api`
+          SELECT revision FROM public.tenant_authorization_states
+        `,
+          ),
+        ),
+        "42501",
+        "SLA epoch ABI must not grant direct authority-table access",
+      );
 
       const keyDigest = digest("calendar-key");
       const calendarRequestDigest = digest("calendar-request");

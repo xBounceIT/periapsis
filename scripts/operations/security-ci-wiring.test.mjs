@@ -504,6 +504,7 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
     "test:security:schema-compatibility-v53",
     "test:security:schema-compatibility-v54",
     "test:security:schema-compatibility-v55",
+    "test:security:schema-compatibility-v56",
   ]);
   const standalone = new Set(["test:security:seed-audit", ...historical]);
   for (const name of historical) {
@@ -524,7 +525,7 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
   }
   assert.match(
     aggregate,
-    /(?:^|\s)run test:security:schema-compatibility-v56(?:\s|$)/u,
+    /(?:^|\s)run test:security:schema-compatibility-v57(?:\s|$)/u,
   );
   const securityScripts = Object.entries(scripts).filter(([name]) =>
     name.startsWith("test:security:"),

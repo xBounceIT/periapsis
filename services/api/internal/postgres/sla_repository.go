@@ -937,12 +937,8 @@ func loadSLAAuthorityEpochs(
 ) (uint64, uint64, error) {
 	var permissionEpoch, subjectEpoch int64
 	if err := tx.QueryRow(ctx, `
-		SELECT state.revision, profile.version
-		FROM public.tenant_authorization_states AS state
-		JOIN public.tenant_user_profiles AS profile
-		  ON profile.tenant_id = state.tenant_id
-		 AND profile.membership_id = $2
-		WHERE state.tenant_id = $1`, tenantID, membershipID,
+		SELECT permission_epoch, subject_epoch
+		FROM app.read_sla_authority_epochs_v1($1, $2)`, tenantID, membershipID,
 	).Scan(&permissionEpoch, &subjectEpoch); err != nil {
 		return 0, 0, err
 	}

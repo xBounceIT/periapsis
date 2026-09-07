@@ -3366,6 +3366,7 @@ async function prepareSLAAcceptance(liveTenantId, smtpConfigurationId) {
     metricBindings: [
       { metricDefinitionId: firstResponseMetricId, metricInstanceId: uuidv7() },
       { metricDefinitionId: resolutionMetricId, metricInstanceId: uuidv7() },
+      { metricDefinitionId: acceptanceMetricId, metricInstanceId: uuidv7() },
     ],
   };
   const baseline = await simulateSLA(liveTenantId, policyId, {

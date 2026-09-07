@@ -369,13 +369,13 @@ describe("platform identity-account v38 observation checkpoint", () => {
     }
   });
 
-  it("is retained as predecessor evidence after the v56 cutover", () => {
+  it("is retained as predecessor evidence after the v57 cutover", () => {
     for (const health of [apiHealth, workerHealth]) {
-      expect(health).toContain("from app.schema_compatibility_v56()");
+      expect(health).toContain("from app.schema_compatibility_v57()");
       expect(health).toContain(
-        "app.private_release_runtime_schema_readiness_v56()",
+        "app.private_release_runtime_schema_readiness_v57()",
       );
-      expect(health).toContain("app.release_runtime_schema_readiness_v56()");
+      expect(health).toContain("app.release_runtime_schema_readiness_v57()");
       expect(health).toContain(
         "(2, 'retired', 'app.schema_compatibility_v49()'",
       );

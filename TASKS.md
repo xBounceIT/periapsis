@@ -13,6 +13,22 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Native SLA administration exposes a forbidden direct read of identity
+      authority tables. Migration 0244 adds a current-tenant/current-membership
+      epoch reader with API-only execution; direct table reads remain forbidden.
+      Migration 0245 seals the 246-entry V57 journal. PostgreSQL security coverage
+      rejects foreign tenant and membership arguments and checks the live epochs.
+      SLA use cases also validate fresh authority against the clock after its
+      repository call, retaining expiry, future-time and clock-rollback rejection.
+      Preserve json.RawMessage decoding for nested policy rules, warnings and
+      actions; a distinct byte-slice type had incorrectly required base64 strings.
+      Acceptance binds all three declared metrics in its simulation input.
+      Retain the final Linux Compose and PostgreSQL results for this candidate.
+- [x] Run `34154984623` completes the entire PostgreSQL migration/RLS aggregate
+      and its final Compose provisioner regression. Supply-chain run `34154984620`
+      passes all seven jobs, including both notifier runtime architectures.
+      The same candidate's Compose job still fails at notification preview;
+      these results do not establish full-stack acceptance.
 - [ ] Run `34154984623` passes real LDAP and SMTP creation, then rejects the
       customer template preview because acceptance omits `context.customer`.
       Preserve the audience boundary; put custom fields under the Case object,

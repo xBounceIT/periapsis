@@ -283,6 +283,8 @@ describe("PostgreSQL migration chain", () => {
       "0241_v55_compatibility.sql",
       "0242_ldap_session_authority_refresh.sql",
       "0243_v56_compatibility.sql",
+      "0244_sla_authority_epochs.sql",
+      "0245_v57_compatibility.sql",
     ]);
   });
 

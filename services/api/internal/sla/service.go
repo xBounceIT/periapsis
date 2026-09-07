@@ -422,7 +422,7 @@ func (service *Service) ProjectObject(
 	if err != nil {
 		return ObjectProjection{}, repositoryError(err)
 	}
-	if !validObjectAuthority(actor, tenantID, capability, resource, authority) || !authorityCurrent(authority, now) {
+	if !validObjectAuthority(actor, tenantID, capability, resource, authority) || !service.authorityCurrent(ctx, authority, now) {
 		return ObjectProjection{}, ErrForbidden
 	}
 	state, err := service.repository.LoadObjectProjection(ctx, actor, tenantID, resource, authority)
@@ -508,7 +508,7 @@ func (service *Service) Override(
 		return OverrideResult{}, repositoryError(err)
 	}
 	if !validObjectAuthority(actor, tenantID, capability, resource, authority) || authority.Audience != AudienceOperator ||
-		!authorityCurrent(authority, now) {
+		!service.authorityCurrent(ctx, authority, now) {
 		return OverrideResult{}, ErrForbidden
 	}
 	binding, err := bindCommand("sla.override.apply", request.Envelope.IdempotencyKey, overrideRequestDigest(request))
@@ -580,7 +580,7 @@ func (service *Service) resolveTenantAuthority(
 	if err != nil {
 		return Authority{}, repositoryError(err)
 	}
-	if !validManageAuthority(actor, tenantID, capability, authority) || !authorityCurrent(authority, now) {
+	if !validManageAuthority(actor, tenantID, capability, authority) || !service.authorityCurrent(ctx, authority, now) {
 		return Authority{}, ErrForbidden
 	}
 	return authority, nil
@@ -598,8 +598,12 @@ func (service *Service) requestTime(ctx context.Context) (time.Time, error) {
 	return now, nil
 }
 
-func authorityCurrent(authority Authority, now time.Time) bool {
-	return !now.Before(authority.EvaluatedAt) && now.Before(authority.ValidUntil)
+func (service *Service) authorityCurrent(ctx context.Context, authority Authority, requestStartedAt time.Time) bool {
+	// Authority is evaluated during the repository call, after the request starts.
+	// Validate its lifetime against the clock after that call completes.
+	now, err := service.requestTime(ctx)
+	return err == nil && !now.Before(requestStartedAt) &&
+		!now.Before(authority.EvaluatedAt) && now.Before(authority.ValidUntil)
 }
 
 func validPublicationVersion(next, expected uint64) bool {

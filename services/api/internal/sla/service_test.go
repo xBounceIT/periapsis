@@ -74,6 +74,43 @@ func TestPublishConfigurationRequiresLiveTenantManageAndBindsPayload(t *testing.
 	}
 }
 
+func TestPublishUsesTimeAfterAuthorityResolution(t *testing.T) {
+	for _, test := range []struct {
+		name                        string
+		elapsed, evaluated, expires time.Duration
+		allowed                     bool
+	}{
+		{"newly evaluated", 2 * time.Millisecond, time.Millisecond, time.Second, true},
+		{"expired during resolution", 2 * time.Millisecond, -time.Second, time.Millisecond, false},
+		{"future evaluation", time.Millisecond, 2 * time.Millisecond, time.Second, false},
+		{"clock moved backwards", -time.Millisecond, -time.Second, time.Second, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			started := testNow()
+			now := started
+			actor := operatorFixture()
+			repository := newFakeRepository(started, actor)
+			repository.authority.EvaluatedAt = started.Add(test.evaluated)
+			repository.authority.ValidUntil = started.Add(test.expires)
+			repository.onResolve = func() { now = started.Add(test.elapsed) }
+			service, err := NewService(repository, func() time.Time { return now })
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = service.PublishCalendar(deadlineContext(t, started), actor, actor.TenantID, CalendarPublishCommand{
+				Input: calendarInputFixture(10, actor.TenantID, 1), Envelope: envelopeFixture(),
+			})
+			if test.allowed {
+				if err != nil || repository.publishCalendarCalls != 1 {
+					t.Fatalf("publish calls=%d error=%v", repository.publishCalendarCalls, err)
+				}
+			} else if !errors.Is(err, ErrForbidden) || repository.publishCalendarCalls != 0 {
+				t.Fatalf("invalid authority reached publication: calls=%d error=%v", repository.publishCalendarCalls, err)
+			}
+		})
+	}
+}
+
 func TestServiceRejectsNilContextWithoutCallingRepository(t *testing.T) {
 	now := testNow()
 	actor := operatorFixture()
@@ -870,6 +907,7 @@ func TestPolicyOverrideReplacesWholeAggregateUnderOnePrecondition(t *testing.T) 
 }
 
 type fakeRepository struct {
+	onResolve                 func()
 	authority                 Authority
 	authorityResourceOverride *Resource
 	now                       time.Time
@@ -945,6 +983,9 @@ func (repository *fakeRepository) ResolveAuthority(
 	capability Capability,
 	resource Resource,
 ) (Authority, error) {
+	if repository.onResolve != nil {
+		repository.onResolve()
+	}
 	if repository.resolveErr != nil {
 		return Authority{}, repository.resolveErr
 	}
