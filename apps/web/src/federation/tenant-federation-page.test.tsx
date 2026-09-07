@@ -916,6 +916,7 @@ describe("TenantFederationPage", () => {
     const mappingEditor = await screen.findByLabelText<HTMLTextAreaElement>(
       "Mapping policy JSON",
     );
+    await waitFor(() => expect(mappingEditor).toBeEnabled());
     expect(getMappingPolicy).toHaveBeenCalledWith(
       tenantId,
       providerId,
@@ -928,6 +929,7 @@ describe("TenantFederationPage", () => {
     const assuranceEditor = await screen.findByLabelText<HTMLTextAreaElement>(
       "Assurance trust policy JSON",
     );
+    await waitFor(() => expect(assuranceEditor).toBeEnabled());
     expect(getAssurancePolicy).toHaveBeenCalledWith(
       tenantId,
       providerId,
@@ -1013,6 +1015,10 @@ describe("TenantFederationPage", () => {
     const assuranceEditor = await screen.findByLabelText<HTMLTextAreaElement>(
       "Assurance trust policy JSON",
     );
+    await waitFor(() => {
+      expect(mappingEditor).toBeEnabled();
+      expect(assuranceEditor).toBeEnabled();
+    });
     const mapping = JSON.parse(mappingEditor.value);
     expect(mapping.kind).toBe("saml");
     expect(mapping.samlAttributeRules).toEqual(

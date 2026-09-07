@@ -520,6 +520,23 @@ test("empty, unknown and oversized logs cannot invent a cause or bypass bounds",
 });
 
 test("runtime startup diagnostics retain reviewed failures and redact arbitrary errors", () => {
+  assert.deepEqual(
+    redactComposeStartupLogs(
+      "api",
+      JSON.stringify({
+        level: "ERROR",
+        msg: "api stopped",
+        error: `initialize OIDC upstream client\n${canary}\nshutdown API OpenTelemetry runtime`,
+      }),
+    ).events,
+    [
+      {
+        kind: "runtime_startup",
+        error:
+          "initialize OIDC upstream client; UNCLASSIFIED; shutdown API OpenTelemetry runtime",
+      },
+    ],
+  );
   for (const service of ["api", "worker"]) {
     const source = [
       {

@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { stripVTControlCharacters } from "node:util";
+import apiStartupErrors from "./api-startup-errors.json" with { type: "json" };
 
 const services = [
   "minio-provision",
@@ -16,16 +17,9 @@ const loggedServices = new Set([
   "worker",
 ]);
 const runtimeErrors = new Set([
-  "validate API database role",
+  ...apiStartupErrors,
   "validate worker database role",
-  "database connection is not a least-privileged API role",
   "database connection is not a least-privileged worker role",
-  "parse database configuration",
-  "create database pool",
-  "load API OpenTelemetry configuration",
-  "initialize API OpenTelemetry runtime",
-  "initialize authentication service",
-  "initialize protected authentication material",
 ]);
 const compose = [
   "compose",
@@ -191,7 +185,14 @@ function runtimeEvent(service, line) {
       return null;
     return {
       kind: "runtime_startup",
-      error: runtimeErrors.has(entry.error) ? entry.error : "UNCLASSIFIED",
+      // Go errors.Join can append an independent telemetry shutdown error.
+      // Reconstruct only exact reviewed literals, never arbitrary error text.
+      error: (typeof entry.error === "string"
+        ? entry.error.split("\n", 4)
+        : [null]
+      )
+        .map((error) => (runtimeErrors.has(error) ? error : "UNCLASSIFIED"))
+        .join("; "),
     };
   } catch {
     return null;

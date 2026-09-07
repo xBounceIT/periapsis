@@ -20,6 +20,14 @@ final-journal database gates and the remaining release boundaries.
       startup diagnostics as well as migration/provisioning diagnostics.
       Local `pnpm verify`, 28 focused model/diagnostic tests and Actionlint pass;
       evidence: `.tmp/ci-fix/verify.log` and `.tmp/ci-fix/focused.log`.
+- [x] Fix the federation editor hydration test race exposed by run `34106220160`:
+      wait for the mapping/assurance textareas to become enabled before checking
+      loaded data in OIDC and SAML tests. All 20 page tests and a fresh full
+      `pnpm verify` pass locally (`.tmp/ci-fix/verify-final.log`).
+- [x] Run `34106220160` reaches API startup after the IPAM correction, then exits
+      with an unclassified API error. Expand the exact-message diagnostic allowlist
+      to reviewed API source literals and handle Go joined errors without emitting
+      arbitrary text. Focused redaction tests preserve canary secrecy.
 - [ ] Confirm the address-pool repair on a fresh Linux/Docker CI run. Run
       `34104325346` failed during Docker network setup (`Address already in use`);
       `34057493882` instead reached API startup and exited with code 1 without
