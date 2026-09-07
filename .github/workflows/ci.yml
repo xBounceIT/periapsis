@@ -871,6 +871,7 @@ jobs:
         run: docker exec -i "${{ job.services.postgres.id }}" psql -X -v ON_ERROR_STOP=1 -U postgres -d periapsis_rls < tests/security/rls.sql
       - name: Exercise PostgreSQL API admission, authorization, and shared DFIR repositories
         env:
+          PERIAPSIS_READINESS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_go_authorization?sslmode=disable
           PERIAPSIS_API_RATE_LIMIT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_api_rate_limit?sslmode=disable
           PERIAPSIS_AUTHORIZATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_go_authorization?sslmode=disable
           PERIAPSIS_DFIR_SHARED_ATTACHMENTS_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_go_dfir_shared?sslmode=disable
@@ -878,7 +879,7 @@ jobs:
           PERIAPSIS_DFIR_SHARED_CONTENT_EXPECTED_DATA_DIRECTORY: ${{ steps.postgres_test_pin.outputs.data_directory }}
           PERIAPSIS_SESSION_LOGOUT_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_session_logout_ci?sslmode=disable
           PERIAPSIS_SESSION_LOGOUT_EXPECTED_DATA_DIRECTORY: ${{ steps.postgres_test_pin.outputs.data_directory }}
-        run: go test -count=1 -run '^(TestAPIRateLimitRepositoryPostgreSQL|TestAuthorizationRepository.*|TestDFIRSharedAttachmentsStayPathBoundInPostgres|TestDFIRSharedContentReplacementsPostgreSQL|TestSessionLogoutRepositoryFreshConnectionPostgreSQL)$' ./services/api/internal/postgres
+        run: go test -count=1 -run '^(TestRuntimeRepositoryReadinessPostgreSQL|TestAPIRateLimitRepositoryPostgreSQL|TestAuthorizationRepository.*|TestDFIRSharedAttachmentsStayPathBoundInPostgres|TestDFIRSharedContentReplacementsPostgreSQL|TestSessionLogoutRepositoryFreshConnectionPostgreSQL)$' ./services/api/internal/postgres ./services/worker/internal/postgres
       - name: Drop the committed repository test databases
         if: ${{ always() }}
         run: |

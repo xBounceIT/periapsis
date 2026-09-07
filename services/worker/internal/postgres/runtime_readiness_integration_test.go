@@ -1,0 +1,54 @@
+package postgres
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
+	databaseURL := os.Getenv("PERIAPSIS_READINESS_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PERIAPSIS_READINESS_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal("invalid readiness test database configuration")
+	}
+	config.MaxConns = 1
+	config.ConnConfig.RuntimeParams["statement_timeout"] = "15s"
+	config.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE periapsis_worker")
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal("cannot create readiness test pool")
+	}
+	defer pool.Close()
+	for name, ready := range map[string]func(context.Context) error{
+		"SLA events":        NewSLAEventRepository(pool).Ready,
+		"SLA actions":       NewSLAActionRepository(pool).Ready,
+		"ticket operations": NewTicketRuntimeRepository(pool).Ready,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := ready(ctx); err != nil {
+				t.Fatalf("current repository readiness failed: %v", err)
+			}
+		})
+	}
+	var retiredCallable bool
+	if err := pool.QueryRow(ctx, `SELECT has_function_privilege(current_user,
+		'app.sla_object_event_ingress_schema_readiness_v51()', 'EXECUTE')`).Scan(&retiredCallable); err != nil {
+		t.Fatal("cannot check retired readiness privileges")
+	}
+	if retiredCallable {
+		t.Fatal("the retired readiness ABI must remain inaccessible")
+	}
+}

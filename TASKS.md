@@ -44,6 +44,18 @@ final-journal database gates and the remaining release boundaries.
       `34057493882` instead reached API startup and exited with code 1 without
       API diagnostics. Also retain a separate investigation of scheduled
       performance run `34100419297`: its SLA adapter failed `database_preflight`.
+- [x] After startup succeeds in `34108546780`, diagnose unhealthy API/worker
+      checks: eleven repository queries still called revoked v51 readiness
+      functions after the v52 migration seal. Move all affected callers to v52
+      without changing migrations or grants, including SLA ingress used by the
+      performance adapter. Add real PostgreSQL API/worker readiness tests to CI,
+      retaining an assertion that retired v51 functions remain inaccessible.
+      All eight adapter cases pass against a newly migrated native PostgreSQL
+      18.6 database (`.tmp/ci-fix/readiness-postgres.log`).
+      The complete local verification gate passes after aligning its CI selector
+      contract (`.tmp/ci-fix/verify-readiness.log`,
+      `.tmp/ci-fix/operations-readiness.log`,
+      `.tmp/ci-fix/verify-readiness-remaining.log`).
 
 - [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
       remove `pull-request-fast.yml` and guard expensive jobs/steps by event.

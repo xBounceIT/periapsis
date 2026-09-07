@@ -639,7 +639,7 @@ test("the PostgreSQL Go gate selects authorization, shared DFIR and fresh-connec
     /createdb -U postgres -T periapsis "\$\{database\}"/u,
   );
   const goSteps = steps.filter((step) =>
-    /^        run: go test .*\.\/services\/api\/internal\/postgres$/mu.test(
+    /^        run: go test .*\.\/services\/api\/internal\/postgres \.\/services\/worker\/internal\/postgres$/mu.test(
       step,
     ),
   );
@@ -662,6 +662,7 @@ test("the PostgreSQL Go gate selects authorization, shared DFIR and fresh-connec
     ),
   );
   const requiredTests = [
+    "TestRuntimeRepositoryReadinessPostgreSQL",
     "TestAPIRateLimitRepositoryPostgreSQL",
     "TestDFIRSharedAttachmentsStayPathBoundInPostgres",
     "TestDFIRSharedContentReplacementsPostgreSQL",
@@ -675,6 +676,7 @@ test("the PostgreSQL Go gate selects authorization, shared DFIR and fresh-connec
     "the real Go gate must include all authorization, shared-resource and fresh-connection logout regressions",
   );
   for (const [variable, database] of [
+    ["PERIAPSIS_READINESS_TEST_DATABASE_URL", "periapsis_go_authorization"],
     ["PERIAPSIS_API_RATE_LIMIT_TEST_DATABASE_URL", "periapsis_api_rate_limit"],
     ["PERIAPSIS_AUTHORIZATION_TEST_DATABASE_URL", "periapsis_go_authorization"],
     [

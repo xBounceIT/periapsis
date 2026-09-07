@@ -44,8 +44,8 @@ const (
 	ticketExportReconcileFinalizeQuery = `SELECT response FROM app.finalize_ticket_export_artifact_reconciliation_v2($1::jsonb)`
 	ticketExportReconcileFailureQuery  = `SELECT response FROM app.report_ticket_export_artifact_reconciliation_failure_v2($1::jsonb)`
 	ticketExportReconcileMetricsQuery  = `SELECT response FROM app.read_ticket_export_reconciliation_metrics_v2($1::jsonb)`
-	ticketBulkReadinessQuery           = `SELECT app.ticket_bulk_runtime_schema_readiness_v51()`
-	ticketExportReadinessQuery         = `SELECT app.ticket_export_runtime_schema_readiness_v51()`
+	ticketBulkReadinessQuery           = `SELECT app.ticket_bulk_runtime_schema_readiness_v52()`
+	ticketExportReadinessQuery         = `SELECT app.ticket_export_runtime_schema_readiness_v52()`
 )
 
 type TicketRuntimeRepository struct {
