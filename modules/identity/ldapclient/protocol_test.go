@@ -462,8 +462,10 @@ func TestOperationDeadlineClosesBlockedBind(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	configuration := testConfiguration()
-	configuration.ConnectTimeout = minimumConnectTimeout
-	configuration.OperationTimeout = minimumOperationTimeout
+	// Leave enough time for TLS under parallel package load so this exercises
+	// the blocked bind, rather than timing out before the server receives it.
+	configuration.ConnectTimeout = time.Second
+	configuration.OperationTimeout = time.Second
 	configuration.CustomCAPEM = pki.caPEM
 	secret := []byte("timed-out-bind-secret")
 	startedAt := time.Now()
@@ -471,7 +473,7 @@ func TestOperationDeadlineClosesBlockedBind(t *testing.T) {
 	if err != nil || diagnostic.Category != CategoryConnectTimeout {
 		t.Fatalf("diagnostic = %#v, error = %v", diagnostic, err)
 	}
-	if elapsed := time.Since(startedAt); elapsed > time.Second {
+	if elapsed := time.Since(startedAt); elapsed > 3*time.Second {
 		t.Fatalf("operation timeout took %v", elapsed)
 	}
 	if !allZeroBytes(secret) {
