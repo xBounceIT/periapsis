@@ -9,12 +9,14 @@ const services = [
   "postgres",
   "api",
   "worker",
+  "edge",
 ];
 const loggedServices = new Set([
   "minio-provision",
   "migration",
   "api",
   "worker",
+  "edge",
 ]);
 const runtimeErrors = new Set([
   ...apiStartupErrors,
@@ -296,7 +298,15 @@ export function redactComposeStartupLogs(service, source) {
           ? minioEvent(line)
           : service === "api" || service === "worker"
             ? runtimeEvent(service, line)
-            : null;
+            : service === "edge" && line.startsWith("Error:")
+              ? {
+                  kind: "edge_startup",
+                  observedReason:
+                    reasons.find(([phrase]) =>
+                      line.toLowerCase().includes(phrase),
+                    )?.[1] ?? "UNCLASSIFIED",
+                }
+              : null;
     if (event) events.push(event);
     else redactedLines += 1;
   }

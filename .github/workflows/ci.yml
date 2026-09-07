@@ -381,7 +381,7 @@ jobs:
           terminal_failure=false
           for ((attempt = 1; attempt <= 60; attempt++)); do
             healthy=true
-            for service in postgres api worker web; do
+            for service in postgres api worker web edge; do
               container="$(docker compose --file deploy/compose/compose.yaml --profile minimal ps --quiet "${service}")"
               if [ -z "${container}" ]; then
                 healthy=false

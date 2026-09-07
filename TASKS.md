@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34119421135` confirms healthy API, web and worker containers. Its
+      host HTTPS probe runs immediately after the edge starts because the health
+      loop omits the edge. Include edge health before the host probe, and retain
+      its bounded state and redacted startup failure categories in diagnostics.
+      A fresh Compose run must distinguish startup timing from an edge failure.
 - [x] Run `34118176844` starts the minimal API and web successfully but the
       worker repeatedly rejects ticket readiness. Replace its separate bulk and
       export v52 attestations with the existing sealed worker projection, still
