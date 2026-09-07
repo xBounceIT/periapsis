@@ -6,15 +6,7 @@ on:
       - main
     tags:
       - "*"
-  release:
-    types:
-      - published
   workflow_dispatch:
-    inputs:
-      notifier_image:
-        description: Optional immutable notifier image digest to scan
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -112,8 +104,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${GOBIN}"
-          go install sigs.k8s.io/kustomize/kustomize/v5@v5.7.1
-          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+          go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.1
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "${GOBIN}" >> "${GITHUB_PATH}"
       - name: Validate workflow syntax
@@ -197,7 +189,9 @@ jobs:
           for environment in base overlays/dev overlays/prod; do
             output="${RUNNER_TEMP}/kustomize/$(echo "${environment}" | tr '/' '-').yaml"
             kustomize build "deploy/k8s/${environment}" > "${output}"
-            kubeconform -strict -summary -kubernetes-version 1.32.0 "${output}"
+            for kubernetes_version in 1.32.0 1.35.0; do
+              kubeconform -strict -summary -kubernetes-version "${kubernetes_version}" "${output}"
+            done
           done
           kubeconform -strict -summary -ignore-missing-schemas deploy/k8s/optional
       - name: Validate Prometheus and OpenTelemetry examples
@@ -303,17 +297,6 @@ jobs:
             --build-arg VERSION="${GITHUB_SHA}" \
             --file "${{ matrix.dockerfile }}" \
             --tag "${IMAGE}" .
-      - name: Prove AMD64 and ARM64 builds
-        run: |
-          set -euo pipefail
-          output="${RUNNER_TEMP}/${{ matrix.name }}.multiarch.oci.tar"
-          docker buildx build --pull \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg REVISION="${GITHUB_SHA}" \
-            --build-arg VERSION="${GITHUB_SHA}" \
-            --file "${{ matrix.dockerfile }}" \
-            --output "type=oci,dest=${output}" .
-          test -s "${output}"
       - name: Load ARM64 runtime image under emulation
         env:
           IMAGE: periapsis/${{ matrix.name }}:${{ github.sha }}-arm64
@@ -405,62 +388,5 @@ jobs:
             ${{ runner.temp }}/${{ matrix.name }}.spdx.json
             ${{ runner.temp }}/${{ matrix.name }}.trivy.sarif
             ${{ runner.temp }}/${{ matrix.name }}.runtime.txt
-          if-no-files-found: warn
-          retention-days: 30
-
-  notifier-image:
-    name: External notifier image security
-    if: github.event_name == 'workflow_dispatch' && inputs.notifier_image != ''
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Set up pinned Docker Engine and CLI
-        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
-        with:
-          version: v28.5.2
-          set-host: true
-      - name: Require and pull immutable digest
-        env:
-          IMAGE: ${{ inputs.notifier_image }}
-        run: |
-          set -euo pipefail
-          echo "${IMAGE}" | grep -Eq '@sha256:[0-9a-f]{64}$'
-          docker pull "${IMAGE}"
-          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE}")" = "10001:10001"
-          test "$(docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
-            --tmpfs /tmp:uid=10001,gid=10001,mode=1770 --entrypoint node "${IMAGE}" -p 'process.getuid()')" = "10001"
-      - name: Install checksum-verified scanners
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --location \
-            --output "${RUNNER_TEMP}/syft.tar.gz" \
-            https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_linux_amd64.tar.gz
-          echo "2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f  ${RUNNER_TEMP}/syft.tar.gz" | sha256sum --check
-          tar --extract --gzip --file "${RUNNER_TEMP}/syft.tar.gz" --directory "${RUNNER_TEMP}" syft
-          curl --fail --silent --show-error --location \
-            --output "${RUNNER_TEMP}/trivy.tar.gz" \
-            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
-          echo "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum --check
-          tar --extract --gzip --file "${RUNNER_TEMP}/trivy.tar.gz" --directory "${RUNNER_TEMP}" trivy
-      - name: Generate and scan external notifier evidence
-        env:
-          IMAGE: ${{ inputs.notifier_image }}
-        run: |
-          "${RUNNER_TEMP}/syft" "docker:${IMAGE}" --output spdx-json="${RUNNER_TEMP}/notifier.spdx.json"
-          "${RUNNER_TEMP}/trivy" image \
-            --exit-code 1 \
-            --severity HIGH,CRITICAL \
-            --scanners vuln,secret \
-            --format sarif \
-            --output "${RUNNER_TEMP}/notifier.trivy.sarif" \
-            "${IMAGE}"
-      - name: Upload notifier security evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: security-notifier-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/notifier.spdx.json
-            ${{ runner.temp }}/notifier.trivy.sarif
           if-no-files-found: warn
           retention-days: 30

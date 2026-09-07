@@ -232,7 +232,7 @@ export function validateMultiarchRuntimeWorkflow(
 ) {
   return requireMarkers(contents, path, [
     "platforms: arm64",
-    "--platform linux/amd64,linux/arm64",
+    "--load --platform linux/amd64",
     "--load --platform linux/arm64",
     '--platform "linux/${architecture}" --read-only --cap-drop ALL',
     "docker image inspect --format '{{.Config.User}}' \"${image}\"",

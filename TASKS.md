@@ -1,6 +1,6 @@
 # Release evidence backlog
 
-Last audited: 2026-09-06
+Last audited: 2026-09-07
 
 This is the authoritative release backlog. A checked item means the implementation and a
 focused repository gate exist; it does not mean every database-runtime gate is green for
@@ -10,6 +10,35 @@ on an external runtime or production trust boundary. The current
 candidate state and the requirement-to-test map are in
 [`docs/release-acceptance.md`](docs/release-acceptance.md), including the completed
 final-journal database gates and the remaining release boundaries.
+
+## CI consolidation (2026-09-07)
+
+- [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
+      remove `pull-request-fast.yml` and guard expensive jobs/steps by event.
+      Run the complete operations aggregate on both PRs and main/tag candidates.
+- [x] Keep Kubernetes render/schema validation in deployment security, preserving
+      both 1.32 and 1.35 schema checks. Keep application-image scans in its five-image
+      matrix; remove their duplicate execution from the Compose acceptance job.
+- [x] Remove the unused OCI archive export while retaining separate AMD64 and ARM64
+      builds, loaded images and hardened runtime probes. Remove the optional external
+      notifier job now covered by the repository-owned notifier image in the matrix.
+- [x] Remove duplicate release-published triggers; main/tag push and manual dispatch
+      remain. Retain the distinct performance benchmark, CodeQL, dependency analysis,
+      historical secret scanning, database migration/RLS/upgrade and live acceptance gates.
+- [x] Complete all local `pnpm verify` stages: the initial run passed formatting,
+      lint, types and package tests (web 2,223; DB 656; notifier 180; UI 2), then
+      exposed the old direct-command assertion for startup diagnostics. Update it
+      to verify the operations aggregate, rerun operations (187 pass, one conditional
+      Gitleaks skip), and complete generation/drift, build, Go vet and uncached Go tests.
+      Mailpit remains a conditional skip. Actionlint and separate ShellCheck pass
+      (83 Bash steps); actual Kustomize/kubeconform validate 34 resources in each of
+      six environment/schema combinations. Optional CRDs retain three schema skips.
+      Logs: `.tmp/verify-ci-prune-20260907.log`, `.tmp/ci-prune-operations.log`,
+      `.tmp/verify-ci-prune-remaining-20260907.log`.
+- [ ] Retain fresh Linux/Docker CI and deployment-security results after publishing
+      this change. The consolidated PR check names replace the former `Fast ...` names;
+      live GitHub inspection found no repository rulesets or main branch protection.
+      Local checks cannot establish container or hosted-runner acceptance.
 
 ## React Doctor remediation (2026-09-06)
 

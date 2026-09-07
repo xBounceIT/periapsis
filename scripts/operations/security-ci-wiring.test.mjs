@@ -19,10 +19,7 @@ test("Go verification reruns source contracts outside module directories", async
     makefile,
     /^\tgo test -count=1 .*\.\/services\/worker\/\.\.\./mu,
   );
-  for (const path of [
-    ".github/workflows/ci.yml",
-    ".github/workflows/pull-request-fast.yml",
-  ]) {
+  for (const path of [".github/workflows/ci.yml"]) {
     const workflow = await readFile(resolve(root, path), "utf8");
     assert.match(
       workflow,
@@ -143,10 +140,7 @@ test("canonical SLA fixture generation and checks run in Go-pinned gates", async
     manifest.scripts["generate:sla-fixture"],
     "go run packages/db/seeds/sla-fixture.go --input packages/db/seeds/sla-fixture-input.json --output packages/db/seeds/sla-fixture.generated.json && go run packages/db/seeds/sla-fixture.go --input tests/performance/sla-fixture-input.json --output tests/performance/sla-fixture.generated.json && prettier --write packages/db/seeds/sla-fixture.generated.json tests/performance/sla-fixture.generated.json",
   );
-  for (const path of [
-    ".github/workflows/ci.yml",
-    ".github/workflows/pull-request-fast.yml",
-  ]) {
+  for (const path of [".github/workflows/ci.yml"]) {
     const workflow = (await readFile(resolve(root, path), "utf8")).replaceAll(
       "\r\n",
       "\n",
@@ -210,10 +204,7 @@ test("permission catalog generation and checks follow verified contract sources"
       `${script} does not check canonical sources before the permission catalog`,
     );
   }
-  for (const workflowPath of [
-    ".github/workflows/pull-request-fast.yml",
-    ".github/workflows/ci.yml",
-  ]) {
+  for (const workflowPath of [".github/workflows/ci.yml"]) {
     const workflow = await readFile(resolve(root, workflowPath), "utf8");
     assert.match(
       workflow,
@@ -223,11 +214,54 @@ test("permission catalog generation and checks follow verified contract sources"
   }
 });
 
-test("pull requests use fast checks while main, tags, and releases keep the full gates", async () => {
-  const pullRequestWorkflow = await readFile(
-    resolve(root, ".github/workflows/pull-request-fast.yml"),
-    "utf8",
+test("CI schedules only shared checks on PRs and guards expensive steps", async () => {
+  const workflow = (
+    await readFile(resolve(root, ".github/workflows/ci.yml"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const jobs = new Map(
+    [
+      ...workflow
+        .slice(workflow.indexOf("\njobs:\n"))
+        .matchAll(
+          /^  ([a-z][a-z-]*):\n([\s\S]*?)(?=^  [a-z][a-z-]*:\n|(?![\s\S]))/gmu,
+        ),
+    ].map(([, name, body]) => [name, body]),
   );
+  const shared = ["javascript", "go", "generated"];
+  for (const [name, body] of jobs) {
+    if (shared.includes(name)) {
+      assert.doesNotMatch(
+        body,
+        /^    if:/mu,
+        `${name} must run for every candidate`,
+      );
+    } else {
+      assert.match(
+        body,
+        /^    if: github.event_name != 'pull_request'$/mu,
+        `${name} must stay off PRs`,
+      );
+    }
+  }
+  for (const name of shared) assert.ok(jobs.has(name), `${name} is missing`);
+  for (const [job, step, condition] of [
+    ["javascript", "Install Playwright Chromium", "!="],
+    ["javascript", "Exercise the browser acceptance flow", "!="],
+    ["go", "Test with race detector", "!="],
+    ["go", "Test without the release race detector", "=="],
+  ]) {
+    assert.ok(
+      jobs
+        .get(job)
+        .includes(
+          `      - name: ${step}\n        if: github.event_name ${condition} 'pull_request'\n`,
+        ),
+      `${step} has the wrong event guard`,
+    );
+  }
+});
+
+test("one CI definition keeps PRs fast and main and tag gates complete", async () => {
   const fullWorkflow = await readFile(
     resolve(root, ".github/workflows/ci.yml"),
     "utf8",
@@ -241,9 +275,6 @@ test("pull requests use fast checks while main, tags, and releases keep the full
     readFile(resolve(root, "deploy/swarm/stack.yml"), "utf8"),
   ]);
 
-  const pullRequestTriggers = triggerBlock(pullRequestWorkflow);
-  assert.match(pullRequestTriggers, /^  pull_request:\s*$/mu);
-  assert.doesNotMatch(pullRequestTriggers, /^  (?:push|release):/mu);
   for (const marker of [
     "pnpm install --frozen-lockfile",
     "pnpm lint",
@@ -258,30 +289,20 @@ test("pull requests use fast checks while main, tags, and releases keep the full
     "pnpm verify:go-generated",
   ]) {
     assert.ok(
-      pullRequestWorkflow.includes(marker),
+      fullWorkflow.includes(marker),
       `fast pull-request checks are missing ${marker}`,
     );
   }
-  for (const forbidden of [
-    /docker (?:build|compose|run)/u,
-    /pnpm test:security/u,
-    /pnpm test:e2e(?:\s|$)/mu,
-    /go test -race/u,
-    /(?:trivy|gitleaks|syft)/iu,
-  ]) {
-    assert.doesNotMatch(
-      pullRequestWorkflow,
-      forbidden,
-      `fast pull-request workflow contains a full-suite gate: ${forbidden}`,
-    );
-  }
-
   for (const [name, workflow] of [
     ["CI", fullWorkflow],
     ["deployment security", deploymentWorkflow],
   ]) {
     const triggers = triggerBlock(workflow);
-    assert.doesNotMatch(triggers, /^  pull_request:/mu, `${name} runs on PRs`);
+    if (name === "CI") {
+      assert.match(triggers, /^  pull_request:/mu);
+    } else {
+      assert.doesNotMatch(triggers, /^  pull_request:/mu);
+    }
     assert.match(triggers, /^  push:\s*$/mu, `${name} omits push`);
     assert.match(triggers, /^      - main\s*$/mu, `${name} omits main`);
     assert.match(
@@ -294,10 +315,10 @@ test("pull requests use fast checks while main, tags, and releases keep the full
       /^    paths(?:-ignore)?:/mu,
       `${name} can skip a main or tag candidate by path`,
     );
-    assert.match(
+    assert.doesNotMatch(
       triggers,
-      /^  release:\s*\n    types:\s*\n      - published\s*$/mu,
-      `${name} omits published releases`,
+      /^  release:/mu,
+      `${name} duplicates tag verification`,
     );
     assert.match(
       triggers,
@@ -332,7 +353,7 @@ test("pull requests use fast checks while main, tags, and releases keep the full
   ]) {
     assert.ok(
       completeGates.includes(marker),
-      `complete main/tag/release gates are missing ${marker}`,
+      `complete main/tag gates are missing ${marker}`,
     );
   }
 

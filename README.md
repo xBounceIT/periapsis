@@ -103,14 +103,22 @@ container-backed gates.
 
 ## CI matrix
 
-| Event                                                       | Pipeline                                        | Required scope                                                                                                                                                                                                                        |
-| ----------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pull request                                                | `Pull request fast checks`                      | Reproducible install, TypeScript lint/format/typecheck/tests/build, operations and generated-drift contracts, and Go vet/tests without the race detector                                                                              |
-| `main` push, any tag, published release, or manual dispatch | `CI` and `Deployment and supply-chain security` | The fast checks plus race tests, real PostgreSQL migration/RLS/upgrade suites, integration and browser E2E, Compose/container runtime checks, multi-arch builds, Kubernetes validation, secret/vulnerability scans, and SBOM evidence |
+| Event                                    | Pipeline                                        | Required scope                                                                                                                                                                                                                        |
+| ---------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull request                             | `CI`                                            | Reproducible install, TypeScript lint/format/typecheck/tests/build, operations and generated-drift contracts, and Go vet/tests without the race detector                                                                              |
+| `main` push, any tag, or manual dispatch | `CI` and `Deployment and supply-chain security` | The fast checks plus race tests, real PostgreSQL migration/RLS/upgrade suites, integration and browser E2E, Compose/container runtime checks, multi-arch builds, Kubernetes validation, secret/vulnerability scans, and SBOM evidence |
+| Weekly or manual dispatch                | `PostgreSQL ticketing performance`              | Disposable PostgreSQL 18.6 reference benchmark and retained 100,000-ticket performance evidence                                                                                                                                       |
 
-The pull-request workflow deliberately excludes Docker-backed, PostgreSQL runtime, race,
-scanner, and browser-install jobs. Those complete gates are mandatory on every main/tag or
-published-release candidate; a fast PR result is not release evidence.
+CI shares the same TypeScript, Go and generated-drift jobs across events. Pull requests
+skip Docker-backed, PostgreSQL runtime, race, scanner and browser-install work. The complete
+gates are mandatory on every main/tag candidate; a fast PR result is not release evidence.
+Publishing a release does not rerun its tag checks. If a release tag was created without
+triggering a push workflow, dispatch both complete workflows against that tag before release.
+
+Deployment security owns image vulnerability scans, per-image SBOMs, AMD64/ARM64 runtime
+proof and Kubernetes validation (schemas 1.32 and 1.35). CI owns composed application
+acceptance and source dependency/SBOM scanning. GitHub-managed CodeQL and dependency
+analysis remain separate because they cover different risks.
 
 ## Architecture
 

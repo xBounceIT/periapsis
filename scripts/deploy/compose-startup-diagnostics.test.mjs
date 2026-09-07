@@ -663,13 +663,18 @@ function assertWorkflow(source) {
     job,
     /if \[ "\$\{healthy\}" != "true" \]; then\n            exit 1\n          fi/u,
   );
-  assert.match(
-    source,
-    /run: node --test scripts\/deploy\/validate-manifests\.test\.mjs scripts\/deploy\/compose-startup-diagnostics\.test\.mjs/u,
-  );
+  assert.match(source, /run: pnpm test:operations\s*$/mu);
 }
 
 test("CI retains fail-closed smoke and always teardown with redacted evidence after failed up", async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+  );
+  assert.ok(
+    manifest.scripts["test:operations"]
+      .split(" ")
+      .includes("scripts/deploy/compose-startup-diagnostics.test.mjs"),
+  );
   const source = (
     await readFile(
       new URL("../../.github/workflows/ci.yml", import.meta.url),
@@ -691,10 +696,7 @@ test("CI retains fail-closed smoke and always teardown with redacted evidence af
       "if: always()\n        run: docker compose --file deploy/compose/compose.yaml --profile minimal down",
       "if: success()\n        run: docker compose --file deploy/compose/compose.yaml --profile minimal down",
     ),
-    source.replace(
-      "scripts/deploy/compose-startup-diagnostics.test.mjs",
-      "scripts/deploy/other.test.mjs",
-    ),
+    source.replace("run: pnpm test:operations", "run: pnpm test:other"),
   ])
     assert.throws(() => assertWorkflow(mutated));
 });

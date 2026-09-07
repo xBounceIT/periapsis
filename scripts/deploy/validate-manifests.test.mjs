@@ -319,6 +319,14 @@ test("multi-architecture runtime evidence gate cannot regress to build-only", as
   assert.ok(
     validateMultiarchRuntimeWorkflow(
       workflow.replace(
+        "--load --platform linux/amd64",
+        "--platform linux/amd64",
+      ),
+    ).some((error) => error.includes("--load --platform linux/amd64")),
+  );
+  assert.ok(
+    validateMultiarchRuntimeWorkflow(
+      workflow.replace(
         "--load --platform linux/arm64",
         "--platform linux/arm64",
       ),

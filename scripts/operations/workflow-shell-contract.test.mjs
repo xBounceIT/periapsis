@@ -459,7 +459,7 @@ node() {
   );
 });
 
-for (const name of ["application-images", "notifier-image"]) {
+for (const name of ["application-images"]) {
   test(`${name} exports the pinned daemon socket before scanners run`, () => {
     const imageJob = job(security, name);
     const dockerSetup = step(imageJob, "Set up pinned Docker Engine and CLI");

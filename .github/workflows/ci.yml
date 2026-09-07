@@ -1,14 +1,12 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches:
       - main
     tags:
       - "*"
-  release:
-    types:
-      - published
   workflow_dispatch:
 
 permissions:
@@ -59,16 +57,19 @@ jobs:
         run: pnpm typecheck
       - name: Test
         run: pnpm test
-      - name: Validate deployment source security contracts
-        run: node --test scripts/deploy/validate-manifests.test.mjs scripts/deploy/compose-startup-diagnostics.test.mjs scripts/deploy/openldap-test-image.test.mjs
+      - name: Validate operations and deployment source contracts
+        run: pnpm test:operations
       - name: Install Playwright Chromium
+        if: github.event_name != 'pull_request'
         run: pnpm --filter @periapsis/web exec playwright install --with-deps chromium
       - name: Exercise the browser acceptance flow
+        if: github.event_name != 'pull_request'
         run: pnpm test:e2e
       - name: Build
         run: pnpm build
 
   smtp-mailpit-acceptance:
+    if: github.event_name != 'pull_request'
     name: SMTP Mailpit acceptance
     needs: javascript
     runs-on: ubuntu-24.04
@@ -142,7 +143,11 @@ jobs:
         run: go vet ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
       - name: Vet shell-free healthcheck
         run: go vet ./deploy/compose/healthcheck.go
+      - name: Test without the release race detector
+        if: github.event_name == 'pull_request'
+        run: go test -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
       - name: Test with race detector
+        if: github.event_name != 'pull_request'
         run: go test -race -count=1 ./modules/contacts/... ./modules/customfields/... ./modules/dfir/... ./modules/identity/... ./modules/sla/... ./modules/ticketing/... ./services/api/... ./services/worker/...
 
   generated:
@@ -188,6 +193,7 @@ jobs:
         run: pnpm verify:go-generated
 
   supply-chain:
+    if: github.event_name != 'pull_request'
     name: Source SBOM and security scan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -218,33 +224,8 @@ jobs:
           severity: HIGH,CRITICAL
           version: v0.74.0
 
-  kubernetes-manifests:
-    name: Render and validate Kubernetes manifests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Check out source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version: 1.26.7
-          check-latest: false
-          cache: false
-      - name: Install pinned manifest tooling
-        run: |
-          go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.1
-          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
-      - name: Render and validate development overlay
-        run: |
-          kustomize build deploy/k8s/overlays/dev > "${RUNNER_TEMP}/periapsis-dev.yaml"
-          kubeconform -strict -summary -kubernetes-version 1.35.0 "${RUNNER_TEMP}/periapsis-dev.yaml"
-      - name: Render and validate production overlay
-        run: |
-          kustomize build deploy/k8s/overlays/prod > "${RUNNER_TEMP}/periapsis-prod.yaml"
-          kubeconform -strict -summary -kubernetes-version 1.35.0 "${RUNNER_TEMP}/periapsis-prod.yaml"
-
   containers:
+    if: github.event_name != 'pull_request'
     name: Containers and Compose smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -388,32 +369,6 @@ jobs:
             const files = readdirSync("/app/dist-server", { recursive: true }).map(String);
             if (!existsSync("/app/dist-server/index.js") || files.some((file) => file.includes(".test."))) process.exit(1);
           '
-      - name: Scan application images for high-impact vulnerabilities
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          exit-code: "1"
-          format: table
-          ignore-unfixed: false
-          image-ref: periapsis/api:${{ env.PERIAPSIS_IMAGE_TAG }}
-          scan-type: image
-          scanners: vuln,secret
-          severity: HIGH,CRITICAL
-          version: v0.74.0
-      - name: Scan remaining runtime images with the pinned Trivy installation
-        run: |
-          set -euo pipefail
-          for image in \
-            "periapsis/worker:${PERIAPSIS_IMAGE_TAG}" \
-            "periapsis/notifier:${PERIAPSIS_IMAGE_TAG}" \
-            "periapsis/web:${PERIAPSIS_IMAGE_TAG}" \
-            "periapsis/database-task:${PERIAPSIS_IMAGE_TAG}"; do
-            trivy image \
-              --exit-code 1 \
-              --format table \
-              --scanners vuln,secret \
-              --severity HIGH,CRITICAL \
-              "${image}"
-          done
       - name: Start hardened minimal stack
         id: minimal-stack-start
         run: docker compose --file deploy/compose/compose.yaml --profile minimal up --detach --no-build
@@ -574,6 +529,7 @@ jobs:
         run: docker compose --file deploy/compose/compose.yaml --profile full down --volumes --remove-orphans
 
   postgres-security-upgrades:
+    if: github.event_name != 'pull_request'
     name: PostgreSQL ${{ matrix.name }} upgrade
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -701,6 +657,7 @@ jobs:
           pnpm --filter @periapsis/db run "${UPGRADE_SCRIPT}"
 
   postgres-rls:
+    if: github.event_name != 'pull_request'
     name: PostgreSQL migration and RLS
     runs-on: ubuntu-24.04
     timeout-minutes: 30
