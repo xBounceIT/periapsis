@@ -49,7 +49,7 @@ FROM app.get_tenant_ldap_provider_v1(
 SELECT result.provider_id::uuid AS provider_id,
        result.result_version::integer AS result_version,
        result.replayed::boolean AS replayed
-FROM app.create_tenant_ldap_provider_v1(
+FROM app.create_tenant_ldap_provider_v2(
   sqlc.arg(provider_id)::uuid,
   sqlc.arg(idempotency_key_digest)::bytea,
   sqlc.arg(provider_key)::text,
@@ -65,7 +65,7 @@ FROM app.create_tenant_ldap_provider_v1(
 ) AS result(provider_id, result_version, replayed);
 
 -- name: UpdateTenantLDAPProvider :one
-SELECT app.update_tenant_ldap_provider_v1(
+SELECT app.update_tenant_ldap_provider_v2(
   sqlc.arg(provider_id)::uuid,
   sqlc.arg(expected_version)::integer,
   sqlc.arg(provider_key)::text,

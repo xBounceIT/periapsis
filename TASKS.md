@@ -13,6 +13,21 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Native HTTP acceptance exposes the foundation-only LDAP configuration ABI:
+      provider creation rejects supported JIT, admission and synchronization
+      policies. Append migration 0236 with authorized, audited V2 writes and
+      retain certificate verification and all relational constraints. Append the
+      V53 compatibility seal without changing any published migration. Fresh
+      PostgreSQL 18 repository tests and the V49/V50/V51/V52-to-V53 upgrades pass,
+      including existing session, audit and logout-receipt preservation. Direct
+      V2 repository calls reject missing authority, foreign tenant access,
+      disabled certificate verification and invalid deprovisioning grace, with
+      no provider mutation (`.tmp/ci-fix/v53-go-native-third.log`). The acceptance
+      customer role uses the required own scope. Coalesce absent LDAP mapping
+      epoch sequences to the zero value already required by the Go projection;
+      actual HTTP provider/binding/mapping creation and enablement now pass
+      (`.tmp/ci-fix/ldap-mapping-v53-fixed-native.log`). Linux LDAP authentication
+      acceptance remains required.
 - [x] Run `34129373887` passes minimal HTTPS authentication, reprovisioning and
       full-profile health, then rejects the live operator role with HTTP 409.
       Remove the unused `alert.create` permission from that custom human role:
@@ -30,7 +45,7 @@ final-journal database gates and the remaining release boundaries.
       denial and then successful verification after release, rolling back all
       generated key bindings (`.tmp/ci-fix/identity-contention-native.log`).
       Persistent mismatch, cancellation, all Go tests and vet pass.
-- [ ] Resolve full-profile notifier health on Linux: run `34126074120` passes
+- [ ] Confirm full-profile notifier health on Linux: run `34126074120` passes
       minimal HTTPS authentication and stale-membership reprovisioning, then
       reports an unhealthy notifier while Keycloak is healthy. Native PostgreSQL
       and the real notifier entrypoint return readiness HTTP 200 in 0.4-0.6s
@@ -38,8 +53,11 @@ final-journal database gates and the remaining release boundaries.
       yet established. Retain finite readiness failure categories and duration,
       and collect notifier/provisioner state and redacted logs for the full
       profile. The collector uses at most 25 bounded read-only commands.
-      Run `34129373887` subsequently passes full-profile notifier health; the
-      earlier intermittent startup failure has not been causally reproduced.
+      Run `34129373887` subsequently passes full-profile notifier health. Run
+      `34131570408` reproduces the failure and retains seven readiness deadline
+      expirations at 2009-2024ms. Give Compose readiness a 10s budget, with its
+      HTTP probe and container timeout outside that budget, as for the API.
+      Preserve the application's default and require a new Linux runtime pass.
 - [x] Run `34124857324` passes the complete HTTPS authentication smoke, then
       rejects migration resealing after the stale-membership fixture adds extra
       runtime privileges. Remove only noncanonical memberships from the three

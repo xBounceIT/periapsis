@@ -24,8 +24,8 @@ type AggregateProfile = Readonly<{
   role: "periapsis_api" | "periapsis_worker";
   otherRole: "periapsis_api" | "periapsis_worker";
   signature:
-    | "app.api_runtime_schema_readiness_v52()"
-    | "app.worker_runtime_schema_readiness_v52()";
+    | "app.api_runtime_schema_readiness_v53()"
+    | "app.worker_runtime_schema_readiness_v53()";
   cardinality: 8 | 5;
   probe: HealthProbe;
 }>;
@@ -79,10 +79,10 @@ async function hashCounter(transaction: TransactionSql): Promise<HashCounter> {
     LEFT JOIN pg_catalog.pg_stat_xact_user_functions AS statistics
       ON statistics.funcid=function_row.oid
     WHERE function_row.oid=pg_catalog.to_regprocedure(
-      'app.private_release_runtime_dependency_surface_hash_v52()'
+      'app.private_release_runtime_dependency_surface_hash_v53()'
     )
   `;
-  assert.equal(rows.length, 1, "exact V52 hash routine is missing");
+  assert.equal(rows.length, 1, "exact V53 hash routine is missing");
   assert.equal(rows[0]!.tracked, true, "function-call tracking is not active");
   return rows[0]!;
 }
@@ -301,14 +301,14 @@ export async function assertServiceReadinessAggregation({
         {
           role: "periapsis_api",
           otherRole: "periapsis_worker",
-          signature: "app.api_runtime_schema_readiness_v52()",
+          signature: "app.api_runtime_schema_readiness_v53()",
           cardinality: 8,
           probe: api,
         },
         {
           role: "periapsis_worker",
           otherRole: "periapsis_api",
-          signature: "app.worker_runtime_schema_readiness_v52()",
+          signature: "app.worker_runtime_schema_readiness_v53()",
           cardinality: 5,
           probe: worker,
         },

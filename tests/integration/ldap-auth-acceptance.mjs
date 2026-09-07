@@ -171,13 +171,17 @@ const roleId = await createAcceptanceRole("operator", [
   "notification.manage",
 ]);
 const customerRoleId = await resolveBuiltInRole("customer_user", "human");
-const customerAccessRoleId = await createAcceptanceRole("customer", [
-  "portal.alert.read",
-  "portal.case.read",
-  "portal.comment.public",
-  "portal.attachment.read",
-  "portal.contact.preference.manage",
-]);
+const customerAccessRoleId = await createAcceptanceRole(
+  "customer",
+  [
+    "portal.alert.read",
+    "portal.case.read",
+    "portal.comment.public",
+    "portal.attachment.read",
+    "portal.contact.preference.manage",
+  ],
+  "own",
+);
 const serviceAccountRoleId = await resolveBuiltInRole(
   "service_account",
   "service_account",
@@ -2669,7 +2673,7 @@ async function resolveBuiltInRole(key, principalKind, roleTenantId = tenantId) {
   return requiredIdentifier(role?.id, `built-in ${key} role ID`);
 }
 
-async function createAcceptanceRole(label, permissionKeys) {
+async function createAcceptanceRole(label, permissionKeys, scope = "tenant") {
   const role = await administratorRequest(`/api/v1/tenants/${tenantId}/roles`, {
     method: "POST",
     idempotencyKey: acceptanceKey(`${label}-role`),
@@ -2680,7 +2684,7 @@ async function createAcceptanceRole(label, permissionKeys) {
       policy: {
         permissions: permissionKeys.map((permissionKey) => ({
           permissionKey,
-          scope: "tenant",
+          scope,
         })),
         delegationCeiling: [],
       },
@@ -2703,10 +2707,10 @@ async function createAcceptanceRole(label, permissionKeys) {
         role.body?.policy?.permissions?.some(
           (permission) =>
             permission.permissionKey === permissionKey &&
-            permission.scope === "tenant",
+            permission.scope === scope,
         ),
       ),
-    `live ${label} role must expose the exact requested tenant permissions`,
+    `live ${label} role must expose the exact requested permissions and scope`,
   );
   return createdRoleId;
 }

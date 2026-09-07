@@ -1,6 +1,6 @@
 # Release acceptance evidence
 
-Last audited: 2026-09-06
+Last audited: 2026-09-07
 
 This matrix maps the 13 required end-to-end scenarios to source, focused tests, and the
 remaining proof boundary. The open source items in [`TASKS.md`](../TASKS.md) remain release
@@ -27,7 +27,7 @@ requires its external fixture. See the dated slice in `TASKS.md` for exact local
 
 The matrix retains earlier focused and final-journal results. Those labels do not
 carry forward to a new seal automatically: only the explicitly versioned evidence below
-applies to the named candidate. V52 is currently under verification, not production-validated.
+applies to the named candidate. V53 is currently under verification, not production-validated.
 
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -64,6 +64,31 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+### V53 tenant LDAP configuration candidate
+
+Migration 0236 adds V2 tenant LDAP configuration writes for the JIT, admission,
+deprovisioning and synchronization policies already exposed by the API. It preserves
+authorization, transactional audit, certificate verification and relational constraints.
+Migration 0237 seals the 238-entry journal with catalog digest
+`25836ab746715d3cec731946d6c5730998b42ca4cf48185346c5254823ef0b51`.
+Published migrations 0000-0235 remain byte-identical.
+
+Raw native PostgreSQL 18 derivation retains false readiness before sealing
+(`.tmp/ci-fix/derive-v53-native.log`). Normal installation and the complete V53
+catalog, role, ACL, credential and retirement tamper suite pass with the real
+runtime-role provisioner (`.tmp/ci-fix/v53-runtime-native2.log`). The V52-to-V53 upgrade preserves existing
+sessions, audit events and logout receipts, including replay after runner restart
+(`.tmp/ci-fix/v53-upgrade-native.log`). The retained upgrade suites starting from
+V49, V50 and V51 also pass through the current V53 seal
+(`.tmp/ci-fix/v50-current-upgrade-native.log`,
+`.tmp/ci-fix/v51-current-upgrade-native.log`,
+`.tmp/ci-fix/v52-current-upgrade-native.log`). Native Go provider create/update,
+denied-mutation and both service readiness suites pass
+(`.tmp/ci-fix/v53-go-native-third.log`). Actual HTTP
+provider, binding and mapping create/enable flows pass
+(`.tmp/ci-fix/ldap-mapping-v53-fixed-native.log`). Full Linux CI and composed LDAP
+authentication remain required; earlier V52 evidence below is historical.
 
 ### V52 candidate under verification
 

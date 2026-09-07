@@ -92,6 +92,14 @@ func TestIdentityProviderRepositoryAndServicePostgreSQL(t *testing.T) {
 	foreignAdminActor := identityProviderIntegrationActor(t, fixture.foreignTenantID, fixture.foreignAdminUserID)
 	deniedActor := identityProviderIntegrationActor(t, fixture.tenantID, fixture.deniedUserID)
 	configuration, endpoints := identityProviderIntegrationDocuments()
+	// The current API must persist the policy consumed by JIT and reconciliation,
+	// rather than the disabled-only policy accepted by the historical foundation ABI.
+	configuration.JITMode = identityprovider.JITModeCreate
+	configuration.NoMatchPolicy = identityprovider.NoMatchPolicyProviderAccessOnly
+	configuration.DeprovisionMode = identityprovider.DeprovisionModeGrace
+	configuration.DeprovisionGraceSeconds = 60
+	syncInterval := 300
+	configuration.SyncIntervalSeconds = &syncInterval
 
 	createAudit := identityProviderIntegrationAudit(t)
 	createInput := identityprovider.CreateInput{
@@ -102,6 +110,14 @@ func TestIdentityProviderRepositoryAndServicePostgreSQL(t *testing.T) {
 	created, err := service.Create(ctx, adminActor, fixture.tenantID, createInput)
 	if err != nil || created.Version != 1 || created.Replayed {
 		t.Fatalf("create provider = %+v, %v", created, err)
+	}
+	configured, err := service.Get(ctx, adminActor, fixture.tenantID, created.ProviderID)
+	if err != nil || configured.Configuration.JITMode != configuration.JITMode ||
+		configured.Configuration.NoMatchPolicy != configuration.NoMatchPolicy ||
+		configured.Configuration.DeprovisionMode != configuration.DeprovisionMode ||
+		configured.Configuration.DeprovisionGraceSeconds != 60 ||
+		configured.Configuration.SyncIntervalSeconds == nil || *configured.Configuration.SyncIntervalSeconds != syncInterval {
+		t.Fatalf("read created LDAP runtime policy: %v", err)
 	}
 	replayed, err := service.Create(ctx, adminActor, fixture.tenantID, createInput)
 	if err != nil || !replayed.Replayed || replayed.ProviderID != created.ProviderID || replayed.Version != 1 {
@@ -136,6 +152,39 @@ func TestIdentityProviderRepositoryAndServicePostgreSQL(t *testing.T) {
 	if _, err := service.Get(ctx, adminActor, fixture.foreignTenantID, created.ProviderID); !errors.Is(err, identityprovider.ErrForbidden) {
 		t.Fatalf("cross-tenant service get error = %v", err)
 	}
+	for _, test := range []struct {
+		name   string
+		human  identityprovider.HumanParams
+		change func(*identityprovider.Configuration)
+		want   error
+	}{
+		{name: "permission denied", human: identityprovider.HumanParams{Actor: deniedActor, MembershipID: fixture.deniedMembershipID, TenantID: fixture.tenantID}, want: identityprovider.ErrForbidden},
+		{name: "foreign tenant", human: identityprovider.HumanParams{Actor: foreignAdminActor, MembershipID: fixture.foreignAdminMembershipID, TenantID: fixture.foreignTenantID}, want: identityprovider.ErrNotFound},
+		{name: "certificate verification required", change: func(config *identityprovider.Configuration) { config.VerifyCertificate = false }, want: identityprovider.ErrInvalidInput},
+		{name: "grace period constrained", change: func(config *identityprovider.Configuration) { config.DeprovisionGraceSeconds = -1 }, want: identityprovider.ErrConflict},
+	} {
+		t.Run("V2 database rejects "+test.name, func(t *testing.T) {
+			human := test.human
+			if human.TenantID == uuid.Nil {
+				human = identityprovider.HumanParams{Actor: adminActor, MembershipID: fixture.adminMembershipID, TenantID: fixture.tenantID}
+			}
+			attempt := configuration
+			if test.change != nil {
+				test.change(&attempt)
+			}
+			if _, err := repository.Update(ctx, identityprovider.UpdateParams{
+				HumanParams: human, ProviderID: created.ProviderID, ExpectedVersion: 1,
+				Key: createInput.Key, DisplayName: createInput.DisplayName, Description: createInput.Description,
+				Configuration: attempt, Endpoints: endpoints, Audit: identityProviderIntegrationAudit(t), OccurredAt: time.Now().UTC().Truncate(time.Microsecond),
+			}); !errors.Is(err, test.want) {
+				t.Fatalf("V2 database rejection = %v, want %v", err, test.want)
+			}
+		})
+	}
+	unchanged, err := service.Get(ctx, adminActor, fixture.tenantID, created.ProviderID)
+	if err != nil || unchanged.Version != 1 || !unchanged.Configuration.VerifyCertificate || unchanged.Configuration.DeprovisionGraceSeconds != 60 {
+		t.Fatalf("rejected V2 mutations changed the provider: %v", err)
+	}
 
 	versionTag := identityProviderIntegrationETag(t, 1)
 	if _, err := service.Update(ctx, adminActor, fixture.tenantID, created.ProviderID, identityprovider.UpdateInput{
@@ -146,12 +195,24 @@ func TestIdentityProviderRepositoryAndServicePostgreSQL(t *testing.T) {
 		t.Fatalf("enable without bind secret error = %v, want conflict", err)
 	}
 	updateAudit := identityProviderIntegrationAudit(t)
+	configuration.JITMode = identityprovider.JITModeExistingIdentity
+	configuration.NoMatchPolicy = identityprovider.NoMatchPolicyDeny
+	configuration.DeprovisionMode = identityprovider.DeprovisionModeImmediate
+	configuration.DeprovisionGraceSeconds = 0
+	configuration.SyncIntervalSeconds = nil
 	updatedVersion, err := service.Update(ctx, adminActor, fixture.tenantID, created.ProviderID, identityprovider.UpdateInput{
 		Key: createInput.Key, DisplayName: "Integration LDAP updated", Description: createInput.Description,
 		Configuration: configuration, Endpoints: endpoints, ExpectedEntityTag: &versionTag, Audit: updateAudit,
 	})
 	if err != nil || updatedVersion != 2 {
 		t.Fatalf("update provider version = %d, error = %v", updatedVersion, err)
+	}
+	configured, err = service.Get(ctx, adminActor, fixture.tenantID, created.ProviderID)
+	if err != nil || configured.Configuration.JITMode != configuration.JITMode ||
+		configured.Configuration.NoMatchPolicy != configuration.NoMatchPolicy ||
+		configured.Configuration.DeprovisionMode != configuration.DeprovisionMode ||
+		configured.Configuration.DeprovisionGraceSeconds != 0 || configured.Configuration.SyncIntervalSeconds != nil {
+		t.Fatalf("read updated LDAP runtime policy: %v", err)
 	}
 	if _, err := service.Update(ctx, adminActor, fixture.tenantID, created.ProviderID, identityprovider.UpdateInput{
 		Key: createInput.Key, DisplayName: "Stale update", Description: createInput.Description,

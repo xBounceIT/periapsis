@@ -875,7 +875,7 @@ try {
       const [readiness] = await asWorker(
         transaction,
         (sql) => sql<{ ready: boolean }[]>`
-          SELECT app.sla_object_event_ingress_schema_readiness_v52() AS ready
+          SELECT app.sla_object_event_ingress_schema_readiness_v53() AS ready
         `,
       );
       assert.equal(readiness?.ready, true);

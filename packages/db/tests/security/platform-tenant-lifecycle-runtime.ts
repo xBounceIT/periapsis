@@ -935,7 +935,7 @@ async function main(): Promise<void> {
       role,
       ready: await asRole(admin, role, async (transaction) => {
         const [row] = await transaction<{ ready: boolean }[]>`
-          SELECT app.release_runtime_schema_readiness_v52() AS ready
+          SELECT app.release_runtime_schema_readiness_v53() AS ready
         `;
         return row?.ready;
       }),

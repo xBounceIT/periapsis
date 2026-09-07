@@ -275,6 +275,8 @@ describe("PostgreSQL migration chain", () => {
       "0233_v51_compatibility.sql",
       "0234_service_readiness_aggregation.sql",
       "0235_v52_compatibility.sql",
+      "0236_tenant_ldap_configuration_runtime.sql",
+      "0237_v53_compatibility.sql",
     ]);
   });
 

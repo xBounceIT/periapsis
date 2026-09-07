@@ -688,7 +688,7 @@ services:
       PERIAPSIS_NOTIFIER_LEASE_MS: ${PERIAPSIS_NOTIFIER_LEASE_MS:-60000}
       PERIAPSIS_NOTIFIER_MAX_OUTPUT_BYTES: ${PERIAPSIS_NOTIFIER_MAX_OUTPUT_BYTES:-262144}
       PERIAPSIS_NOTIFIER_PREVIEW_TOKEN_FILE: /run/secrets/notifier_preview_token
-      PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS:-2000}
+      PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS:-10000}
       PERIAPSIS_NOTIFIER_RENDER_TIMEOUT_MS: ${PERIAPSIS_NOTIFIER_RENDER_TIMEOUT_MS:-100}
       PERIAPSIS_RELEASE: ${PERIAPSIS_IMAGE_TAG:-development}
       PERIAPSIS_SMTP_ALLOW_PLAIN_LOCAL: "true"
@@ -705,9 +705,9 @@ services:
         - CMD
         - node
         - -e
-        - fetch('http://127.0.0.1:8083/health/ready',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+        - fetch('http://127.0.0.1:8083/health/ready',{signal:AbortSignal.timeout(11000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
       interval: 10s
-      timeout: 3s
+      timeout: 12s
       retries: 6
       start_period: 10s
     depends_on:

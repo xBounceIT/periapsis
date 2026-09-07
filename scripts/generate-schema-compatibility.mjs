@@ -3156,6 +3156,131 @@ if (migrationFiles.includes("0235_v52_compatibility.sql")) {
   );
 }
 
+if (migrationFiles.includes("0236_tenant_ldap_configuration_runtime.sql")) {
+  functionSourceDefinitions.push(
+    {
+      constant: "PrivateReplaceTenantLDAPConfigurationV2",
+      migration: "0236_tenant_ldap_configuration_runtime.sql",
+      name: "private_replace_tenant_ldap_configuration_v2",
+      hasArguments: true,
+    },
+    {
+      constant: "CreateTenantLDAPProviderV2",
+      migration: "0236_tenant_ldap_configuration_runtime.sql",
+      name: "create_tenant_ldap_provider_v2",
+      hasArguments: true,
+    },
+    {
+      constant: "UpdateTenantLDAPProviderV2",
+      migration: "0236_tenant_ldap_configuration_runtime.sql",
+      name: "update_tenant_ldap_provider_v2",
+      hasArguments: true,
+    },
+    {
+      constant: "APIRuntimeReadinessV53",
+      migration: "0236_tenant_ldap_configuration_runtime.sql",
+      name: "api_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "WorkerRuntimeReadinessV53",
+      migration: "0236_tenant_ldap_configuration_runtime.sql",
+      name: "worker_runtime_schema_readiness_v53",
+    },
+  );
+}
+
+if (migrationFiles.includes("0237_v53_compatibility.sql")) {
+  functionSourceDefinitions.push(
+    {
+      constant: "SchemaCompatibilityV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "schema_compatibility_v53",
+    },
+    {
+      constant: "RetiredSchemaCompatibilityV52",
+      name: "schema_compatibility_v52",
+      sourceConstant: "SchemaCompatibilityV52",
+    },
+    {
+      constant: "PrivateSchemaCompatibilityJournalV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "private_schema_compatibility_journal_v53",
+    },
+    {
+      constant: "PrivateReleaseRuntimeDependencySurfaceHashV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "private_release_runtime_dependency_surface_hash_v53",
+    },
+    {
+      constant: "PrivateReleaseRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "private_release_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "ReleaseRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "release_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "FederatedAuthenticationReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "federated_authentication_schema_readiness_v53",
+    },
+    {
+      constant: "PlatformOIDCDirectRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "platform_oidc_direct_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "PlatformSAMLDirectRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "platform_saml_direct_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "PlatformLocalAccountRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "platform_local_account_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "SLATriggerActionRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "sla_trigger_action_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "SLAObjectEventIngressReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "sla_object_event_ingress_schema_readiness_v53",
+    },
+    {
+      constant: "TicketBulkRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "ticket_bulk_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "TicketExportRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "ticket_export_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "TicketMetadataRuntimeReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "ticket_metadata_runtime_schema_readiness_v53",
+    },
+    {
+      constant: "NotificationDispatchReadinessV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "notification_dispatch_readiness_v53",
+    },
+    {
+      constant: "SealSchemaCompatibilityManifestV53",
+      migration: "0237_v53_compatibility.sql",
+      name: "seal_schema_compatibility_manifest",
+      hasArguments: true,
+      runtime: false,
+    },
+  );
+}
+
 if (
   new Set(functionSourceDefinitions.map(({ constant }) => constant)).size !==
   functionSourceDefinitions.length
@@ -3275,17 +3400,17 @@ writeFileSync(
 );
 
 const notifierSourceConstants = new Set([
-  "SchemaCompatibilityV52",
-  "PrivateReleaseRuntimeDependencySurfaceHashV52",
-  "PrivateReleaseRuntimeReadinessV52",
-  "ReleaseRuntimeReadinessV52",
-  "NotificationDispatchReadinessV52",
+  "SchemaCompatibilityV53",
+  "PrivateReleaseRuntimeDependencySurfaceHashV53",
+  "PrivateReleaseRuntimeReadinessV53",
+  "ReleaseRuntimeReadinessV53",
+  "NotificationDispatchReadinessV53",
 ]);
 const notifierFunctionSourceHashes = functionSourceHashes.filter(
   ({ constant }) => notifierSourceConstants.has(constant),
 );
 if (notifierFunctionSourceHashes.length !== notifierSourceConstants.size) {
-  throw new Error("Missing a trusted V52 notifier function source");
+  throw new Error("Missing a trusted V53 notifier function source");
 }
 const notifierTypescriptTarget = resolve(
   repositoryRoot,

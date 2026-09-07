@@ -184,6 +184,18 @@ function assertApplicationHardening(model) {
   );
   assert.equal(model.services.api.healthcheck.test.at(-1), "12s");
   assert.equal(model.services.api.healthcheck.timeout, "12s");
+  if (model.services.notifier) {
+    assert.equal(
+      model.services.notifier.environment
+        .PERIAPSIS_NOTIFIER_READINESS_TIMEOUT_MS,
+      "10000",
+    );
+    assert.match(
+      model.services.notifier.healthcheck.test.at(-1),
+      /timeout\(11000\)/u,
+    );
+    assert.equal(model.services.notifier.healthcheck.timeout, "12s");
+  }
   assert.equal(
     model.services.worker.environment
       .PERIAPSIS_TICKET_RUNTIME_SERVICE_ACCOUNT_ID,

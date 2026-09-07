@@ -500,6 +500,7 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
     "test:security:schema-compatibility-v49",
     "test:security:schema-compatibility-v50",
     "test:security:schema-compatibility-v51",
+    "test:security:schema-compatibility-v52",
   ]);
   const standalone = new Set(["test:security:seed-audit", ...historical]);
   for (const name of historical) {
@@ -520,7 +521,7 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
   }
   assert.match(
     aggregate,
-    /(?:^|\s)run test:security:schema-compatibility-v52(?:\s|$)/u,
+    /(?:^|\s)run test:security:schema-compatibility-v53(?:\s|$)/u,
   );
   const securityScripts = Object.entries(scripts).filter(([name]) =>
     name.startsWith("test:security:"),
@@ -705,6 +706,7 @@ test("the PostgreSQL Go gate selects authorization, shared DFIR and fresh-connec
     ),
   );
   const requiredTests = [
+    "TestIdentityProviderRepositoryAndServicePostgreSQL",
     "TestRuntimeRepositoryReadinessPostgreSQL",
     "TestAPIRateLimitRepositoryPostgreSQL",
     "TestDFIRSharedAttachmentsStayPathBoundInPostgres",
@@ -719,6 +721,10 @@ test("the PostgreSQL Go gate selects authorization, shared DFIR and fresh-connec
     "the real Go gate must include all authorization, shared-resource and fresh-connection logout regressions",
   );
   for (const [variable, database] of [
+    [
+      "PERIAPSIS_IDENTITY_PROVIDER_TEST_DATABASE_URL",
+      "periapsis_go_authorization",
+    ],
     ["PERIAPSIS_READINESS_TEST_DATABASE_URL", "periapsis_go_authorization"],
     ["PERIAPSIS_API_RATE_LIMIT_TEST_DATABASE_URL", "periapsis_api_rate_limit"],
     ["PERIAPSIS_AUTHORIZATION_TEST_DATABASE_URL", "periapsis_go_authorization"],

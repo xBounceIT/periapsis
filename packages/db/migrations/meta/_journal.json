@@ -1653,6 +1653,20 @@
       "when": 1788707601308,
       "tag": "0235_v52_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 236,
+      "version": "7",
+      "when": 1788790952348,
+      "tag": "0236_tenant_ldap_configuration_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1788790964334,
+      "tag": "0237_v53_compatibility",
+      "breakpoints": true
     }
   ]
 }

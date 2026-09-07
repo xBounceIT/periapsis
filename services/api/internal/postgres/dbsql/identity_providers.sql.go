@@ -257,7 +257,7 @@ const createTenantLDAPProvider = `-- name: CreateTenantLDAPProvider :one
 SELECT result.provider_id::uuid AS provider_id,
        result.result_version::integer AS result_version,
        result.replayed::boolean AS replayed
-FROM app.create_tenant_ldap_provider_v1(
+FROM app.create_tenant_ldap_provider_v2(
   $1::uuid,
   $2::bytea,
   $3::text,
@@ -527,7 +527,7 @@ func (q *Queries) RotateTenantLDAPBindSecret(ctx context.Context, arg RotateTena
 }
 
 const updateTenantLDAPProvider = `-- name: UpdateTenantLDAPProvider :one
-SELECT app.update_tenant_ldap_provider_v1(
+SELECT app.update_tenant_ldap_provider_v2(
   $1::uuid,
   $2::integer,
   $3::text,

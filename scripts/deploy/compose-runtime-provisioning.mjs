@@ -33,7 +33,7 @@ let sql;
 let phase = "connect";
 async function assertReady(expected) {
   const [state] =
-    await sql`SELECT app.release_runtime_schema_readiness_v52() AS ready`;
+    await sql`SELECT app.release_runtime_schema_readiness_v53() AS ready`;
   assert.equal(
     state?.ready,
     expected,

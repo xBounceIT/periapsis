@@ -34,6 +34,10 @@ import {
 import { tenantMemberships } from "./identity.js";
 import { tenants } from "./tenancy.js";
 
+// PostgreSQL function adapter: migration 0236 adds the authorized V2 tenant LDAP
+// configuration writes for the policies represented below. Migration 0237 seals
+// that routine surface as V53; neither migration changes the declarative tables.
+
 export const identityKeyringVersions = pgTable(
   "identity_keyring_versions",
   {
