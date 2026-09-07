@@ -32,6 +32,7 @@ type AggregateProfile = Readonly<{
 
 type PreparedState = { name: string; pid: number };
 type CatalogSnapshot = { digest: string };
+type AggregateSnapshot = CatalogSnapshot & { source_hash: string };
 type HashCounter = {
   function_oid: string;
   calls: string;
@@ -57,11 +58,14 @@ async function keyringSnapshot(sql: Sql): Promise<CatalogSnapshot> {
 async function aggregateSnapshot(
   transaction: TransactionSql,
   signature: AggregateProfile["signature"],
-): Promise<CatalogSnapshot> {
-  const rows = await transaction<CatalogSnapshot[]>`
+): Promise<AggregateSnapshot> {
+  const rows = await transaction<AggregateSnapshot[]>`
     SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
       row_to_json(function_row)::text, 'UTF8'
-    )), 'hex') AS digest
+    )), 'hex') AS digest,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+        function_row.prosrc, 'UTF8'
+      )), 'hex') AS source_hash
     FROM pg_catalog.pg_proc AS function_row
     WHERE function_row.oid=pg_catalog.to_regprocedure(${signature})
   `;
@@ -157,8 +161,19 @@ async function verifyProfile(
   const prepared = await preparedState(transaction, profile.probe.query);
   assert.equal(prepared.pid, backendPid);
   const catalog = await aggregateSnapshot(transaction, profile.signature);
-  const aggregateSourceHash = baseline.source_hashes.at(-1);
-  assert.match(aggregateSourceHash ?? "", /^[0-9a-f]{64}$/u);
+  const aggregateSourceHash = catalog.source_hash;
+  assert.match(aggregateSourceHash, /^[0-9a-f]{64}$/u);
+  const aggregateSourceIndex =
+    baseline.source_hashes.indexOf(aggregateSourceHash);
+  assert(
+    aggregateSourceIndex >= 0,
+    "aggregate source is absent from Go health",
+  );
+  assert.equal(
+    baseline.source_hashes.lastIndexOf(aggregateSourceHash),
+    aggregateSourceIndex,
+    "aggregate source must have one unambiguous Go health position",
+  );
 
   const allTrue = Array.from({ length: profile.cardinality }, () => true);
   const mutations = [
@@ -235,7 +250,10 @@ async function verifyProfile(
           if (mutation.kind === "source") {
             assert.deepEqual(row.array, allTrue);
             assert.equal(row.catalog_ready, true);
-            assert.notEqual(row.source_hashes.at(-1), aggregateSourceHash);
+            assert.notEqual(
+              row.source_hashes[aggregateSourceIndex],
+              aggregateSourceHash,
+            );
           } else {
             assert.equal(row.catalog_ready, false);
           }

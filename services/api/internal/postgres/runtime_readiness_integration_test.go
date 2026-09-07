@@ -113,7 +113,7 @@ func TestRuntimeRepositoryReadinessPostgreSQL(t *testing.T) {
 			t.Fatal(err)
 		}
 		released := make(chan error, 1)
-		time.AfterFunc(75*time.Millisecond, func() { released <- writer.Rollback(ctx) })
+		time.AfterFunc(750*time.Millisecond, func() { released <- writer.Rollback(ctx) })
 		verifyErr := verifier.Verify(ctx)
 		if err := <-released; err != nil {
 			t.Fatal(err)

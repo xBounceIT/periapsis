@@ -42,14 +42,27 @@ func (v *KeyringReadinessVerifier) Verify(ctx context.Context) error {
 	}
 	defer clearReadinessEvidence(evidence)
 	// The sealed verifier returns false when its NOWAIT session-table locks
-	// collide with a normal login or idle touch. Briefly retry that result;
-	// only a positive database verification may authorize readiness.
-	for attempt := 0; ; attempt++ {
+	// collide with a normal login or idle touch. Allow a bounded write to finish
+	// within the caller's deadline, capped at five seconds. The former 250ms
+	// attempt limit could expire while ordinary session mutations were still live.
+	// Only a positive database verification may authorize readiness.
+	retryContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		verified, err := v.verifier.VerifyIdentityKeyring(ctx, evidence)
+		if retryContext.Err() != nil {
+			return ErrIdentityKeyringUnavailable
+		}
+		verified, err := v.verifier.VerifyIdentityKeyring(retryContext, evidence)
 		if err != nil {
+			if parentErr := ctx.Err(); parentErr != nil {
+				return parentErr
+			}
+			if retryContext.Err() != nil {
+				return ErrIdentityKeyringUnavailable
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
@@ -58,14 +71,14 @@ func (v *KeyringReadinessVerifier) Verify(ctx context.Context) error {
 		if verified {
 			return nil
 		}
-		if attempt == 10 {
-			return ErrIdentityKeyringUnavailable
-		}
 		timer := time.NewTimer(25 * time.Millisecond)
 		select {
-		case <-ctx.Done():
+		case <-retryContext.Done():
 			timer.Stop()
-			return ctx.Err()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return ErrIdentityKeyringUnavailable
 		case <-timer.C:
 		}
 	}

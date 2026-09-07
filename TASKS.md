@@ -13,6 +13,21 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34136485615` passes all 23 PostgreSQL upgrade jobs, but ordinary
+      TOTP login still loses readiness after the identity-keyring verifier
+      exhausts its 250ms retry window (258ms retained latency). Retry transient
+      false results within the caller's deadline, capped at 5s, while preserving
+      immediate database-error denial and cancellation. A regression requiring
+      more than ten attempts fails before the fix; native PostgreSQL now proves
+      successful verification after a 750ms session write lock
+      (`.tmp/ci-fix/identity-contention-long-native.log`). The PostgreSQL aggregate
+      also exposes a historical test assumption that the service source hash is
+      last: V53 appends the retired V52 root. Locate the aggregate by its unique
+      catalog source hash while retaining all prepared-query tamper checks. The
+      complete native platform-binding runtime suite passes with this helper
+      (`.tmp/ci-fix/binding-aggregate-native.log`).
+- [x] Complete `corepack pnpm verify` passes for published candidate `6e71150`
+      (`.tmp/ci-fix/verify-6e71150.log`); its CodeQL workflow is also green.
 - [x] Native HTTP acceptance exposes the foundation-only LDAP configuration ABI:
       provider creation rejects supported JIT, admission and synchronization
       policies. Append migration 0236 with authorized, audited V2 writes and
