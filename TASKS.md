@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34143162684` passes all 24 upgrades, HTTPS bootstrap/login, runtime
+      reprovisioning and full-profile health. Real LDAP authentication now returns
+      303, but acceptance selects the first `Set-Cookie`, which clears the MFA
+      ceremony before the actual session cookie. Select exactly one cookie by its
+      expected session name and retain HttpOnly, Secure, SameSite and path checks.
+      A regression executes the actual helper with reordered cleanup headers,
+      duplicates, missing session cookies and weakened attributes. The complete
+      repository gate passes (`.tmp/ci-fix/verify-cookie-selection.log`). Complete
+      the remaining live browser acceptance on Linux.
 - [ ] Run `34137704187` passes 29 of 30 jobs, including all 23 upgrades and the
       full PostgreSQL security aggregate. LDAP acceptance reaches the real
       directory but its new tenants have no explicit baseline MFA policy. The

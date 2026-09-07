@@ -4406,13 +4406,23 @@ function assertString(value, label) {
 }
 
 function issuedCookie(result, operation) {
-  const setCookie = result.response.headers.getSetCookie()[0];
+  const secureOrigin = new URL(baseUrl).protocol === "https:";
+  const expectedName = secureOrigin
+    ? "__Host-periapsis_session"
+    : "periapsis_session";
+  const sessionCookies = result.response.headers
+    .getSetCookie()
+    .filter((value) => value.startsWith(`${expectedName}=`));
+  assert(
+    sessionCookies.length === 1,
+    `${operation} must issue exactly one session cookie`,
+  );
+  const setCookie = sessionCookies[0];
   assertString(setCookie, `${operation} Set-Cookie`);
   const cookie = setCookie.split(";", 1)[0];
   const cookieSeparator = cookie.indexOf("=");
   assert(cookieSeparator > 0, `${operation} cookie must be a name/value pair`);
   const cookieName = cookie.slice(0, cookieSeparator);
-  const secureOrigin = new URL(baseUrl).protocol === "https:";
   assert(
     /;\s*HttpOnly(?:;|$)/iu.test(setCookie) &&
       /;\s*SameSite=Strict(?:;|$)/iu.test(setCookie) &&

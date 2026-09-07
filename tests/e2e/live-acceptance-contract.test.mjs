@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const integration = readFileSync(
   new URL("../integration/ldap-auth-acceptance.mjs", import.meta.url),
@@ -22,6 +23,50 @@ const packageManifest = readFileSync(
   new URL("../../package.json", import.meta.url),
   "utf8",
 );
+
+test("LDAP acceptance selects the session cookie among ceremony cleanup headers", () => {
+  const start = integration.indexOf("function issuedCookie(");
+  const end = integration.indexOf("function refreshedCookie(", start);
+  assert.ok(start >= 0 && end > start);
+  const issuedCookie = runInNewContext(`(${integration.slice(start, end)})`, {
+    URL,
+    baseUrl: "https://localhost:8443",
+    assert: (condition, message) => assert.ok(condition, message),
+    assertString: (value, message) =>
+      assert.ok(typeof value === "string" && value.length > 0, message),
+  });
+  const session =
+    "__Host-periapsis_session=fixture-session; Path=/; HttpOnly; Secure; SameSite=Strict";
+  const cleanup = [
+    "__Host-periapsis_mfa=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict",
+    "__Host-periapsis_federated_continuation=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict",
+  ];
+  const response = (cookies) => ({
+    response: {
+      headers: new Headers(cookies.map((value) => ["Set-Cookie", value])),
+    },
+  });
+  for (const cookies of [
+    [...cleanup, session],
+    [session, ...cleanup],
+    [cleanup[0], session, cleanup[1]],
+  ]) {
+    assert.equal(
+      issuedCookie(response(cookies), "LDAP login"),
+      "__Host-periapsis_session=fixture-session",
+    );
+  }
+  for (const cookies of [
+    cleanup,
+    [...cleanup, session, session],
+    [session.replace("; Secure", "")],
+    [session.replace("; HttpOnly", "")],
+    [session.replace("SameSite=Strict", "SameSite=Lax")],
+    [session.replace("Path=/;", "Path=/auth;")],
+  ]) {
+    assert.throws(() => issuedCookie(response(cookies), "LDAP login"));
+  }
+});
 
 test("live Phase 3 acceptance uses the composed API and database without interception", () => {
   assert.doesNotMatch(specification, /\.(?:route|routeFromHAR)\s*\(/u);
