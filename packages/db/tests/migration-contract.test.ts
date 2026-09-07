@@ -277,6 +277,8 @@ describe("PostgreSQL migration chain", () => {
       "0235_v52_compatibility.sql",
       "0236_tenant_ldap_configuration_runtime.sql",
       "0237_v53_compatibility.sql",
+      "0238_local_mfa_policy_recovery.sql",
+      "0239_v54_compatibility.sql",
     ]);
   });
 

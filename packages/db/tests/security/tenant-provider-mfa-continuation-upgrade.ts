@@ -592,22 +592,22 @@ try {
     }[]
   >`
     SELECT
-      app.private_release_runtime_dependency_surface_hash_v53()
+      app.private_release_runtime_dependency_surface_hash_v54()
         AS "dependencyHash",
-      app.private_release_runtime_schema_readiness_v53()
+      app.private_release_runtime_schema_readiness_v54()
         AS "privateReady",
-      app.release_runtime_schema_readiness_v53()
+      app.release_runtime_schema_readiness_v54()
         AS "publicReady"
   `;
   assert.equal(
     quiescedReadiness?.privateReady,
     true,
-    "quiesced current V53 private readiness",
+    "quiesced current V54 private readiness",
   );
   assert.equal(
     quiescedReadiness?.publicReady,
     true,
-    "quiesced current V53 public readiness",
+    "quiesced current V54 public readiness",
   );
 
   await sql.unsafe("SET password_encryption = 'scram-sha-256'");
@@ -623,11 +623,11 @@ try {
     }[]
   >`
     SELECT
-      app.private_release_runtime_dependency_surface_hash_v53()
+      app.private_release_runtime_dependency_surface_hash_v54()
         AS "dependencyHash",
-      app.private_release_runtime_schema_readiness_v53()
+      app.private_release_runtime_schema_readiness_v54()
         AS "privateReady",
-      app.release_runtime_schema_readiness_v53()
+      app.release_runtime_schema_readiness_v54()
         AS "publicReady"
   `;
   assert.deepEqual(provisionedReadiness, {

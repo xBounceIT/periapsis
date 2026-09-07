@@ -27,7 +27,7 @@ requires its external fixture. See the dated slice in `TASKS.md` for exact local
 
 The matrix retains earlier focused and final-journal results. Those labels do not
 carry forward to a new seal automatically: only the explicitly versioned evidence below
-applies to the named candidate. V53 is currently under verification, not production-validated.
+applies to the named candidate. V54 is currently under verification, not production-validated.
 
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -64,6 +64,30 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+### V54 local MFA policy recovery candidate
+
+Migration 0238 recognizes exact recent break-glass TOTP assurance after tenant
+selection only for legacy sessions without tenant MFA state. Tenant read/manage
+authority remains required, and existing tenant MFA evidence cannot fall back to
+the global factor. LDAP acceptance explicitly publishes each disposable tenant's
+baseline through the authenticated policy API.
+
+Migration 0239 seals the 240-entry journal with catalog digest
+`24dd760c9e8cab17bc28658f7e0d831a27cfce9cfe1e424f0456f5b1ba70f682`,
+derived on native PostgreSQL 18.6 UTF8/C
+(`.tmp/ci-fix/v54-derive-final.log`). The first-policy regression fails on V53;
+the complete MFA policy runtime suite passes on V54, including disabled factors
+and credentials, mismatched TOTP timestamps, stale proof and restricted tenant
+state (`.tmp/ci-fix/mfa-legacy-green-native.log`). Fresh compatibility and tamper
+coverage (`.tmp/ci-fix/v54-runtime-native.log`) and the V53-to-V54 upgrade
+(`.tmp/ci-fix/v54-upgrade-native.log`) pass. The Go session decoder now accepts
+LDAP's bounded authorization revision while continuing to reject unknown fields.
+Actual repository revalidation passes and HTTP returns 303 with a controlled
+directory observation (`.tmp/ci-fix/ldap-login-v54-field-native.log`); this does not
+prove the LDAP network boundary. Full `corepack pnpm verify` passes
+(`.tmp/ci-fix/verify-v54-third.log`), alongside all 16 Compose model checks and
+actionlint. Linux LDAP/browser CI remains required for this candidate.
 
 ### V53 tenant LDAP configuration candidate
 

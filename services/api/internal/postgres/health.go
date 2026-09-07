@@ -38,7 +38,7 @@ with expected_trusted_function(
   expected_config, expected_result, expected_acl_roles
 ) as (
   values
-    (1, 'compatibility', 'app.schema_compatibility_v53()', 'plpgsql', array[
+    (1, 'compatibility', 'app.schema_compatibility_v54()', 'plpgsql', array[
        'search_path=pg_catalog',
        'app.schema_compatibility_fingerprint=' || $1::text
      ]::text[],
@@ -54,41 +54,41 @@ with expected_trusted_function(
      'app.private_v47_migration_convergence_schema_readiness_v1()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedOwnerACL + `),
-    (4, 'journal', 'app.private_schema_compatibility_journal_v53()',
+    (4, 'journal', 'app.private_schema_compatibility_journal_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'TABLE(applied_count bigint, latest_created_at bigint, latest_rows bigint, latest_hash text, migration_fingerprint text)',
      ` + trustedOwnerACL + `),
     (5, 'dependency',
-     'app.private_release_runtime_dependency_surface_hash_v53()',
+     'app.private_release_runtime_dependency_surface_hash_v54()',
      'sql', ` + trustedRuntimeConfig + `, 'text', ` + trustedOwnerACL + `),
     (6, 'private_release',
-     'app.private_release_runtime_schema_readiness_v53()',
+     'app.private_release_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedOwnerACL + `),
-    (7, 'release', 'app.release_runtime_schema_readiness_v53()',
+    (7, 'release', 'app.release_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedReleaseACL + `),
-    (8, 'federated', 'app.federated_authentication_schema_readiness_v53()',
+    (8, 'federated', 'app.federated_authentication_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
-    (9, 'oidc', 'app.platform_oidc_direct_runtime_schema_readiness_v53()',
+    (9, 'oidc', 'app.platform_oidc_direct_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
-    (10, 'saml', 'app.platform_saml_direct_runtime_schema_readiness_v53()',
+    (10, 'saml', 'app.platform_saml_direct_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
     (11, 'local_account',
-     'app.platform_local_account_runtime_schema_readiness_v53()',
+     'app.platform_local_account_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
-    (12, 'ticket_bulk', 'app.ticket_bulk_runtime_schema_readiness_v53()',
+    (12, 'ticket_bulk', 'app.ticket_bulk_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedRuntimeACL + `),
-    (13, 'ticket_export', 'app.ticket_export_runtime_schema_readiness_v53()',
+    (13, 'ticket_export', 'app.ticket_export_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedRuntimeACL + `),
     (14, 'ticket_metadata',
-     'app.ticket_metadata_runtime_schema_readiness_v53()',
+     'app.ticket_metadata_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean', ` + trustedAPIACL + `),
     (15, 'sla_rotation', 'app.private_rotate_sla_readiness_v48()',
@@ -106,10 +106,16 @@ with expected_trusted_function(
      ]::text[],
      'TABLE(applied_count bigint, latest_created_at bigint, latest_hash text, migration_fingerprint text)',
      ` + trustedOwnerACL + `),
-    (18, 'api_aggregate', 'app.api_runtime_schema_readiness_v53()',
+    (18, 'api_aggregate', 'app.api_runtime_schema_readiness_v54()',
      'plpgsql', array['search_path=pg_catalog, public, app']::text[],
      'boolean[]', ` + trustedAPIACL + `),
     (19, 'retired_v52', 'app.schema_compatibility_v52()', 'plpgsql', array[
+       'search_path=pg_catalog',
+       'app.schema_compatibility_fingerprint=RETIRED'
+     ]::text[],
+     'TABLE(applied_count bigint, latest_created_at bigint, latest_hash text, migration_fingerprint text)',
+     ` + trustedOwnerACL + `),
+    (20, 'retired_v53', 'app.schema_compatibility_v53()', 'plpgsql', array[
        'search_path=pg_catalog',
        'app.schema_compatibility_fingerprint=RETIRED'
      ]::text[],
@@ -142,7 +148,7 @@ actual_trusted_function as (
            and function.provariadic = 0
            and function.prosupport = 0
            and function.proretset = (expected.function_key in (
-             'compatibility', 'retired', 'retired_v50', 'retired_v51', 'retired_v52', 'journal'
+             'compatibility', 'retired', 'retired_v50', 'retired_v51', 'retired_v52', 'retired_v53', 'journal'
            ))
            and function.procost = 100::real
            and function.prorows = case when function.proretset
@@ -217,38 +223,39 @@ actual_trusted_function as (
 ),
 trusted_function_state as (
   select array_agg(source_hash order by ordinal) as source_hashes,
-         count(*) = 19 and coalesce(bool_and(catalog_ready), false)
+         count(*) = 20 and coalesce(bool_and(catalog_ready), false)
            as catalog_ready
   from actual_trusted_function
 )
 select applied_count, latest_created_at, latest_hash, migration_fingerprint,
-       app.api_runtime_schema_readiness_v53() AS array,
+       app.api_runtime_schema_readiness_v54() AS array,
        trusted.source_hashes,
        trusted.catalog_ready
-from app.schema_compatibility_v53()
+from app.schema_compatibility_v54()
 cross join trusted_function_state as trusted
 `
 
 var expectedTrustedFunctionSourceHashes = [...]string{
-	expectedSchemaCompatibilityV53SourceHash,
+	expectedSchemaCompatibilityV54SourceHash,
 	expectedRetiredSchemaCompatibilityV49SourceHash,
 	expectedPrivateV47MigrationConvergenceSchemaReadinessV1SourceHash,
-	expectedPrivateSchemaCompatibilityJournalV53SourceHash,
-	expectedPrivateReleaseRuntimeDependencySurfaceHashV53SourceHash,
-	expectedPrivateReleaseRuntimeReadinessV53SourceHash,
-	expectedReleaseRuntimeReadinessV53SourceHash,
-	expectedFederatedAuthenticationReadinessV53SourceHash,
-	expectedPlatformOIDCDirectRuntimeReadinessV53SourceHash,
-	expectedPlatformSAMLDirectRuntimeReadinessV53SourceHash,
-	expectedPlatformLocalAccountRuntimeReadinessV53SourceHash,
-	expectedTicketBulkRuntimeReadinessV53SourceHash,
-	expectedTicketExportRuntimeReadinessV53SourceHash,
-	expectedTicketMetadataRuntimeReadinessV53SourceHash,
+	expectedPrivateSchemaCompatibilityJournalV54SourceHash,
+	expectedPrivateReleaseRuntimeDependencySurfaceHashV54SourceHash,
+	expectedPrivateReleaseRuntimeReadinessV54SourceHash,
+	expectedReleaseRuntimeReadinessV54SourceHash,
+	expectedFederatedAuthenticationReadinessV54SourceHash,
+	expectedPlatformOIDCDirectRuntimeReadinessV54SourceHash,
+	expectedPlatformSAMLDirectRuntimeReadinessV54SourceHash,
+	expectedPlatformLocalAccountRuntimeReadinessV54SourceHash,
+	expectedTicketBulkRuntimeReadinessV54SourceHash,
+	expectedTicketExportRuntimeReadinessV54SourceHash,
+	expectedTicketMetadataRuntimeReadinessV54SourceHash,
 	expectedPrivateRotateSLAReadinessV48SourceHash,
 	expectedRetiredSchemaCompatibilityV50SourceHash,
 	expectedRetiredSchemaCompatibilityV51SourceHash,
-	expectedAPIRuntimeReadinessV53SourceHash,
+	expectedAPIRuntimeReadinessV54SourceHash,
 	expectedRetiredSchemaCompatibilityV52SourceHash,
+	expectedRetiredSchemaCompatibilityV53SourceHash,
 }
 
 // SchemaQuerier is implemented by pgxpool.Pool and keeps readiness checks testable.
@@ -273,7 +280,7 @@ type verifiedRuntime struct {
 	probe context.Context
 }
 
-// CheckWithContext shares the fully attested V53 projection only with repository
+// CheckWithContext shares the fully attested V54 projection only with repository
 // readiness checks in this bounded probe and against this exact connection pool.
 // Request authorization and ordinary repository operations never use this evidence.
 func (c HealthChecker) CheckWithContext(ctx context.Context) (context.Context, []DependencyCheck) {

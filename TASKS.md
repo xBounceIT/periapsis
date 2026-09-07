@@ -13,6 +13,27 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34137704187` passes 29 of 30 jobs, including all 23 upgrades and the
+      full PostgreSQL security aggregate. LDAP acceptance reaches the real
+      directory but its new tenants have no explicit baseline MFA policy. The
+      policy API also rejects a freshly verified bootstrap TOTP after tenant
+      selection. Migration 0238 preserves the exact local break-glass proof for
+      legacy sessions without tenant MFA state; existing tenant state must still
+      satisfy its own evidence boundary. Publish the two disposable baselines
+      through the real API. Migration 0239 seals V54 without changing published
+      migrations. The regression fails on V53; the complete native MFA policy
+      suite passes on V54, including mismatched factor timestamps, disabled
+      factors/credentials, stale MFA and restricted tenant state
+      (`.tmp/ci-fix/mfa-legacy-green-native.log`). Fresh V54 catalog/ACL/body/config
+      tamper coverage and the V53-to-V54 upgrade pass. Actual HTTP baseline and
+      LDAP administration pass. The final session decoder also rejected the
+      database's LDAP-only `authorizationRevision`; accept its exact bounded
+      shape while preserving strict unknown-field rejection. Native repository
+      loading and atomic revalidation now pass, and HTTP returns 303 with a
+      controlled directory observation (`.tmp/ci-fix/ldap-login-v54-field-native.log`).
+      `corepack pnpm verify` passes (`.tmp/ci-fix/verify-v54-third.log`), as do
+      all 16 Compose model checks and actionlint. Complete real Linux LDAP/browser
+      acceptance before closure; the controlled observation is not a network proof.
 - [x] Run `34136485615` passes all 23 PostgreSQL upgrade jobs, but ordinary
       TOTP login still loses readiness after the identity-keyring verifier
       exhausts its 250ms retry window (258ms retained latency). Retry transient

@@ -25,6 +25,10 @@ import { tenantPlatformAuthProviderBindings } from "./identity-platform-bindings
 import { tenantMemberships, users } from "./identity.js";
 import { tenants } from "./tenancy.js";
 
+// Migration 0238 is the PostgreSQL adapter for policy administration using an
+// exact recent local break-glass TOTP after tenant selection. It creates no
+// implicit policy or factor and never substitutes for an existing tenant MFA state.
+
 /**
  * Stable, tenant-qualified MFA identity facts. The WebAuthn user handle is
  * random protocol material and is never derived from an email or user UUID.

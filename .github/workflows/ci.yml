@@ -617,6 +617,9 @@ jobs:
           - name: V53 tenant LDAP configuration compatibility seal
             script: test:security:schema-compatibility-v53-upgrade
             database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V53_UPGRADE_TEST_DATABASE_URL
+          - name: V54 local MFA policy recovery compatibility seal
+            script: test:security:schema-compatibility-v54-upgrade
+            database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V54_UPGRADE_TEST_DATABASE_URL
     services:
       postgres:
         image: postgres:18.6-alpine3.23@sha256:697c180dbf244d3ce4a8f4cbc0156cde840af055c1bf8b76aebe422a4822086f
@@ -770,7 +773,7 @@ jobs:
             periapsis_federated_auth \
             periapsis_tenant_federation_admin \
             periapsis_saml_material \
-            periapsis_schema_compatibility_v53 \
+            periapsis_schema_compatibility_v54 \
             periapsis_passkey_revalidation \
             periapsis_mfa_policy \
             periapsis_tenant_lifecycle \
@@ -835,7 +838,7 @@ jobs:
           PERIAPSIS_FEDERATED_AUTH_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_federated_auth?sslmode=disable
           PERIAPSIS_TENANT_FEDERATION_ADMIN_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_federation_admin?sslmode=disable
           PERIAPSIS_SAML_MATERIAL_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_saml_material?sslmode=disable
-          PERIAPSIS_SCHEMA_COMPATIBILITY_V53_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_schema_compatibility_v53?sslmode=disable
+          PERIAPSIS_SCHEMA_COMPATIBILITY_V54_SECURITY_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_schema_compatibility_v54?sslmode=disable
           PERIAPSIS_PASSKEY_REVALIDATION_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_passkey_revalidation?sslmode=disable
           PERIAPSIS_MFA_POLICY_ADMIN_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_mfa_policy?sslmode=disable
           PERIAPSIS_TENANT_LIFECYCLE_TEST_DATABASE_URL: postgresql://postgres:periapsis-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/periapsis_tenant_lifecycle?sslmode=disable

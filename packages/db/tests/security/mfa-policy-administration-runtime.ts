@@ -286,6 +286,106 @@ async function seed(): Promise<void> {
   });
 }
 
+async function proveLegacyTenantPolicyRecovery(): Promise<void> {
+  const rollback = new Error("roll back the isolated legacy recovery proof");
+  const cases: {
+    name: string;
+    allowed?: boolean;
+    change?: (
+      transaction: postgres.TransactionSql,
+      sessionId: string,
+    ) => Promise<unknown>;
+  }[] = [
+    { name: "fresh exact bootstrap TOTP", allowed: true },
+    {
+      name: "another TOTP verification cannot stand in for this session",
+      change: (transaction) => transaction`
+        UPDATE public.totp_credentials SET updated_at = updated_at + interval '1 second'
+        WHERE id = ${fixture.tenantGlobalTotp}::uuid
+      `,
+    },
+    {
+      name: "disabled global factor",
+      change: (transaction) => transaction`
+        UPDATE public.totp_credentials SET disabled_at = transaction_timestamp()
+        WHERE id = ${fixture.tenantGlobalTotp}::uuid
+      `,
+    },
+    {
+      name: "disabled local credential",
+      change: (transaction) => transaction`
+        UPDATE public.local_break_glass_credentials SET disabled_at = transaction_timestamp()
+        WHERE id = ${fixture.tenantCredential}::uuid
+      `,
+    },
+    {
+      name: "stale session MFA",
+      change: (transaction, sessionId) => transaction`
+        UPDATE public.auth_sessions SET mfa_satisfied_at = transaction_timestamp() - interval '6 minutes'
+        WHERE id = ${sessionId}::uuid
+      `,
+    },
+    {
+      name: "tenant MFA state cannot fall back to the legacy factor",
+      change: (transaction, sessionId) => transaction`
+        INSERT INTO public.auth_session_mfa_states (
+          session_id,tenant_id,user_id,session_version,identity_epoch,
+          recovery_restricted,audience,primary_kind,session_invalidation_epoch,issued_at
+        ) SELECT ${sessionId}::uuid,tenant_id,user_id,session_version,identity_epoch,
+                 true,audience,primary_kind,session_invalidation_epoch,issued_at
+          FROM public.auth_session_mfa_states
+          WHERE session_id = ${fixture.tenantSession}::uuid
+      `,
+    },
+  ];
+  for (const scenario of cases) {
+    // eslint-disable-next-line no-await-in-loop -- Each mutation and rollback must finish before the next fixture probe.
+    await assert.rejects(
+      sql.begin(async (transaction) => {
+        const sessionId = nextUuid();
+        await transaction`
+          INSERT INTO public.auth_sessions (
+            id,user_id,rotation_family_id,active_tenant_id,token_digest,
+            csrf_secret_digest,authentication_method,mfa_satisfied_at,last_seen_at,
+            idle_expires_at,absolute_expires_at,created_at
+          ) SELECT ${sessionId}::uuid,user_id,${nextUuid()}::uuid,active_tenant_id,
+                   ${digest(sessionId)},${digest(`${sessionId}:csrf`)},'bootstrap_totp',
+                   mfa_satisfied_at,last_seen_at,idle_expires_at,absolute_expires_at,created_at
+            FROM public.auth_sessions WHERE id = ${fixture.tenantSession}::uuid
+        `;
+        await scenario.change?.(transaction, sessionId);
+        await transaction.unsafe('SET LOCAL ROLE "periapsis_api"');
+        await transaction`
+          SELECT set_config('app.user_id',${fixture.tenantUser},true),
+                 set_config('app.tenant_id',${fixture.tenant},true),
+                 set_config('app.service_account_id','',true)
+        `;
+        const command = {
+          commandId: nextUuid(),
+          target: { scope: "tenant_baseline", tenantId: fixture.tenant },
+          expectedRevision: 0,
+          requirement: requirement("primary", false),
+          reason:
+            "Explicit first policy through recent local recovery assurance",
+          audit: audit(),
+        };
+        const [published] = await transaction<{ value: postgres.JSONValue }[]>`
+          SELECT app.publish_tenant_mfa_policy_v1(
+            ${sessionId}::uuid,${fixture.tenant}::uuid,'bootstrap_totp',
+            ${transaction.json(command)}::jsonb
+          ) AS value
+        `;
+        assert(scenario.allowed, scenario.name);
+        assert(isJsonObject(published?.value), scenario.name);
+        throw rollback;
+      }),
+      (error: unknown) =>
+        scenario.allowed ? error === rollback : assertSqlState(error, "42501"),
+      scenario.name,
+    );
+  }
+}
+
 try {
   const [version] = await sql<{ version: number }[]>`
     SELECT current_setting('server_version_num')::integer AS version
@@ -304,7 +404,7 @@ try {
       const [ready] = await sql.begin(async (transaction) => {
         await transaction.unsafe(`SET LOCAL ROLE "${role}"`);
         return transaction<{ value: boolean }[]>`
-          SELECT app.release_runtime_schema_readiness_v53() AS value
+          SELECT app.release_runtime_schema_readiness_v54() AS value
         `;
       });
       assert.equal(ready?.value, true);
@@ -328,6 +428,7 @@ try {
   );
 
   await seed();
+  await proveLegacyTenantPolicyRecovery();
 
   await assert.rejects(
     asApi(

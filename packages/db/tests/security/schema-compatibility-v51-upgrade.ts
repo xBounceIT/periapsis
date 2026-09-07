@@ -134,11 +134,11 @@ assert.deepEqual(v50Latest, {
   createdAt: 1_788_650_095_675,
   hash: "807fc8896bfde860a40b9d7782288f49f0a72ab34ce1634c22d886fba4cdc0a2",
 });
-assert.equal(journal.entries.length, 238);
-assert.equal(expectedMigrationCount, 238);
-assert.equal(expectedMigrations.length, 238);
+assert.equal(journal.entries.length, 240);
+assert.equal(expectedMigrationCount, 240);
+assert.equal(expectedMigrations.length, 240);
 assert.deepEqual(
-  journal.entries.slice(-6).map((entry) => entry.tag),
+  journal.entries.slice(-8).map((entry) => entry.tag),
   [
     "0232_platform_saml_admission_provenance",
     "0233_v51_compatibility",
@@ -146,6 +146,8 @@ assert.deepEqual(
     "0235_v52_compatibility",
     "0236_tenant_ldap_configuration_runtime",
     "0237_v53_compatibility",
+    "0238_local_mfa_policy_recovery",
+    "0239_v54_compatibility",
   ],
 );
 const v50Fingerprint = v50Manifest
@@ -171,23 +173,23 @@ assert.equal(
   v51CatalogDigest,
   "2b1f33e2a513a16dff5f5b6b20ab6bf654cc4c081bd010864db96e09dbf8b51c",
 );
-const v53Migration = await readFile(
-  resolve(migrationsRoot, "0237_v53_compatibility.sql"),
+const v54Migration = await readFile(
+  resolve(migrationsRoot, "0239_v54_compatibility.sql"),
   "utf8",
 );
-const v53CatalogDigest =
-  /private_release_runtime_dependency_surface_hash_v53\(\)<>\s*'([0-9a-f]{64})'/u.exec(
-    v53Migration,
+const v54CatalogDigest =
+  /private_release_runtime_dependency_surface_hash_v54\(\)<>\s*'([0-9a-f]{64})'/u.exec(
+    v54Migration,
   )?.[1];
-assert(v53CatalogDigest, "0237 must pin the V53 catalog digest");
+assert(v54CatalogDigest, "0239 must pin the V54 catalog digest");
 assert.notEqual(
-  v53CatalogDigest,
+  v54CatalogDigest,
   "0".repeat(64),
-  "V53 cannot run with a placeholder digest",
+  "V54 cannot run with a placeholder digest",
 );
 assert.equal(
-  v53CatalogDigest,
-  "25836ab746715d3cec731946d6c5730998b42ca4cf48185346c5254823ef0b51",
+  v54CatalogDigest,
+  "24dd760c9e8cab17bc28658f7e0d831a27cfce9cfe1e424f0456f5b1ba70f682",
 );
 const unsupported: CompatibilityRow = {
   applied_count: "0",
@@ -499,8 +501,8 @@ async function assertLogoutEffects(
   });
 }
 
-async function assertSealedV53(): Promise<void> {
-  await assertAppliedPrefix(238);
+async function assertSealedV54(): Promise<void> {
+  await assertAppliedPrefix(240);
   const [current] = await sql<
     (CompatibilityRow & {
       catalog_digest: string;
@@ -509,17 +511,17 @@ async function assertSealedV53(): Promise<void> {
       worker_array: boolean[];
     })[]
   >`
-    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v53() AS catalog_digest,
-      app.api_runtime_schema_readiness_v53() AS api_array,
-      app.worker_runtime_schema_readiness_v53() AS worker_array,
-      app.release_runtime_schema_readiness_v53() AS ready FROM app.schema_compatibility_v53() AS compatibility
+    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v54() AS catalog_digest,
+      app.api_runtime_schema_readiness_v54() AS api_array,
+      app.worker_runtime_schema_readiness_v54() AS worker_array,
+      app.release_runtime_schema_readiness_v54() AS ready FROM app.schema_compatibility_v54() AS compatibility
   `;
   assert.deepEqual(current, {
     applied_count: String(expectedMigrationCount),
     latest_created_at: String(expectedMigrationCreatedAt),
     latest_hash: expectedMigrationHash,
     migration_fingerprint: expectedMigrationFingerprint,
-    catalog_digest: v53CatalogDigest,
+    catalog_digest: v54CatalogDigest,
     ready: true,
     api_array: Array<boolean>(8).fill(true),
     worker_array: Array<boolean>(5).fill(true),
@@ -689,16 +691,16 @@ try {
   });
 
   await migrateSchema(sql, migrationsRoot);
-  await assertSealedV53();
+  await assertSealedV54();
   assert.deepEqual(
     await redactedSnapshot(),
     before,
-    "V53 sealing must not mutate historical logout data",
+    "V54 sealing must not mutate historical logout data",
   );
   assert.deepEqual(
     await revoke(tenantCommand),
     tenantReceipt,
-    "historical tenant receipt must replay exactly after V53",
+    "historical tenant receipt must replay exactly after V54",
   );
   assert.deepEqual(await redactedSnapshot(), before);
 
@@ -723,7 +725,7 @@ try {
   );
 
   await migrateSchema(sql, migrationsRoot);
-  await assertSealedV53();
+  await assertSealedV54();
   assert.deepEqual(
     await redactedSnapshot(),
     afterPlatform,
@@ -756,10 +758,10 @@ try {
   } catch {
     // Child errors may contain SQL parameters; do not forward captured output.
     throw new Error(
-      "ordinary SAML admission/runtime proof failed after V50 -> V53 upgrade",
+      "ordinary SAML admission/runtime proof failed after V50 -> V54 upgrade",
     );
   }
-  await assertSealedV53();
+  await assertSealedV54();
   assert.deepEqual(
     await redactedSnapshot(),
     afterPlatform,

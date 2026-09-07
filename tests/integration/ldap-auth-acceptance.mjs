@@ -103,6 +103,7 @@ const bootstrap = await request("/api/v1/bootstrap/confirm", {
 expectStatus(bootstrap, 201, "bootstrap confirmation");
 administratorCookie = issuedCookie(bootstrap, "bootstrap confirmation");
 administratorCSRF = requiredSessionCSRF(bootstrap.body?.session);
+let administratorAssuranceAt = Date.now();
 
 const uniqueSuffix = randomUUID().slice(0, 8);
 const tenantSlug = `ldap-acceptance-${uniqueSuffix}`;
@@ -125,6 +126,8 @@ const switched = await administratorRequest("/api/v1/auth/session/tenant", {
 expectStatus(switched, 200, "administrator tenant switch");
 administratorCookie = refreshedCookie(switched, administratorCookie);
 administratorCSRF = requiredSessionCSRF(switched.body);
+
+await publishAcceptanceBaseline(tenantId);
 
 const seniorAnalystRoleId = await resolveBuiltInRole("senior_analyst", "human");
 const roleId = await createAcceptanceRole("operator", [
@@ -1443,7 +1446,74 @@ async function runLivePhaseThreeAcceptance({
   );
 }
 
+async function ensureRecentAdministratorAssurance(liveTenantId) {
+  if (Date.now() - administratorAssuranceAt < 120_000) return;
+  const challenge = await request("/api/v1/auth/login", {
+    method: "POST",
+    json: { email: administrator.email, password: administrator.password },
+  });
+  expectStatus(challenge, 202, "administrator password reauthentication");
+  assertString(challenge.body?.challengeToken, "administrator MFA challenge");
+  await avoidTotpBoundary();
+  const completed = await request("/api/v1/auth/mfa", {
+    method: "POST",
+    json: {
+      challengeToken: challenge.body.challengeToken,
+      method: "totp",
+      code: totp(enrollment.body.totpSecret),
+    },
+  });
+  expectStatus(completed, 200, "administrator fresh local MFA");
+  administratorCookie = issuedCookie(
+    completed,
+    "administrator reauthentication",
+  );
+  administratorCSRF = requiredSessionCSRF(completed.body);
+  administratorAssuranceAt = Date.now();
+  const selected = await administratorRequest("/api/v1/auth/session/tenant", {
+    method: "PUT",
+    json: { tenantId: liveTenantId },
+  });
+  expectStatus(selected, 200, "administrator tenant selection after MFA");
+  administratorCookie = refreshedCookie(selected, administratorCookie);
+  administratorCSRF = requiredSessionCSRF(selected.body);
+}
+
+async function publishAcceptanceBaseline(liveTenantId) {
+  await ensureRecentAdministratorAssurance(liveTenantId);
+  const published = await administratorRequest(
+    `/api/v1/tenants/${liveTenantId}/mfa-policies`,
+    {
+      method: "POST",
+      headers: {
+        "X-Audit-Reason": "Explicit disposable LDAP acceptance baseline",
+      },
+      idempotencyKey: uuidv7(),
+      json: {
+        target: { scope: "tenant_baseline" },
+        expectedRevision: 0,
+        requirement: {
+          level: "primary",
+          localRequired: false,
+          freshnessSeconds: 0,
+          enrollmentDeadline: null,
+        },
+      },
+    },
+  );
+  expectStatus(published, 201, "LDAP acceptance baseline publication");
+  assert(
+    published.body?.policy?.status === "live" &&
+      published.body?.policy?.revision === 1 &&
+      published.body?.policy?.target?.scope === "tenant_baseline" &&
+      published.body?.policy?.target?.tenantId === liveTenantId &&
+      published.body?.policy?.requirement?.level === "primary",
+    "LDAP acceptance must publish its explicit tenant baseline before login",
+  );
+}
+
 async function prepareTenantOIDCAcceptance({ liveBaseUrl, liveTenantId }) {
+  await ensureRecentAdministratorAssurance(liveTenantId);
   const oidcRoleId = await createAcceptanceRole("oidc", ["alert.read"]);
   const oidcSecurityGroup = await administratorRequest(
     `/api/v1/tenants/${liveTenantId}/groups`,
@@ -2428,6 +2498,7 @@ async function keycloakDelete(token, path, operation) {
 }
 
 async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
+  await publishAcceptanceBaseline(liveTenantId);
   const tenantAdminRoleId = await resolveBuiltInRole(
     "tenant_admin",
     "human",

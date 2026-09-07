@@ -380,8 +380,8 @@ try {
           role,
           (sql) =>
             sql<{ bulk: boolean; export: boolean }[]>`
-            SELECT app.ticket_bulk_runtime_schema_readiness_v53() AS bulk,
-                   app.ticket_export_runtime_schema_readiness_v53() AS export
+            SELECT app.ticket_bulk_runtime_schema_readiness_v54() AS bulk,
+                   app.ticket_export_runtime_schema_readiness_v54() AS export
           `,
         );
         assert.deepEqual(readiness, { bulk: true, export: true });
@@ -408,7 +408,7 @@ try {
       }
       await expectSqlState(
         asRole(transaction, "periapsis_auditor", async (sql) => {
-          await sql`SELECT app.ticket_bulk_runtime_schema_readiness_v53()`;
+          await sql`SELECT app.ticket_bulk_runtime_schema_readiness_v54()`;
         }),
         "42501",
         "auditor executed ticket runtime readiness",

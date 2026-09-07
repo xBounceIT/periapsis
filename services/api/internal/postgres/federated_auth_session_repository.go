@@ -93,6 +93,7 @@ type federatedLiveSessionWire struct {
 	IdentityEpoch            uint64                        `json:"identityEpoch"`
 	PrimaryActive            bool                          `json:"primaryActive"`
 	PrimaryRevision          int64                         `json:"primaryRevision"`
+	AuthorizationRevision    *uint64                       `json:"authorizationRevision,omitempty"`
 	SessionInvalidationEpoch uint64                        `json:"sessionInvalidationEpoch"`
 	Factors                  []federatedFactorStateWire    `json:"factors"`
 	TrustRules               []federatedTrustRuleStateWire `json:"trustRules"`
@@ -176,6 +177,15 @@ func federatedSessionProjectionFromWire(
 ) (federatedauth.SessionProjection, error) {
 	if value.Lookup != wanted || !validFederatedAuthenticationMethod(value.AuthenticationMethod) ||
 		value.AuthenticationMethod != wanted.AuthenticationMethod {
+		return federatedauth.SessionProjection{}, errFederatedAuthPersistence
+	}
+	// LDAP's protected apply rechecks this live revision against its persisted
+	// provenance. Other session families do not publish this LDAP-only field.
+	if value.AuthenticationMethod == string(federatedauth.AuthenticationMethodLDAP) {
+		if value.Live.AuthorizationRevision == nil || !validFederatedRevision(*value.Live.AuthorizationRevision) {
+			return federatedauth.SessionProjection{}, errFederatedAuthPersistence
+		}
+	} else if value.Live.AuthorizationRevision != nil {
 		return federatedauth.SessionProjection{}, errFederatedAuthPersistence
 	}
 	snapshot, err := federatedSessionSnapshotFromWire(value.Snapshot)

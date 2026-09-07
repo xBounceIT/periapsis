@@ -1667,6 +1667,20 @@
       "when": 1788790964334,
       "tag": "0237_v53_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1788796559023,
+      "tag": "0238_local_mfa_policy_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1788796577322,
+      "tag": "0239_v54_compatibility",
+      "breakpoints": true
     }
   ]
 }

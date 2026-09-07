@@ -81,6 +81,68 @@ func TestFederatedAuthRepositoryLoadsAndCommitsExactSessionRevalidation(t *testi
 	}
 }
 
+func TestLDAPSessionRevalidationDecodesItsAuthorizationRevision(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		revision uint64
+		omit     bool
+		oidc     bool
+		unknown  bool
+		allowed  bool
+	}{
+		{name: "live LDAP revision", revision: 1, allowed: true},
+		{name: "JSON-safe maximum", revision: uint64(maximumMFAJSONSafeInteger), allowed: true},
+		{name: "missing LDAP revision", omit: true},
+		{name: "zero LDAP revision"},
+		{name: "overflowing LDAP revision", revision: uint64(maximumMFAJSONSafeInteger) + 1},
+		{name: "LDAP field on OIDC", revision: 1, oidc: true},
+		{name: "unknown fields remain rejected", revision: 1, unknown: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			lookup, wire, _ := postgresFederatedSessionFixture(t)
+			if !scenario.oidc {
+				lookup.AuthenticationMethod = federatedauth.AuthenticationMethodLDAP
+				wire.AuthenticationMethod = string(lookup.AuthenticationMethod)
+				wire.Lookup.AuthenticationMethod = string(lookup.AuthenticationMethod)
+			}
+			if !scenario.omit {
+				wire.Live.AuthorizationRevision = &scenario.revision
+			}
+			encoded, err := json.Marshal(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario.unknown {
+				var document map[string]any
+				if err = json.Unmarshal(encoded, &document); err != nil {
+					t.Fatal(err)
+				}
+				document["unexpected"] = true
+				encoded, err = json.Marshal(document)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			repository := &FederatedAuthRepository{queryer: federatedAuthQueryerStub{query: func(
+				_ context.Context, query string, _ ...any,
+			) pgx.Row {
+				if query != loadFederatedSessionRevalidationSQL {
+					t.Fatalf("unexpected query %q", query)
+				}
+				return federatedAuthJSONRow(encoded)
+			}}}
+			projection, err := repository.LoadSessionForRevalidation(context.Background(), lookup)
+			if (err == nil) != scenario.allowed {
+				t.Fatalf("LoadSessionForRevalidation() error = %v, allowed = %t", err, scenario.allowed)
+			}
+			if scenario.allowed && (projection.AuthenticationMethod != lookup.AuthenticationMethod ||
+				projection.Snapshot.SessionID != lookup.SessionID) {
+				t.Fatal("LDAP session identity changed during decoding")
+			}
+		})
+	}
+}
+
 func TestFederatedSessionProjectionSeparatesPlatformAdmission(t *testing.T) {
 	lookup, wire, projection := postgresPlatformFederatedSessionFixture(t)
 	primary := projection.Snapshot.Primary

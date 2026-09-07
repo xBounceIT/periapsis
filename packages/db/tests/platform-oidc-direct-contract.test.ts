@@ -1509,20 +1509,20 @@ describe("direct platform OIDC v39 database contract", () => {
     );
   });
 
-  it("binds API and worker health to the current V53 release roots", () => {
+  it("binds API and worker health to the current V54 release roots", () => {
     for (const health of [apiHealth, workerHealth]) {
       for (const root of [
-        "app.schema_compatibility_v53()",
+        "app.schema_compatibility_v54()",
         "app.schema_compatibility_v51()",
         "app.schema_compatibility_v50()",
         "app.schema_compatibility_v49()",
         "app.private_v47_migration_convergence_schema_readiness_v1()",
-        "app.private_schema_compatibility_journal_v53()",
-        "app.private_release_runtime_dependency_surface_hash_v53()",
-        "app.private_release_runtime_schema_readiness_v53()",
-        "app.release_runtime_schema_readiness_v53()",
-        "app.ticket_bulk_runtime_schema_readiness_v53()",
-        "app.ticket_export_runtime_schema_readiness_v53()",
+        "app.private_schema_compatibility_journal_v54()",
+        "app.private_release_runtime_dependency_surface_hash_v54()",
+        "app.private_release_runtime_schema_readiness_v54()",
+        "app.release_runtime_schema_readiness_v54()",
+        "app.ticket_bulk_runtime_schema_readiness_v54()",
+        "app.ticket_export_runtime_schema_readiness_v54()",
         "app.private_rotate_sla_readiness_v48()",
       ]) {
         expect(health).toContain(root);
@@ -1545,10 +1545,10 @@ describe("direct platform OIDC v39 database contract", () => {
       );
     }
     expect(apiHealth).toContain(
-      "count(*) = 19 and coalesce(bool_and(catalog_ready), false)",
+      "count(*) = 20 and coalesce(bool_and(catalog_ready), false)",
     );
     expect(workerHealth).toContain(
-      "count(*) = 16 and coalesce(bool_and(catalog_ready), false)",
+      "count(*) = 17 and coalesce(bool_and(catalog_ready), false)",
     );
   });
 });
