@@ -128,7 +128,6 @@ administratorCSRF = requiredSessionCSRF(switched.body);
 
 const seniorAnalystRoleId = await resolveBuiltInRole("senior_analyst", "human");
 const roleId = await createAcceptanceRole("operator", [
-  "alert.create",
   "alert.read",
   "alert.activity.read",
   "alert.comment.read",

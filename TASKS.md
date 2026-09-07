@@ -13,6 +13,14 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34129373887` passes minimal HTTPS authentication, reprovisioning and
+      full-profile health, then rejects the live operator role with HTTP 409.
+      Remove the unused `alert.create` permission from that custom human role:
+      the legacy role-creation ABI intentionally rejects it, while acceptance
+      already creates Alerts using the dedicated service account and credential.
+      Actual API HTTP role creation passes against fresh native PostgreSQL 18
+      (`.tmp/ci-fix/ldap-role-native2.log`). Collect bounded redacted full-profile
+      diagnostics after acceptance failures as well as startup failures.
 - [x] Run `34127843591` intermittently fails ordinary TOTP login with a 503 and
       retains an immediate identity-keyring readiness failure. The sealed keyring
       verifier returns false on NOWAIT contention with ordinary session writes.
@@ -30,6 +38,8 @@ final-journal database gates and the remaining release boundaries.
       yet established. Retain finite readiness failure categories and duration,
       and collect notifier/provisioner state and redacted logs for the full
       profile. The collector uses at most 25 bounded read-only commands.
+      Run `34129373887` subsequently passes full-profile notifier health; the
+      earlier intermittent startup failure has not been causally reproduced.
 - [x] Run `34124857324` passes the complete HTTPS authentication smoke, then
       rejects migration resealing after the stale-membership fixture adds extra
       runtime privileges. Remove only noncanonical memberships from the three

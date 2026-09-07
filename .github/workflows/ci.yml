@@ -530,7 +530,7 @@ jobs:
         timeout-minutes: 1
         run: node scripts/deploy/identity-provider-diagnostics.mjs full
       - name: Collect bounded redacted full startup diagnostics
-        if: ${{ failure() && steps.full-stack-start.outcome == 'failure' }}
+        if: ${{ failure() && (steps.full-stack-start.outcome == 'failure' || steps.full-stack-start.outcome == 'success') }}
         timeout-minutes: 3
         run: node scripts/deploy/compose-startup-diagnostics.mjs full
       - name: Stop composed full acceptance stack
