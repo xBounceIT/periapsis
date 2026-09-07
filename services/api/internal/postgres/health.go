@@ -3,6 +3,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -322,10 +323,24 @@ func (c HealthChecker) Check(ctx context.Context) []DependencyCheck {
 		latestCreatedAt.Int64 == expectedMigrationCreatedAt &&
 		latestHash.String == expectedMigrationHash &&
 		migrationFingerprint.String == expectedMigrationFingerprint
+	failure := ""
+	switch {
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(ctx.Err(), context.DeadlineExceeded):
+		failure = "deadline_exceeded"
+	case err != nil:
+		failure = "query_unavailable"
+	case !trustedFunctionCatalogReady || !slices.Equal(trustedFunctionSourceHashes, expectedTrustedFunctionSourceHashes[:]):
+		failure = "trusted_functions_changed"
+	case len(runtimeReady) != 8 || slices.Contains(runtimeReady, false):
+		failure = "runtime_schema_unavailable"
+	case !ready:
+		failure = "migration_state_changed"
+	}
 	return []DependencyCheck{{
 		Name:    "postgresql",
 		Ready:   ready,
 		Latency: time.Since(startedAt),
+		Failure: failure,
 	}}
 }
 
@@ -334,6 +349,7 @@ type DependencyCheck struct {
 	Name    string
 	Ready   bool
 	Latency time.Duration
+	Failure string
 }
 
 // UnconfiguredHealthChecker keeps development liveness available while readiness fails closed.

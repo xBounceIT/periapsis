@@ -33,6 +33,13 @@ const runtimeDependencies = new Set([
   "platform_local_accounts",
   "federated_authentication",
 ]);
+const readinessFailures = new Set([
+  "deadline_exceeded",
+  "query_unavailable",
+  "trusted_functions_changed",
+  "runtime_schema_unavailable",
+  "migration_state_changed",
+]);
 const workerFailures = new Set([
   "audit operations worker is not configured",
   "ticket runtime is not configured",
@@ -234,6 +241,15 @@ function runtimeEvent(service, line) {
           dependency: runtimeDependencies.has(entry.dependency)
             ? entry.dependency
             : "UNCLASSIFIED",
+          failure: readinessFailures.has(entry.failure)
+            ? entry.failure
+            : "UNCLASSIFIED",
+          latencyMs:
+            Number.isSafeInteger(entry.latency_ms) &&
+            entry.latency_ms >= 0 &&
+            entry.latency_ms <= 30000
+              ? entry.latency_ms
+              : null,
         };
       }
       if (service === "worker" && workerFailures.has(entry.msg)) {

@@ -88,6 +88,28 @@ func TestHealthCheckerRequiresExactSchemaCompatibility(t *testing.T) {
 	}
 }
 
+func TestHealthCheckerClassifiesReadinessFailuresWithoutQueryDetails(t *testing.T) {
+	for _, test := range []struct {
+		failure string
+		mutate  func(*stubSchemaRow)
+	}{
+		{"deadline_exceeded", func(row *stubSchemaRow) { row.err = context.DeadlineExceeded }},
+		{"query_unavailable", func(row *stubSchemaRow) { row.err = errors.New("private-query-canary") }},
+		{"trusted_functions_changed", func(row *stubSchemaRow) { row.catalogReady = false }},
+		{"runtime_schema_unavailable", func(row *stubSchemaRow) { row.runtimeReady[0] = false }},
+		{"migration_state_changed", func(row *stubSchemaRow) { row.appliedCount = 0 }},
+	} {
+		t.Run(test.failure, func(t *testing.T) {
+			row := exactStubSchemaRow()
+			test.mutate(&row)
+			check := NewHealthChecker(&stubSchemaQuerier{row: row}).Check(context.Background())[0]
+			if check.Ready || check.Failure != test.failure {
+				t.Fatalf("readiness failure = %q", check.Failure)
+			}
+		})
+	}
+}
+
 func TestHealthCheckerRequiresEveryV52RuntimeAndTrustedRoot(t *testing.T) {
 	for index := range 8 {
 		t.Run(fmt.Sprintf("runtime_%02d", index+1), func(t *testing.T) {

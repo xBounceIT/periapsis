@@ -26,11 +26,18 @@ test("readiness diagnostics preserve only finite dependency and failure labels",
       level: "WARN",
       msg: "readiness dependency unavailable",
       dependency: "ticket_operations",
+      failure: "deadline_exceeded",
+      latency_ms: 2001,
       error: canary,
     }),
   );
   assert.deepEqual(api.events, [
-    { kind: "runtime_readiness", dependency: "ticket_operations" },
+    {
+      kind: "runtime_readiness",
+      dependency: "ticket_operations",
+      failure: "deadline_exceeded",
+      latencyMs: 2001,
+    },
   ]);
   const worker = redactComposeStartupLogs(
     "worker",
@@ -54,9 +61,13 @@ test("readiness diagnostics preserve only finite dependency and failure labels",
       level: "WARN",
       msg: "readiness dependency unavailable",
       dependency: canary,
+      failure: canary,
+      latency_ms: canary,
     }),
   );
   assert.equal(unknown.events[0].dependency, "UNCLASSIFIED");
+  assert.equal(unknown.events[0].failure, "UNCLASSIFIED");
+  assert.equal(unknown.events[0].latencyMs, null);
   assert.ok(!JSON.stringify([api, worker, unknown]).includes(canary));
 });
 

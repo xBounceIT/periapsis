@@ -878,7 +878,8 @@ func (c *protectedConfigReadiness) Check(ctx context.Context) []postgres.Depende
 	if c.logger != nil {
 		for _, check := range checks {
 			if !check.Ready {
-				c.logger.Warn("readiness dependency unavailable", "dependency", check.Name)
+				c.logger.Warn("readiness dependency unavailable", "dependency", check.Name,
+					"failure", check.Failure, "latency_ms", check.Latency.Milliseconds())
 			}
 		}
 	}

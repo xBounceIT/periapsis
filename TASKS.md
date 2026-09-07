@@ -94,6 +94,10 @@ final-journal database gates and the remaining release boundaries.
       Twenty repetitions pass, followed by the complete uncached Go suite.
       The full local gate is covered by `.tmp/ci-fix/verify-roles.log` and
       `.tmp/ci-fix/verify-roles-go.log`; Actionlint also passes.
+- [x] Run `34114592946` proves the Compose provisioning regression and a healthy
+      worker. API PostgreSQL readiness still fails. Retain finite failure
+      categories and bounded latency in its diagnostic output to distinguish
+      deadline exhaustion from catalog/runtime or migration mismatches.
 
 - [x] Share the TypeScript, Go and generation jobs between PR and complete CI;
       remove `pull-request-fast.yml` and guard expensive jobs/steps by event.
