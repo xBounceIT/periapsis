@@ -1167,6 +1167,7 @@ async function runLivePhaseThreeAcceptance({
   };
 
   await proveConcurrentClaim({
+    expectedVersion: createdAlert.claimRaceVersion,
     alertId: requiredIdentifier(
       createdAlert.claimRaceAlert.body?.id,
       "claim-race Alert ID",
@@ -2974,7 +2975,6 @@ async function createServiceAccountAlert({
     customerVisible: true,
     tags: ["api", "live-e2e"],
     customFields: { host: "live-e2e-host" },
-    assignedTeamId: assignedOperatorTeamId,
   };
   const authorization = `Bearer ${credential.body.bearerToken}`;
   const first = await request(`/api/v1/tenants/${liveTenantId}/alerts`, {
@@ -3006,6 +3006,72 @@ async function createServiceAccountAlert({
         requiredHeader(first, "etag", "Alert creation ETag"),
     "service-account idempotency replay must preserve the exact Alert response",
   );
+  const fieldsPath = `/api/v1/tenants/${liveTenantId}/objects/alert/${first.body.id}/custom-fields`;
+  const fieldProjection = await administratorRequest(
+    `${fieldsPath}?surface=detail`,
+  );
+  expectStatus(fieldProjection, 200, "ingested Alert custom-field projection");
+  const fieldETag = requiredHeader(
+    fieldProjection,
+    "etag",
+    "custom-field version",
+  );
+  const fieldsCommitted = await administratorRequest(
+    `/api/v1/tenants/${liveTenantId}/custom-field-imports`,
+    {
+      method: "POST",
+      idempotencyKey: acceptanceKey("ingested-alert-fields"),
+      json: {
+        objectType: "alert",
+        mode: "commit",
+        rows: [
+          {
+            targetId: first.body.id,
+            expectedVersion: versionFromStrongETag(
+              fieldETag,
+              "custom-field version",
+            ),
+            fields: [{ key: "host", value: "live-e2e-host" }],
+          },
+        ],
+      },
+    },
+  );
+  expectStatus(
+    fieldsCommitted,
+    202,
+    "operator validation of ingested custom fields",
+  );
+  const importId = requiredIdentifier(
+    fieldsCommitted.body?.job?.id,
+    "custom-field import job",
+  );
+  const importDeadline = Date.now() + 60_000;
+  async function waitForFields() {
+    const result = await administratorRequest(
+      `/api/v1/tenants/${liveTenantId}/custom-field-imports/${importId}?objectType=alert`,
+    );
+    expectStatus(result, 200, "custom-field import progress");
+    if (result.body?.state === "completed") {
+      assert(
+        result.body?.progress?.succeeded === 1 &&
+          result.body?.progress?.processed === 1,
+        "typed custom-field import must commit its only row",
+      );
+      return;
+    }
+    assert(
+      ["pending", "running"].includes(result.body?.state),
+      "typed custom-field import must remain actionable",
+    );
+    assert(
+      Date.now() < importDeadline,
+      "typed custom-field import did not complete",
+    );
+    await delay(250);
+    return waitForFields();
+  }
+  await waitForFields();
   const projected = await administratorRequest(
     `/api/v1/tenants/${liveTenantId}/alerts?search=${encodeURIComponent(title)}&customFieldKey=host&customFieldValue=live-e2e-host`,
   );
@@ -3027,7 +3093,6 @@ async function createServiceAccountAlert({
         source: "live-acceptance",
         sourceType: "api",
         detectedAt: observedAt,
-        assignedTeamId: assignedOperatorTeamId,
       },
     },
   );
@@ -3041,10 +3106,47 @@ async function createServiceAccountAlert({
       claimRaceAlert.body?.creator?.serviceAccountId === serviceAccountId,
     "claim race must use a separate Alert created by the ingestion principal",
   );
-  return { alert: first, claimRaceAlert };
+  const assignCreatedAlert = async (created) => {
+    const alertId = requiredIdentifier(created.body?.id, "created Alert ID");
+    const current = await administratorRequest(
+      `/api/v1/tenants/${liveTenantId}/alerts/${alertId}`,
+    );
+    expectStatus(current, 200, "ingested Alert assignment precondition");
+    const entityTag = requiredHeader(current, "etag", "created Alert version");
+    const expectedVersion = versionFromStrongETag(
+      entityTag,
+      "created Alert version",
+    );
+    const assigned = await administratorRequest(
+      `/api/v1/tenants/${liveTenantId}/alerts/${alertId}/assign`,
+      {
+        method: "POST",
+        ifMatch: entityTag,
+        json: {
+          expectedVersion,
+          assignedTeamId: assignedOperatorTeamId,
+          reason: "Route the ingested Alert to the acceptance operator team",
+        },
+      },
+    );
+    expectStatus(assigned, 200, "operator assignment of ingested Alert");
+    const assignedVersion = versionFromStrongETag(
+      requiredHeader(assigned, "etag", "assigned Alert version"),
+      "assigned Alert version",
+    );
+    assert(
+      assignedVersion === expectedVersion + 1,
+      "Alert assignment must advance exactly one version",
+    );
+    return assignedVersion;
+  };
+  await assignCreatedAlert(first);
+  const claimRaceVersion = await assignCreatedAlert(claimRaceAlert);
+  return { alert: first, claimRaceAlert, claimRaceVersion };
 }
 
 async function proveConcurrentClaim({
+  expectedVersion,
   alertId,
   liveTenantId,
   operator,
@@ -3057,17 +3159,17 @@ async function proveConcurrentClaim({
       cookie: operator.cookie,
       csrfToken: operator.csrfToken,
       origin: browserOrigin,
-      ifMatch: '"v1"',
-      json: { expectedVersion: 1, reason: "Simultaneous operator claim" },
+      ifMatch: `"v${expectedVersion}"`,
+      json: { expectedVersion, reason: "Simultaneous operator claim" },
     }),
     request(path, {
       method: "POST",
       cookie: secondOperator.cookie,
       csrfToken: secondOperator.csrfToken,
       origin: browserOrigin,
-      ifMatch: '"v1"',
+      ifMatch: `"v${expectedVersion}"`,
       json: {
-        expectedVersion: 1,
+        expectedVersion,
         reason: "Simultaneous second-operator claim",
       },
     }),
@@ -3077,16 +3179,16 @@ async function proveConcurrentClaim({
     secondOperatorClaim.response.status,
   ].toSorted((left, right) => left - right);
   assert(
-    statuses[0] === 200 && statuses[1] === 409,
-    `claim race must produce one 200 and one 409, received ${statuses.join("/")}`,
+    statuses[0] === 200 && [409, 412].includes(statuses[1]),
+    `claim race must produce one winner and one conflict or stale precondition, received ${statuses.join("/")}`,
   );
   const winner =
     operatorClaim.response.status === 200 ? operatorClaim : secondOperatorClaim;
   assert(
     [operator.userId, secondOperator.userId].includes(
       winner.body?.winner?.claimedBy,
-    ) && winner.body?.winner?.version === 2,
-    "claim race must persist exactly one participating operator as version two",
+    ) && winner.body?.winner?.version === expectedVersion + 1,
+    "claim race must persist exactly one participating operator at the next version",
   );
   const activity = await request(
     `/api/v1/tenants/${liveTenantId}/alerts/${alertId}/activities?limit=100`,
@@ -3111,10 +3213,11 @@ async function proveConcurrentClaim({
     liveTenantId,
     alertId,
     operator.cookie,
-    2,
+    expectedVersion + 1,
   );
   assert(
-    claimedSLA.aggregateVersion === 2 && claimedSLA.metrics?.length > 0,
+    claimedSLA.aggregateVersion === expectedVersion + 1 &&
+      claimedSLA.metrics?.length > 0,
     "claim race must advance the SLA projection to the persisted winner version",
   );
 }

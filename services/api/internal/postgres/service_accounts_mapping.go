@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -485,15 +486,15 @@ func mapCreatedAlert(tenantID uuid.UUID, record alertRecord) (alert.IdempotentCr
 	if err != nil {
 		return alert.IdempotentCreateResult{}, invalidAlertProjection("invalid Alert receive time")
 	}
-	customFields, err := decodeTicketMap(record.customFields)
+	customFields, err := decodeAlertJSONMap(record.customFields)
 	if err != nil {
 		return alert.IdempotentCreateResult{}, err
 	}
-	customerCustomFields, err := decodeTicketMap(record.customerCustomFields)
+	customerCustomFields, err := decodeAlertJSONMap(record.customerCustomFields)
 	if err != nil {
 		return alert.IdempotentCreateResult{}, err
 	}
-	rawPayload, err := decodeTicketMap(record.rawPayload)
+	rawPayload, err := decodeAlertJSONMap(record.rawPayload)
 	if err != nil {
 		return alert.IdempotentCreateResult{}, err
 	}
@@ -514,6 +515,19 @@ func mapCreatedAlert(tenantID uuid.UUID, record alertRecord) (alert.IdempotentCr
 		ResolvedAt: optionalDomainTime(record.resolvedAt), ClaimedAt: optionalDomainTime(record.claimedAt), CreatedAt: createdAt,
 		UpdatedAt: updatedAt, Version: int64(record.version),
 	}, Replayed: record.replayed}, nil
+}
+
+func decodeAlertJSONMap(value []byte) (map[string]any, error) {
+	result := make(map[string]any)
+	if len(value) == 0 {
+		return result, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.UseNumber()
+	if !json.Valid(value) || decoder.Decode(&result) != nil {
+		return nil, invalidAlertProjection("invalid Alert JSON projection")
+	}
+	return result, nil
 }
 
 func mapCredentialPermissions(keys, scopes []string) ([]authorization.ScopedPermission, error) {

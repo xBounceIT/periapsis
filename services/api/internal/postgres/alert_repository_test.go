@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/netip"
 	"testing"
@@ -45,6 +46,9 @@ func (s *alertMutationQueriesStub) CreateTenantAlertAsHuman(
 	params dbsql.CreateTenantAlertAsHumanParams,
 ) (*dbsql.CreateTenantAlertAsHumanRow, error) {
 	s.humanCalls++
+	if params.Tags == nil {
+		return nil, errors.New("Alert tags must reach PostgreSQL as a non-null array")
+	}
 	s.humanArgs = params
 	return s.humanRow, nil
 }
@@ -54,6 +58,9 @@ func (s *alertMutationQueriesStub) CreateTenantAlertAsServiceAccount(
 	params dbsql.CreateTenantAlertAsServiceAccountParams,
 ) (*dbsql.CreateTenantAlertAsServiceAccountRow, error) {
 	s.machineCalls++
+	if params.Tags == nil {
+		return nil, errors.New("Alert tags must reach PostgreSQL as a non-null array")
+	}
 	s.machineArgs = params
 	s.machineDigest = append([]byte(nil), params.SecretDigest...)
 	return s.machineRow, nil
@@ -271,6 +278,24 @@ func adapterHumanAlertRow(
 		CreatedByUserID: toDatabaseUUID(userID), CreatedByMembershipID: toDatabaseUUID(membershipID),
 		DetectedAt: databaseTime(now), ReceivedAt: databaseTime(now), CreatedAt: databaseTime(now),
 		UpdatedAt: databaseTime(now), Version: 1,
+	}
+}
+
+func TestCreatedAlertPreservesJSONNumberPrecision(t *testing.T) {
+	tenantID, alertID, principalID := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	row := adapterMachineAlertRow(alertID, principalID, alert.CreatePayload{Title: "Numeric payload", Severity: alert.SeverityHigh}, time.Now().UTC().Truncate(time.Microsecond))
+	row.CustomFields = []byte(`{"count":9007199254740993}`)
+	row.RawPayload = []byte(`{"event":{"sequence":1,"fraction":0.001}}`)
+	result, err := mapServiceAccountCreatedAlert(tenantID, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Alert.CustomFields["count"] != json.Number("9007199254740993") {
+		t.Fatal("custom-field integer lost precision")
+	}
+	event := result.Alert.RawPayload["event"].(map[string]any)
+	if event["sequence"] != json.Number("1") || event["fraction"] != json.Number("0.001") {
+		t.Fatal("raw payload numeric representation changed")
 	}
 }
 

@@ -452,10 +452,16 @@ func decodeSLAWorkerTriggers(
 		cursorByID[cursor.TriggerDefinitionID] = cursor
 	}
 	bindings := make([]kernel.TriggerBinding, len(documents))
+	seen := make(map[uuid.UUID]struct{}, len(documents))
 	for index, document := range documents {
-		if document.Position != uint16(index) || document.MetricDefinitionID != uuid.UUID(metric.ID().Bytes()) {
+		// Positions belong to the whole policy; a metric receives an ordered subset.
+		if (index > 0 && document.Position <= documents[index-1].Position) || document.MetricDefinitionID != uuid.UUID(metric.ID().Bytes()) {
 			return nil, errors.New("database returned an unordered SLA worker trigger")
 		}
+		if _, duplicate := seen[document.ID]; duplicate {
+			return nil, errors.New("database returned duplicate SLA worker triggers")
+		}
+		seen[document.ID] = struct{}{}
 		definition, err := decodeSLAWorkerTrigger(document, metric)
 		if err != nil {
 			return nil, err

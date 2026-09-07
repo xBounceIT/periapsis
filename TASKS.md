@@ -13,6 +13,40 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34159066895` passes composed notification preview/test-send and SLA
+      setup/simulation, then acceptance includes operator-team assignment in
+      machine Alert ingestion and correctly receives 403. Create/replay through
+      the bearer boundary first, then assign through the authorized human endpoint.
+      Derive concurrent claim and SLA projection versions from that assignment.
+      The native preflight also exposes a 503 after persistence: HTTP retains
+      json.Number while the Alert mapper used float64, so numeric payloads fail
+      equality checks. Preserve exact numbers in the Alert projection and compare
+      decimal values across PostgreSQL jsonb spelling changes, including large
+      integers and nested arrays/objects. Keep machine assignment forbidden.
+      Exercise the implemented operator custom-field import and its worker before
+      querying the typed filter index; raw ingestion and typed value publication
+      are separate boundaries. Automatic typed-field publication during machine
+      ingestion still needs explicit machine attribution in the typed-value schema.
+      Individual object-field editing also remains product work: its current
+      CommitObjectFields adapter is deliberately disabled until an object-scoped
+      mutation ABI exists. Neither boundary is enabled by broadening privileges.
+      Preserve empty Alert tags as an empty SQL array for both human and machine
+      adapters; cloning into a nil slice caused otherwise valid minimal creates
+      to violate the database's non-null payload contract.
+      A concurrent claim loser may return the contract's 412 when If-Match is
+      stale, or 409 for an already claimed resource. Acceptance still requires
+      exactly one 200, one claimed activity and the winner's exact SLA version.
+      Existing SLA state carries policy-global trigger positions within each
+      metric's subset. Restore increasing positions without requiring a zero
+      origin; reject duplicate positions, identities and descending order.
+      Apply the same rule to API runtime reads and normalize persisted cursor
+      instants to UTC without changing their value or microsecond precision.
+      The native API/worker preflight now passes exact bearer replay, typed-field
+      import/search, operator assignment, concurrent claim and SLA projection.
+      One preceding native run returned 401 for the losing LDAP session; retain
+      the exact Linux result rather than accepting authentication failure as a
+      valid claim conflict.
+      Retain the subsequent complete Linux acceptance result.
 - [ ] Native SLA administration exposes a forbidden direct read of identity
       authority tables. Migration 0244 adds a current-tenant/current-membership
       epoch reader with API-only execution; direct table reads remain forbidden.

@@ -3,7 +3,6 @@ package alert
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -311,8 +310,8 @@ func alertMatchesCreateInput(value Alert, input CreateInput) bool {
 		equalOptionalText(value.Description, input.Description) &&
 		equalOptionalText(value.DeduplicationKey, input.DeduplicationKey) &&
 		equalOptionalText(value.Classification, input.Classification) &&
-		slices.Equal(value.Tags, input.Tags) && reflect.DeepEqual(value.CustomFields, input.CustomFields) &&
-		reflect.DeepEqual(value.RawPayload, input.RawPayload) && equalOptionalUUID(value.AssignedTeamID, input.AssignedTeamID) &&
+		slices.Equal(value.Tags, input.Tags) && equalJSONMaps(value.CustomFields, input.CustomFields) &&
+		equalJSONMaps(value.RawPayload, input.RawPayload) && equalOptionalUUID(value.AssignedTeamID, input.AssignedTeamID) &&
 		equalOptionalUUID(value.AssigneeUserID, input.AssigneeUserID) &&
 		(input.WorkflowID == nil || value.WorkflowID == *input.WorkflowID) &&
 		(input.DetectedAt.IsZero() || value.DetectedAt.Equal(input.DetectedAt))

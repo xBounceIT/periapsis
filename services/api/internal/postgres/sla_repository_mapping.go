@@ -989,10 +989,16 @@ func decodeSLATriggerBindings(
 		cursorByID[cursor.TriggerDefinitionID] = cursor
 	}
 	result := make([]kernel.TriggerBinding, len(triggers))
+	seen := make(map[uuid.UUID]struct{}, len(triggers))
 	for index, document := range triggers {
-		if document.Position != uint16(index) {
+		// Each metric contains an ordered subset of policy-global positions.
+		if index > 0 && document.Position <= triggers[index-1].Position {
 			return nil, errors.New("database returned unordered SLA triggers")
 		}
+		if _, duplicate := seen[document.ID]; duplicate {
+			return nil, errors.New("database returned duplicate SLA triggers")
+		}
+		seen[document.ID] = struct{}{}
 		definition, err := decodeSLATrigger(document, metric)
 		if err != nil {
 			return nil, err
@@ -1002,6 +1008,9 @@ func decodeSLATriggerBindings(
 			return nil, err
 		}
 		if stored, exists := cursorByID[document.ID]; exists {
+			if !normalizeSLAInstantPointer(stored.LastObservedAt) || !normalizeSLAInstantPointer(stored.LastFiredAt) {
+				return nil, errors.New("database returned an invalid SLA trigger cursor instant")
+			}
 			var lastState kernel.MetricState
 			if stored.LastState != nil {
 				lastState = *stored.LastState

@@ -28,6 +28,40 @@ func TestDecodeSLAWorkerStateAcceptsExactPinnedProjection(t *testing.T) {
 	}
 }
 
+func TestDecodeSLAWorkerStateUsesPolicyTriggerPositions(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		positions []uint16
+		wantError bool
+	}{
+		{"later metric trigger", []uint16{2}, false},
+		{"duplicate position", []uint16{2, 2}, true},
+		{"descending position", []uint16{2, 1}, true},
+		{"duplicate identity at distinct positions", []uint16{2, 4}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			document, tenantID, instanceID := slaWorkerCursorStateFixture(t, time.Date(2026, time.August, 26, 8, 0, 0, 0, time.UTC))
+			trigger := document.Metrics[0].Triggers[0]
+			document.Metrics[0].Triggers = nil
+			for _, position := range test.positions {
+				trigger.Position = position
+				document.Metrics[0].Triggers = append(document.Metrics[0].Triggers, trigger)
+			}
+			raw, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, metrics, err := decodeSLAWorkerState(tenantID, instanceID, 7, raw)
+			if (err != nil) != test.wantError {
+				t.Fatalf("decode error = %v, want error %v", err, test.wantError)
+			}
+			if !test.wantError && len(metrics[0].Triggers) != 1 {
+				t.Fatal("trigger was lost")
+			}
+		})
+	}
+}
+
 func TestDecodeSLAWorkerStateNormalizesCursorInstantsWithoutChangingTime(t *testing.T) {
 	now := time.Date(2026, time.August, 26, 8, 0, 0, 123000, time.UTC)
 	for _, test := range []struct {
