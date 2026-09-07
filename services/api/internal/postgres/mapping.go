@@ -209,27 +209,9 @@ func mapPermissions(values []string) ([]authorization.Permission, error) {
 	seen := make(map[authorization.Permission]struct{}, len(values))
 	for _, value := range values {
 		permission := authorization.Permission(value)
-		switch permission {
-		case authorization.PermissionPlatformTenantRead,
-			authorization.PermissionPlatformTenantCreate,
-			authorization.PermissionPlatformTenantManage,
-			authorization.PermissionPlatformTenantAccess,
-			authorization.PermissionPlatformOperatorTeamRead,
-			authorization.PermissionPlatformOperatorTeamManage,
-			authorization.PermissionPlatformIdentityProviderRead,
-			authorization.PermissionPlatformIdentityProviderManage,
-			authorization.PermissionPlatformIdentityProviderTest,
-			authorization.PermissionPlatformIdentityBindingRead,
-			authorization.PermissionPlatformIdentityBindingManage,
-			authorization.PermissionPlatformIdentityPolicyRead,
-			authorization.PermissionPlatformIdentityPolicyManage,
-			authorization.PermissionPlatformIdentityAccountRead,
-			authorization.PermissionPlatformIdentityAccountManage,
-			authorization.PermissionPlatformNotificationManage,
-			authorization.PermissionPlatformAuditRead,
-			authorization.PermissionPlatformAuditExport,
-			authorization.PermissionPlatformAuditRetentionManage:
-		default:
+		// Validate database grants against the same closed catalog used by
+		// authorization, so new catalog entries cannot break session hydration.
+		if err := (authorization.Evaluator{}).Require([]authorization.Permission{permission}, permission); err != nil {
 			return nil, fmt.Errorf("database returned unknown permission %q", value)
 		}
 		if _, duplicate := seen[permission]; duplicate {

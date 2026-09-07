@@ -110,6 +110,12 @@ func TestMapPermissionsRecognizesClosedPlatformPermissionCatalog(t *testing.T) {
 		authorization.PermissionPlatformAuditRead,
 		authorization.PermissionPlatformAuditExport,
 		authorization.PermissionPlatformAuditRetentionManage,
+		authorization.PermissionPlatformUserRead,
+		authorization.PermissionPlatformOperationsRead,
+		authorization.PermissionPlatformSettingsRead,
+		authorization.PermissionPlatformSettingsManage,
+		authorization.PermissionPlatformFeatureFlagRead,
+		authorization.PermissionPlatformFeatureFlagManage,
 	}
 	values := make([]string, 0, len(want)+1)
 	for _, permission := range want {

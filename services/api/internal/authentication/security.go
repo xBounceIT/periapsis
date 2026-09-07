@@ -192,10 +192,9 @@ func credentialTOTPContext(credentialID, userID uuid.UUID) string {
 	return "totp_credential:" + credentialID.String() + ":user:" + userID.String()
 }
 
-// CredentialTOTPContextAtRevision is the authenticated context for newly
-// written TOTP factors. The legacy context remains readable so deployed
-// factors can be rotated without a flag day; every new factor binds its
-// immutable owner, identifier, and security revision.
+// CredentialTOTPContextAtRevision binds administrative TOTP enrollment to the
+// immutable owner, identifier, and security revision. The original context
+// remains readable and is required by the sealed, unversioned bootstrap ABI.
 func CredentialTOTPContextAtRevision(
 	credentialID uuid.UUID,
 	userID uuid.UUID,

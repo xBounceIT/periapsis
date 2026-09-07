@@ -206,6 +206,21 @@ func TestLogoutRevokesAnySessionWithoutLiveAuthority(t *testing.T) {
 	}
 }
 
+func TestLogoutAcceptsTheHTTPRequestIDAsDefaultCorrelation(t *testing.T) {
+	sessionToken, csrfToken := logoutTokens(0x21, 0x41)
+	store := localLogoutStore(sessionToken, csrfToken)
+	service := newLogoutService(t, store, nil, nil, nil)
+	event := logoutEvent()
+	event.CorrelationID = event.RequestID
+	result, err := service.Logout(context.Background(), sessionToken, csrfToken, event)
+	if err != nil || !result.LocalRevoked || store.revokeCalls != 1 {
+		t.Fatalf("logout with default HTTP correlation = %s, %v", result, err)
+	}
+	if store.command.Audit != event {
+		t.Fatal("logout changed the HTTP audit correlation")
+	}
+}
+
 func TestLogoutRejectsCSRFBeforeLocalMutation(t *testing.T) {
 	sessionToken, csrfToken := logoutTokens(0x22, 0x42)
 	_, wrongCSRF := logoutTokens(0x23, 0x43)

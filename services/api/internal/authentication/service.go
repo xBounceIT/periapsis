@@ -524,10 +524,9 @@ func (s *Service) ConfirmBootstrap(
 	if err != nil {
 		return BootstrapResult{}, ErrUnavailable
 	}
-	confirmedContext, err := CredentialTOTPContextAtRevision(totpCredentialID, userID, 1)
-	if err != nil {
-		return BootstrapResult{}, ErrUnavailable
-	}
+	// The sealed, unversioned bootstrap ABI requires the original owner/factor
+	// context. Revision-bound writes belong to the administrative enrollment ABI.
+	confirmedContext := credentialTOTPContext(totpCredentialID, userID)
 	confirmedTOTP, err := s.cipher.EncryptTOTP(confirmedContext, secret)
 	if err != nil {
 		return BootstrapResult{}, ErrUnavailable
@@ -809,7 +808,7 @@ func (s *Service) RotateCurrentSession(
 		return SessionCredential{}, ErrUnavailable
 	}
 	csrfToken := s.csrfForSession(newSessionID)
-	idleExpiresAt := now.Add(s.sessionIdleTimeout)
+	idleExpiresAt := now.Add(s.sessionIdleTimeout).Truncate(time.Millisecond)
 	if idleExpiresAt.After(current.AbsoluteExpiresAt) {
 		idleExpiresAt = current.AbsoluteExpiresAt
 	}
@@ -865,7 +864,7 @@ func (s *Service) Authenticate(ctx context.Context, sessionToken string) (Sessio
 	if err := s.revalidateFederatedSession(ctx, session); err != nil {
 		return Session{}, err
 	}
-	idleExpiresAt := now.Add(s.sessionIdleTimeout)
+	idleExpiresAt := now.Add(s.sessionIdleTimeout).Truncate(time.Millisecond)
 	if idleExpiresAt.After(session.AbsoluteExpiresAt) {
 		idleExpiresAt = session.AbsoluteExpiresAt
 	}
@@ -1020,6 +1019,9 @@ func (s *Service) SwitchTenant(
 	if tenantID == uuid.Nil {
 		return SessionCredential{}, ErrInvalidInput
 	}
+	if tenantID.Version() != 7 {
+		return SessionCredential{}, ErrForbidden
+	}
 	if session.ActiveTenantID != nil && *session.ActiveTenantID == tenantID {
 		return SessionCredential{
 			Session: session, SessionToken: sessionToken, CSRFToken: s.csrfForSession(session.ID),
@@ -1048,7 +1050,7 @@ func (s *Service) SwitchTenant(
 	}
 	newCSRF := s.csrfForSession(newSessionID)
 	now := s.now().UTC()
-	idleExpiresAt := now.Add(s.sessionIdleTimeout)
+	idleExpiresAt := now.Add(s.sessionIdleTimeout).Truncate(time.Millisecond)
 	if idleExpiresAt.After(session.AbsoluteExpiresAt) {
 		idleExpiresAt = session.AbsoluteExpiresAt
 	}
@@ -1125,8 +1127,8 @@ func (s *Service) newSessionMaterial(now time.Time, method string) (SessionMater
 	csrf := s.csrfForSession(id)
 	return SessionMaterial{
 		ID: id, FamilyID: familyID, TokenDigest: digest(token), CSRFDigest: digest(csrf),
-		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(s.sessionIdleTimeout),
-		AbsoluteExpiresAt: now.Add(s.sessionAbsoluteTimeout), AuthenticationMethod: method,
+		CreatedAt: now, LastSeenAt: now, IdleExpiresAt: now.Add(s.sessionIdleTimeout).Truncate(time.Millisecond),
+		AbsoluteExpiresAt: now.Add(s.sessionAbsoluteTimeout).Truncate(time.Millisecond), AuthenticationMethod: method,
 	}, token, csrf, nil
 }
 

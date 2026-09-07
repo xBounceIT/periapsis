@@ -194,17 +194,22 @@ assert(
   "tenant creation must atomically grant the creator tenant_admin membership",
 );
 
-expectStatus(
-  await request("/api/v1/auth/session/tenant", {
-    method: "PUT",
-    cookie,
-    csrfToken,
-    json: { tenantId: randomUUID() },
-    origin: browserOrigin,
-  }),
-  403,
-  "switching to a tenant without membership",
-);
+const unknownTenantID = randomUUID();
+const unknownV7TenantID =
+  unknownTenantID.slice(0, 14) + "7" + unknownTenantID.slice(15);
+for (const tenantId of [unknownTenantID, unknownV7TenantID]) {
+  expectStatus(
+    await request("/api/v1/auth/session/tenant", {
+      method: "PUT",
+      cookie,
+      csrfToken,
+      json: { tenantId },
+      origin: browserOrigin,
+    }),
+    403,
+    "switching to a tenant without membership",
+  );
+}
 
 const switched = await request("/api/v1/auth/session/tenant", {
   method: "PUT",
@@ -451,9 +456,14 @@ function issuedCookie(result, operation) {
     /;\s*Path=\/(?:;|$)/i.test(setCookie),
     `${operation} cookie must use Path=/`,
   );
+  const secureOrigin = new URL(browserOrigin).protocol === "https:";
   assert(
-    !setCookie.startsWith("__Host-"),
-    `${operation} must not emit an invalid __Host- cookie over development HTTP`,
+    secureOrigin
+      ? setCookie.startsWith("__Host-periapsis_session=") &&
+          /;\s*Secure(?:;|$)/i.test(setCookie) &&
+          !/;\s*Domain=/i.test(setCookie)
+      : !setCookie.startsWith("__Host-"),
+    `${operation} cookie must match the browser origin security`,
   );
   return setCookie.split(";", 1)[0];
 }

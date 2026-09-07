@@ -580,6 +580,44 @@ func TestBootstrapCompletionInvalidatesConcurrentStaleReadinessRefresh(t *testin
 	}
 }
 
+func TestBootstrapConfirmationBindsTOTPToTheBootstrapDatabaseABI(t *testing.T) {
+	now := time.Date(2026, 9, 7, 12, 0, 0, 123456789, time.UTC)
+	enrollmentID := uuid.Must(uuid.NewV7())
+	confirmed := false
+	repository := &repositoryStub{
+		getBootstrapEnrollment: func(context.Context, []byte, []byte, time.Time) (StoredBootstrapEnrollment, error) {
+			return StoredBootstrapEnrollment{
+				ID: enrollmentID, CanonicalEmail: "admin@example.test",
+				EncryptedTOTP: EncryptedSecret{Ciphertext: []byte("secret")},
+			}, nil
+		},
+		confirmBootstrap: func(_ context.Context, params ConfirmBootstrapParams) (Session, error) {
+			confirmed = true
+			if !params.Session.IdleExpiresAt.Equal(now.Add(30*time.Minute).Truncate(time.Millisecond)) ||
+				!params.Session.AbsoluteExpiresAt.Equal(now.Add(8*time.Hour).Truncate(time.Millisecond)) {
+				t.Fatal("bootstrap session deadlines must use the database millisecond precision")
+			}
+			want := "totp_credential:" + params.TOTPCredentialID.String() + ":user:" + params.UserID.String()
+			if params.TOTPCredentialID == params.UserID || string(params.TOTP.AAD) != want {
+				t.Fatal("bootstrap TOTP does not bind its factor and owner using the database ABI")
+			}
+			if params.AcceptedTOTPCounter != 100 || len(params.RecoveryCodes) != 10 {
+				t.Fatal("bootstrap lost its MFA proof or recovery material")
+			}
+			return Session{}, nil
+		},
+	}
+	const authority = "bootstrap-authority-value-000000"
+	service := newAuthenticationServiceAt(t, repository, &passwordEngineStub{}, totpEngineStub{counter: 100}, digest(authority), now)
+	_, err := service.ConfirmBootstrap(context.Background(), authority, BootstrapConfirmation{
+		EnrollmentToken: validTestToken(0x5e), Email: "admin@example.test",
+		DisplayName: "Platform Admin", Password: "long password value", Code: "123456", Event: testEvent(),
+	})
+	if err != nil || !confirmed {
+		t.Fatalf("bootstrap confirmation did not reach its database boundary: %v", err)
+	}
+}
+
 func TestConcurrentForcedReadinessUsesOneDatabaseVerification(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -1610,6 +1648,90 @@ func TestBootstrapConfirmationIsOneShot(t *testing.T) {
 	}
 	if _, err := service.ConfirmBootstrap(context.Background(), authority, input); !errors.Is(err, ErrConflict) {
 		t.Fatalf("second ConfirmBootstrap() error = %v, want conflict", err)
+	}
+}
+
+func TestSessionUpdatesUseMillisecondDeadlinesAndPreserveAbsoluteExpiry(t *testing.T) {
+	for _, operation := range []string{"touch", "rotate", "switch"} {
+		for _, remaining := range []time.Duration{10 * time.Minute, 8 * time.Hour} {
+			t.Run(operation+"/"+remaining.String(), func(t *testing.T) {
+				now := time.Date(2026, 9, 7, 12, 0, 0, 123456789, time.UTC)
+				absolute := now.Add(remaining).Truncate(time.Millisecond)
+				wantIdle := now.Add(30 * time.Minute).Truncate(time.Millisecond)
+				if wantIdle.After(absolute) {
+					wantIdle = absolute
+				}
+				csrf := validTestToken(0x45)
+				check := func(idle, expiry time.Time) {
+					t.Helper()
+					if !idle.Equal(wantIdle) || !expiry.Equal(absolute) {
+						t.Fatalf("deadlines = (%v, %v), want (%v, %v)", idle, expiry, wantIdle, absolute)
+					}
+				}
+				touched, rotated, switched := false, false, false
+				repository := &repositoryStub{
+					resolveSession: func(context.Context, []byte, time.Time) (Session, error) {
+						return Session{
+							ID: uuid.Must(uuid.NewV7()), User: User{ID: uuid.Must(uuid.NewV7())}, CSRFDigest: digest(csrf),
+							AuthenticationMethod: "totp", IdleExpiresAt: absolute, AbsoluteExpiresAt: absolute,
+						}, nil
+					},
+					touchSession: func(_ context.Context, _ []byte, observed, idle time.Time) error {
+						touched = true
+						check(idle, absolute)
+						if !observed.Equal(now) {
+							t.Fatal("session observation time lost precision")
+						}
+						return nil
+					},
+					rotateSession: func(_ context.Context, params RotateSessionParams) (Session, error) {
+						rotated = true
+						check(params.IdleExpiresAt, params.AbsoluteExpiresAt)
+						return Session{}, nil
+					},
+					switchActiveTenant: func(_ context.Context, params SwitchTenantParams) (Session, error) {
+						switched = true
+						check(params.IdleExpiresAt, params.AbsoluteExpiresAt)
+						return Session{}, nil
+					},
+				}
+				service := newAuthenticationServiceAt(t, repository, &passwordEngineStub{}, totpEngineStub{}, digest("bootstrap-authority-value-000000"), now)
+				var err error
+				switch operation {
+				case "touch":
+					_, err = service.Authenticate(context.Background(), validTestToken(0x44))
+				case "rotate":
+					_, err = service.RotateCurrentSession(context.Background(), validTestToken(0x44), testEvent())
+				case "switch":
+					_, err = service.SwitchTenant(context.Background(), validTestToken(0x44), csrf, uuid.Must(uuid.NewV7()), testEvent())
+				}
+				if err != nil || !touched || rotated != (operation == "rotate") || switched != (operation == "switch") {
+					t.Fatalf("session update did not reach its expected database boundaries: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestSwitchTenantDeniesIdentifiersOutsideTheDatabaseUUIDNamespace(t *testing.T) {
+	now := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	csrf := validTestToken(0x45)
+	repository := &repositoryStub{
+		resolveSession: func(context.Context, []byte, time.Time) (Session, error) {
+			return Session{
+				ID: uuid.Must(uuid.NewV7()), CSRFDigest: digest(csrf), AuthenticationMethod: "bootstrap_totp",
+				IdleExpiresAt: now.Add(time.Hour), AbsoluteExpiresAt: now.Add(8 * time.Hour),
+			}, nil
+		},
+		switchActiveTenant: func(context.Context, SwitchTenantParams) (Session, error) {
+			t.Fatal("an impossible tenant identifier reached the database rotation ABI")
+			return Session{}, nil
+		},
+	}
+	service := newAuthenticationServiceAt(t, repository, &passwordEngineStub{}, totpEngineStub{}, digest("bootstrap-authority-value-000000"), now)
+	_, err := service.SwitchTenant(context.Background(), validTestToken(0x44), csrf, uuid.New(), testEvent())
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("SwitchTenant() = %v, want forbidden", err)
 	}
 }
 

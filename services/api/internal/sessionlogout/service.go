@@ -915,7 +915,7 @@ func validOpaqueBytes(value []byte) bool {
 
 func validEvent(value EventContext) bool {
 	if !validEntityID(value.RequestID) || !validEntityID(value.CorrelationID) ||
-		value.RequestID == value.CorrelationID || !value.RemoteAddress.IsValid() ||
+		!value.RemoteAddress.IsValid() ||
 		value.UserAgent == "" || len(value.UserAgent) > 512 || !utf8.ValidString(value.UserAgent) {
 		return false
 	}

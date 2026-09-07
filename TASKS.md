@@ -13,6 +13,23 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34121834068` reaches healthy containers and host HTTPS, then fails
+      bootstrap confirmation. Native PostgreSQL reproduces three independent
+      blockers: bootstrap TOTP AAD must match the sealed unversioned bootstrap
+      ABI, live session deadlines must have millisecond precision, and session
+      hydration must accept the complete closed platform permission catalog.
+      Preserve revision-bound administrative TOTP enrollment, absolute session
+      limits and denial of unknown permissions. Cover creation, touch, rotation
+      and tenant switching with focused regressions. Update the auth smoke cookie
+      assertion to require the secure `__Host-` policy on HTTPS while preserving
+      its HTTP development check. Deny non-v7 tenant targets before the database
+      ABI and prove both non-v7 and unknown-v7 denials in the smoke. Accept the
+      HTTP request ID as the default logout audit correlation, as the database
+      contract already does. Full native authentication smoke passes on a fresh
+      PostgreSQL 18 database with the real API binary and loopback proxy headers
+      (`.tmp/ci-fix/auth-logout-native.log`); the full repository gate passes
+      (`.tmp/ci-fix/verify-bootstrap-session.log`), followed by focused tests and
+      vet for the tenant/logout follow-ups. Linux Compose acceptance remains required.
 - [x] Run `34120394216` shows the edge exits before serving HTTPS. The pinned
       official Caddy image history confirms `cap_net_bind_service=+ep` on its
       executable, incompatible with the required empty capability bounding set.
