@@ -10,8 +10,19 @@ import { inflateRawSync } from "node:zlib";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const reviewedCommit = "3d452510f185151f60263d004fe16a7d539f7655";
+const reviewedGeneratedCommit = "d451eab648e1d2c00459630c1bf3d33e3e6825aa";
+const reviewedContractHashes = new Map([
+  [
+    reviewedCommit,
+    "0343824c930de31260957c38d15fe3380ffc42fa86d98f31cb65e13fa127a49c",
+  ],
+  [
+    reviewedGeneratedCommit,
+    "50c8f68a5ad110373995850d41e6387cc1de58b1345140dcf7ace06a60f8c2e4",
+  ],
+]);
 const reviewedIgnoreSha256 =
-  "b35a9edb198c64780f2fed4d2142a5bef1710a22dd3acba988642863dca7f3d7";
+  "26771cb8c7aebb80653333959735cc28abb526a754a6cc76907e45ad412bb266";
 const ignorePath = join(root, ".gitleaksignore");
 const ignoreSource = (await readFile(ignorePath, "utf8")).replaceAll(
   "\r\n",
@@ -46,9 +57,8 @@ function parseReview(source) {
       "Only exact commit:file:rule:line fingerprints are permitted",
     );
     const [, commit, file, rule, lineNumber] = match;
-    assert.equal(
-      commit,
-      reviewedCommit,
+    assert.ok(
+      reviewedContractHashes.has(commit),
       "New historical exceptions need explicit review",
     );
     assert.ok(!file.startsWith("/") && !file.split("/").includes(".."));
@@ -171,16 +181,24 @@ test("generic control sampling fails closed after a bounded number of unsuitable
   assert.ok(!qualifiesGenericControl(balancedHex.slice(1)));
 });
 
-test("historical Gitleaks review is the exact 40-fingerprint inventory for 41 findings", () => {
+test("historical Gitleaks review is the exact 41-fingerprint inventory for 42 findings", () => {
   assert.equal(sha256(ignoreSource), reviewedIgnoreSha256);
-  assert.equal(entries.length, 40);
+  assert.equal(entries.length, 41);
+  assert.equal(
+    entries.filter((entry) => entry.commit === reviewedCommit).length,
+    40,
+  );
+  assert.equal(
+    entries.filter((entry) => entry.commit === reviewedGeneratedCommit).length,
+    1,
+  );
   assert.equal(
     entries.filter((entry) => entry.rule === "private-key").length,
     1,
   );
   assert.equal(
     entries.filter((entry) => entry.file.endsWith("api.gen.go")).length,
-    3,
+    4,
   );
 });
 
@@ -267,14 +285,12 @@ test(
     const initialHead = run("git", ["rev-parse", "HEAD"]).trim();
     const sources = new Map();
     for (const entry of entries) {
-      if (!sources.has(entry.file)) {
-        sources.set(
-          entry.file,
-          run("git", ["show", `${entry.commit}:${entry.file}`]),
-        );
+      const sourceKey = `${entry.commit}:${entry.file}`;
+      if (!sources.has(sourceKey)) {
+        sources.set(sourceKey, run("git", ["show", sourceKey]));
       }
       const excerpt = sources
-        .get(entry.file)
+        .get(sourceKey)
         .split("\n")
         .slice(entry.start - 1, entry.end)
         .join("\n");
@@ -284,39 +300,41 @@ test(
         `Historical source attestation failed: ${entry.file}:${entry.start}`,
       );
     }
-    const generated = sources.get("services/api/internal/contract/api.gen.go");
-    const compressed = /var swaggerSpec = \[\]string\{([\s\S]*?)\n\}/u.exec(
-      generated,
-    );
-    assert.ok(
-      compressed,
-      "Historical generated source must contain the actual embedded contract",
-    );
-    const encoded = [...compressed[1].matchAll(/"([A-Za-z0-9+/=]+)"/gu)]
-      .map((match) => match[1])
-      .join("");
-    const decoded = inflateRawSync(Buffer.from(encoded, "base64"), {
-      maxOutputLength: 20_000_000,
-    });
-    const spec = JSON.parse(decoded);
-    assert.equal(spec.openapi, "3.1.0");
-    assert.equal(Object.keys(spec.paths).length, 360);
-    assert.equal(
-      sha256(decoded),
-      "0343824c930de31260957c38d15fe3380ffc42fa86d98f31cb65e13fa127a49c",
-    );
-    for (const entry of entries.filter((candidate) =>
-      candidate.file.endsWith("api.gen.go"),
-    )) {
-      const offset =
-        generated
-          .split("\n")
-          .slice(0, entry.start - 1)
-          .join("\n").length + 1;
-      assert.ok(
-        offset > compressed.index &&
-          offset < compressed.index + compressed[0].length,
+    for (const [commit, contractHash] of reviewedContractHashes) {
+      const generated = sources.get(
+        `${commit}:services/api/internal/contract/api.gen.go`,
       );
+      const compressed = /var swaggerSpec = \[\]string\{([\s\S]*?)\n\}/u.exec(
+        generated,
+      );
+      assert.ok(
+        compressed,
+        "Historical generated source must contain the actual embedded contract",
+      );
+      const encoded = [...compressed[1].matchAll(/"([A-Za-z0-9+/=]+)"/gu)]
+        .map((match) => match[1])
+        .join("");
+      const decoded = inflateRawSync(Buffer.from(encoded, "base64"), {
+        maxOutputLength: 20_000_000,
+      });
+      const spec = JSON.parse(decoded);
+      assert.equal(spec.openapi, "3.1.0");
+      assert.equal(Object.keys(spec.paths).length, 360);
+      assert.equal(sha256(decoded), contractHash);
+      for (const entry of entries.filter(
+        (candidate) =>
+          candidate.commit === commit && candidate.file.endsWith("api.gen.go"),
+      )) {
+        const offset =
+          generated
+            .split("\n")
+            .slice(0, entry.start - 1)
+            .join("\n").length + 1;
+        assert.ok(
+          offset > compressed.index &&
+            offset < compressed.index + compressed[0].length,
+        );
+      }
     }
 
     await mkdir(repository, { mode: 0o700 });
@@ -435,7 +453,7 @@ test(
       reviewedIgnoreSha256,
     );
     t.diagnostic(
-      "40 historical source spans attested; 40 fresh positives; exact control ignore 0; 40 replacement positives; actual repository history 0. All child commands terminal; ephemeral fixtures removed on completion.",
+      "41 historical source spans attested; 41 fresh positives; exact control ignore 0; 41 replacement positives; actual repository history 0. All child commands terminal; ephemeral fixtures removed on completion.",
     );
   },
 );

@@ -4050,14 +4050,14 @@ function assertAuditContainsResourceActions(events, fragments) {
   }
 }
 
-async function listAllTenantAudit(liveTenantId) {
+async function listAllTenantAudit(liveTenantId, actionPrefix = "") {
   const items = [];
   const sequences = new Set();
   let afterSequence = 0;
   for (let page = 0; page < 50; page += 1) {
     // eslint-disable-next-line no-await-in-loop -- each page cursor comes from the prior response.
     const result = await administratorRequest(
-      `/api/v1/tenants/${liveTenantId}/audit-events?limit=100&afterSequence=${afterSequence}`,
+      `/api/v1/tenants/${liveTenantId}/audit-events?limit=100&afterSequence=${afterSequence}${actionPrefix ? `&actionPrefix=${encodeURIComponent(actionPrefix)}` : ""}`,
     );
     expectStatus(result, 200, "live acceptance audit page listing");
     for (const event of result.body?.items ?? []) {
@@ -4122,11 +4122,12 @@ async function dryRun(username) {
 }
 
 async function listLDAPAudit() {
-  const result = await administratorRequest(
-    `/api/v1/tenants/${tenantId}/audit-events?actionPrefix=tenant.identity.ldap&limit=100`,
+  // The API matches complete dot-separated action components. LDAP actions
+  // use ldap_* within tenant.identity, so filter that namespace after paging.
+  const events = await listAllTenantAudit(tenantId, "tenant.identity");
+  return events.filter((event) =>
+    event.action.startsWith("tenant.identity.ldap_"),
   );
-  expectStatus(result, 200, "LDAP tenant audit listing");
-  return result.body?.items ?? [];
 }
 
 async function waitForSyncRun(expectedBindingId, expectedSyncRunId) {

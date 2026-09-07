@@ -13,6 +13,19 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34147994065` passes all LDAP logins and profile/authority/group/roster
+      checks, then its audit assertion uses `tenant.identity.ldap` as a prefix.
+      The audit API deliberately matches complete dot-separated components;
+      `ldap_jit_started` belongs to `tenant.identity`, not its `ldap` child.
+      Page through the identity namespace and select the exact `ldap_` family.
+      Native PostgreSQL confirms all three required login events were appended.
+- [ ] Run `34147994122` flags one base64 chunk in the generated OpenAPI blob
+      from commit `d451eab`. The reviewed deflate payload is a public OpenAPI 3.1
+      document with 360 paths, not credential material. Add only its exact
+      commit/file/rule/line fingerprint; attest both historical contract hashes
+      independently. Gitleaks 8.30.1 detects all 41 fresh and replacement controls
+      and reports zero findings for actual history with those exact exceptions
+      (`.tmp/ci-fix/gitleaks-generated-green.log`). Retain the Linux scan result.
 - [ ] The tenant-user API also reads the nullable global email and returns 503
       for LDAP identities. Migration 0240 adds tenant-profile user/group/roster
       read ABIs; 0241 seals V55 without rewriting published migrations. SQL

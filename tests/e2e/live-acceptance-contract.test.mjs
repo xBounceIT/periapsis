@@ -96,6 +96,23 @@ test("LDAP acceptance verifies the matching active tenant profile", () => {
   }
 });
 
+test("LDAP acceptance uses the audit component namespace and collects all pages", async () => {
+  const start = integration.indexOf("async function listLDAPAudit(");
+  const end = integration.indexOf("async function waitForSyncRun(", start);
+  assert.ok(start >= 0 && end > start);
+  let requested;
+  const ldap = { action: "tenant.identity.ldap_jit_started" };
+  const listAudit = runInNewContext(`(${integration.slice(start, end)})`, {
+    tenantId: "selected-tenant",
+    listAllTenantAudit: async (...args) => {
+      requested = args;
+      return [ldap, { action: "tenant.identity.oidc_session_created" }];
+    },
+  });
+  assert.deepEqual(await listAudit(), [ldap]);
+  assert.deepEqual(requested, ["selected-tenant", "tenant.identity"]);
+});
+
 test("live Phase 3 acceptance uses the composed API and database without interception", () => {
   assert.doesNotMatch(specification, /\.(?:route|routeFromHAR)\s*\(/u);
   assert.doesNotMatch(

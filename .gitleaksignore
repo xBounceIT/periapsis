@@ -1,8 +1,13 @@
 # Reviewed historical findings only; Gitleaks 8.30.1 commit fingerprints.
-# 41 findings map to 40 unique fingerprints in the immutable bootstrap commit.
+# 42 reviewed findings map to 41 exact fingerprints across two immutable commits.
 # Never remove the commit prefix or add path/rule/global exceptions.
 # Review proof and fresh-secret detection controls: scripts/deploy/gitleaks-history.test.mjs.
 # Official format: https://github.com/gitleaks/gitleaks/tree/v8.30.1#gitleaksignore
+
+# Fixed-width base64 chunk of the generated, deflate-compressed OpenAPI contract.
+# Decoded contract SHA-256: 50c8f68a5ad110373995850d41e6387cc1de58b1345140dcf7ace06a60f8c2e4.
+# reviewed-lines: 68705-68706; sha256: a58a7ab31fb71f6222a83e3a61893456f701a33be5978deea7f3079a62991277
+d451eab648e1d2c00459630c1bf3d33e3e6825aa:services/api/internal/contract/api.gen.go:generic-api-key:68705
 
 # Synthetic custody-request idempotency identifier; not an authentication credential.
 # reviewed-lines: 104-104; sha256: 39e8258fbda015371c85c8ea33e3f99a1fd75e3632141242f44f1a6ab7c9dc2c
