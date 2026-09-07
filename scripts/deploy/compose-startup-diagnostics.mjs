@@ -96,6 +96,7 @@ const databasePhases = new Set([
   "configuration",
   "migration",
   "runtime_credentials",
+  "runtime_membership_cleanup",
   "runtime_provision",
   "seed",
 ]);

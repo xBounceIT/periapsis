@@ -69,6 +69,8 @@ try {
   const databaseUrl = await administratorDatabaseUrl(environment);
 
   if (mode === "migrate") {
+    phase = "runtime_membership_cleanup";
+    await removeStaleRuntimeMemberships(databaseUrl);
     phase = "migration";
     await runDatabaseScript("src/admin/migrate.js", databaseUrl);
     phase = "runtime_credentials";
@@ -272,6 +274,48 @@ async function provisionRuntimeLogins(databaseUrl, passwords, options) {
         options.webhookPlainLocalOptIn,
       );
     });
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+// The migration seal rejects extra runtime memberships. Remove only foreign
+// memberships before attestation; do not create roles, grant authority, rotate
+// credentials or alter the schema until migration verification succeeds.
+async function removeStaleRuntimeMemberships(databaseUrl) {
+  const sql = postgres(databaseUrl, {
+    connect_timeout: 10,
+    max: 1,
+    onnotice: () => undefined,
+  });
+  try {
+    await sql.unsafe(`
+      DO $cleanup$
+      DECLARE stale_membership record;
+      BEGIN
+        FOR stale_membership IN
+          SELECT granted_role.rolname AS group_name,
+                 member_role.rolname AS login_name,
+                 grantor_role.rolname AS grantor_name
+          FROM pg_catalog.pg_auth_members AS membership
+          JOIN pg_catalog.pg_roles AS granted_role ON granted_role.oid = membership.roleid
+          JOIN pg_catalog.pg_roles AS member_role ON member_role.oid = membership.member
+          JOIN pg_catalog.pg_roles AS grantor_role ON grantor_role.oid = membership.grantor
+          JOIN (VALUES
+            ('periapsis_api_login', 'periapsis_api'),
+            ('periapsis_worker_login', 'periapsis_worker'),
+            ('periapsis_notifier_login', 'periapsis_notifier')
+          ) AS expected(login_name, group_name)
+            ON expected.login_name = member_role.rolname
+          WHERE granted_role.rolname <> expected.group_name
+        LOOP
+          EXECUTE format('REVOKE %I FROM %I GRANTED BY %I CASCADE',
+            stale_membership.group_name, stale_membership.login_name,
+            stale_membership.grantor_name);
+        END LOOP;
+      END
+      $cleanup$
+    `);
   } finally {
     await sql.end({ timeout: 5 });
   }

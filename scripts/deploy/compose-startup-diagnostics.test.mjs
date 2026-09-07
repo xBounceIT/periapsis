@@ -141,6 +141,7 @@ test("recognized task failures keep only finite phase/mode and fixed unknown-cod
     "configuration",
     "migration",
     "runtime_credentials",
+    "runtime_membership_cleanup",
     "runtime_provision",
     "seed",
   ]) {
@@ -293,6 +294,12 @@ test("actual producer reports each failure phase without forwarding errors or cr
       "INVALID_ENVIRONMENT",
     ],
     [{ mode: canary }, "unsupported", "configuration", "UNSUPPORTED_TASK"],
+    [
+      { failure: "membership_cleanup", code: "42501" },
+      "migrate",
+      "runtime_membership_cleanup",
+      "42501",
+    ],
     [{ failure: "migration" }, "migrate", "migration", "EXIT_1"],
     [
       { failure: "migration", signal: "SIGTERM" },
@@ -327,7 +334,7 @@ test("actual producer reports each failure phase without forwarding errors or cr
     [
       { failure: "connect", code: "ECONNREFUSED" },
       "migrate",
-      "runtime_provision",
+      "runtime_membership_cleanup",
       "ECONNREFUSED",
     ],
     [
@@ -351,7 +358,7 @@ test("actual producer reports each failure phase without forwarding errors or cr
     [
       { failure: "cleanup", code: "ETIMEDOUT" },
       "migrate",
-      "runtime_provision",
+      "runtime_membership_cleanup",
       "ETIMEDOUT",
     ],
     [
@@ -435,6 +442,9 @@ test("actual producer preserves task ordering and environment-specific credentia
       [
         "configuration",
         "read_admin",
+        "connect",
+        "membership_cleanup",
+        "cleanup",
         "migration",
         "read_api",
         "read_worker",
@@ -449,6 +459,9 @@ test("actual producer preserves task ordering and environment-specific credentia
       [
         "configuration",
         "read_admin",
+        "connect",
+        "membership_cleanup",
+        "cleanup",
         "migration",
         "read_api",
         "read_worker",

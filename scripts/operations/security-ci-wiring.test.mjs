@@ -6,6 +6,23 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
+test("Compose removes stale runtime memberships before migration attestation", async () => {
+  const driver = await readFile(
+    resolve(root, "deploy/compose/database-task.mjs"),
+    "utf8",
+  );
+  const cleanup = driver.indexOf(
+    "await removeStaleRuntimeMemberships(databaseUrl)",
+  );
+  const migrate = driver.indexOf(
+    'await runDatabaseScript("src/admin/migrate.js", databaseUrl)',
+  );
+  const provision = driver.indexOf(
+    "await provisionRuntimeLogins(databaseUrl, passwords",
+  );
+  assert.ok(cleanup >= 0 && migrate > cleanup && provision > migrate);
+});
+
 test("Compose provisioning is checked on its isolated PostgreSQL cluster", async () => {
   const workflow = await readFile(
     resolve(root, ".github/workflows/ci.yml"),

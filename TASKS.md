@@ -13,6 +13,16 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [x] Run `34124857324` passes the complete HTTPS authentication smoke, then
+      rejects migration resealing after the stale-membership fixture adds extra
+      runtime privileges. Remove only noncanonical memberships from the three
+      existing runtime logins before migration attestation. Keep role creation,
+      canonical grants and password provisioning after successful migration.
+      Native PostgreSQL proves repeated cleanup, unchanged login credentials and
+      attributes, restored v52 readiness and successful migration resealing
+      through the real migration CLI (`.tmp/ci-fix/provision-preseal-native2.log`).
+      Producer tests cover ordering,
+      cleanup failure redaction and the absence of authority-granting statements.
 - [x] Run `34121834068` reaches healthy containers and host HTTPS, then fails
       bootstrap confirmation. Native PostgreSQL reproduces three independent
       blockers: bootstrap TOTP AAD must match the sealed unversioned bootstrap

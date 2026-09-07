@@ -143,6 +143,14 @@ const fixture = {
       failure("provision_statement");
     };
     return {
+      async unsafe(query) {
+        assert.ok(
+          query.includes("DO $cleanup$") &&
+            query.includes("REVOKE %I FROM %I GRANTED BY %I CASCADE"),
+        );
+        assert.doesNotMatch(query, /\b(?:CREATE|GRANT|ALTER)\b/u);
+        failure("membership_cleanup");
+      },
       async begin(operation) {
         failure("begin");
         await operation(transaction);

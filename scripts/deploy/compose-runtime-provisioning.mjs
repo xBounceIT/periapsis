@@ -1,9 +1,11 @@
 // Runs only against the dedicated disposable PostgreSQL CI cluster.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { compileFunction } from "node:vm";
+import { fileURLToPath } from "node:url";
 
 const databaseUrl = process.env.PERIAPSIS_COMPOSE_PROVISION_TEST_DATABASE_URL;
 assert.ok(
@@ -22,10 +24,11 @@ const start = source.indexOf("async function provisionRuntimeLogins(");
 assert.ok(start >= 0, "cannot locate the actual Compose provisioner");
 // Execute the actual SQL-producing functions without invoking the CLI migration
 // or reading mounted deployment secrets. This is trusted repository source.
-const provision = compileFunction(
-  `${source.slice(start)}\nreturn provisionRuntimeLogins;`,
-  ["postgres"],
-)(postgres);
+const { provisionRuntimeLogins: provision, removeStaleRuntimeMemberships } =
+  compileFunction(
+    `${source.slice(start)}\nreturn { provisionRuntimeLogins, removeStaleRuntimeMemberships };`,
+    ["postgres"],
+  )(postgres);
 let sql;
 let phase = "connect";
 async function assertReady(expected) {
@@ -72,6 +75,57 @@ try {
     "minimal provisioning must keep the notifier inactive",
   );
   phase = "minimal_repeat";
+  await provision(databaseUrl, passwords, { webhookPlainLocalOptIn: true });
+  await assertReady(true);
+  phase = "stale_memberships";
+  const beforeCleanup = await sql`
+    SELECT rolname, rolpassword, rolcanlogin, rolconnlimit
+    FROM pg_catalog.pg_authid
+    WHERE rolname IN ('periapsis_api_login', 'periapsis_worker_login', 'periapsis_notifier_login')
+    ORDER BY rolname
+  `;
+  await sql.unsafe(`
+    GRANT periapsis_migrator TO periapsis_api_login;
+    GRANT periapsis_auditor TO periapsis_worker_login;
+    GRANT periapsis_worker TO periapsis_notifier_login;
+  `);
+  await assertReady(false);
+  phase = "pre_migration_membership_cleanup";
+  await removeStaleRuntimeMemberships(databaseUrl);
+  await removeStaleRuntimeMemberships(databaseUrl);
+  await assertReady(true);
+  const afterCleanup = await sql`
+    SELECT rolname, rolpassword, rolcanlogin, rolconnlimit
+    FROM pg_catalog.pg_authid
+    WHERE rolname IN ('periapsis_api_login', 'periapsis_worker_login', 'periapsis_notifier_login')
+    ORDER BY rolname
+  `;
+  // Never include credential-bearing rows in an assertion failure message.
+  assert.ok(
+    JSON.stringify(beforeCleanup) === JSON.stringify(afterCleanup),
+    "membership cleanup changed login credentials or attributes",
+  );
+  phase = "migration_after_cleanup";
+  const migration = spawnSync(
+    process.execPath,
+    [
+      require.resolve("tsx/cli"),
+      fileURLToPath(
+        new URL("../../packages/db/src/admin/migrate.ts", import.meta.url),
+      ),
+    ],
+    {
+      cwd: fileURLToPath(new URL("../../packages/db", import.meta.url)),
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 120_000,
+    },
+  );
+  assert.ok(
+    migration.status === 0 && !migration.error,
+    "migration resealing failed after membership cleanup",
+  );
   await provision(databaseUrl, passwords, { webhookPlainLocalOptIn: true });
   await assertReady(true);
   phase = "notifier_activation";
