@@ -103,6 +103,7 @@ type ClaimRequest struct {
 }
 
 type Claim struct {
+	AccessGrantID       uuid.UUID
 	OperationRunID      uuid.UUID
 	TenantID            uuid.UUID
 	ProviderID          uuid.UUID

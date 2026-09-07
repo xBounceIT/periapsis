@@ -249,3 +249,36 @@ func TestRevalidateSessionMalformedInputsDenyFailClosed(t *testing.T) {
 		})
 	}
 }
+func TestAuthorizationRefreshStillRequiresLiveAuthorityAndAssurance(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		change   func(*SessionSnapshot, *LiveSessionProjection)
+		decision SessionDecision
+		reason   SessionReason
+	}{
+		{"current", func(s *SessionSnapshot, l *LiveSessionProjection) { l.AuthorizationRevision = 7 }, SessionUsable, SessionReasonCurrent},
+		{"authorization advanced", func(*SessionSnapshot, *LiveSessionProjection) {}, SessionRotate, SessionReasonAuthorizationRefresh},
+		{"revision rollback", func(s *SessionSnapshot, l *LiveSessionProjection) { l.AuthorizationRevision = 6 }, SessionDeny, SessionReasonMalformed},
+		{"missing snapshot", func(s *SessionSnapshot, l *LiveSessionProjection) { s.AuthorizationRevision = 0 }, SessionDeny, SessionReasonMalformed},
+		{"missing live revision", func(s *SessionSnapshot, l *LiveSessionProjection) { l.AuthorizationRevision = 0 }, SessionDeny, SessionReasonMalformed},
+		{"revoked membership", func(s *SessionSnapshot, l *LiveSessionProjection) { l.MembershipActive = false }, SessionRevoke, SessionReasonLifecycle},
+		{"retired source", func(s *SessionSnapshot, l *LiveSessionProjection) { l.PrimaryActive = false }, SessionRevoke, SessionReasonLifecycle},
+		{"identity drift", func(s *SessionSnapshot, l *LiveSessionProjection) { l.IdentityEpoch++ }, SessionRevoke, SessionReasonIdentityEpoch},
+		{"policy change", func(s *SessionSnapshot, l *LiveSessionProjection) { l.Requirement.PolicyRevisions[0].Revision++ }, SessionRotate, SessionReasonPolicyRefresh},
+		{"stronger assurance", func(s *SessionSnapshot, l *LiveSessionProjection) { l.Requirement.Freshness = time.Minute }, SessionStepUp, SessionReasonAssuranceInsufficient},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			snapshot, live := localSessionFixture()
+			snapshot.AuthorizationRevision = 7
+			live.AuthorizationRevision = 8
+			scenario.change(&snapshot, &live)
+			result := RevalidateSession(mfaTestNow, snapshot, live)
+			if result.Decision != scenario.decision || result.Reason != scenario.reason {
+				t.Fatalf("unexpected decision %s / %s", result.Decision, result.Reason)
+			}
+			if result.Decision != SessionUsable && (result.AllowAuthority || result.AllowIdleTouch) {
+				t.Fatal("transition granted authority before persistence")
+			}
+		})
+	}
+}

@@ -27,6 +27,8 @@ import { tenants } from "./tenancy.js";
  * LDAP primary provenance is physically distinct from OIDC/SAML federation.
  * Passwords, login names, directory attributes, and DNs are absent by design.
  */
+// Migration 0242 rotates this immutable provenance when live authorization advances,
+// after rechecking the binding, subject, access source, membership and MFA policy.
 export const authSessionLdapProvenance = pgTable(
   "auth_session_ldap_provenance",
   {

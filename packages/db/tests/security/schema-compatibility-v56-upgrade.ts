@@ -26,8 +26,8 @@ import {
   expectedMigrations,
   expectedRetiredSchemaCompatibilityV49SourceHash,
   expectedRetiredSchemaCompatibilityV50SourceHash,
-  expectedRetiredSchemaCompatibilityV51SourceHash,
-  expectedSealSchemaCompatibilityManifestV50SourceHash,
+  expectedRetiredSchemaCompatibilityV55SourceHash,
+  expectedSealSchemaCompatibilityManifestV55SourceHash,
 } from "../../src/admin/schema-compatibility-manifest.gen.js";
 import {
   executeMigrationBatches,
@@ -103,21 +103,11 @@ function parseJournal(source: string): Journal {
   };
 }
 
-function hasSqlState(error: unknown, code: string, message?: string): boolean {
-  if (!(error instanceof Error)) return false;
-  return (
-    ("code" in error &&
-      error.code === code &&
-      (message === undefined || error.message === message)) ||
-    (error.cause !== error && hasSqlState(error.cause, code, message))
-  );
-}
-
 const databaseUrl =
-  process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V51_UPGRADE_TEST_DATABASE_URL;
+  process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V56_UPGRADE_TEST_DATABASE_URL;
 if (databaseUrl === undefined || databaseUrl.trim() === "") {
   throw new Error(
-    "PERIAPSIS_SCHEMA_COMPATIBILITY_V51_UPGRADE_TEST_DATABASE_URL must name an isolated empty PostgreSQL 18.6 UTF8 C/C database whose cluster has no periapsis_* roles",
+    "PERIAPSIS_SCHEMA_COMPATIBILITY_V56_UPGRADE_TEST_DATABASE_URL must name an isolated empty PostgreSQL 18.6 UTF8 C/C database whose cluster has no periapsis_* roles",
   );
 }
 
@@ -125,58 +115,27 @@ const migrationsRoot = resolve(import.meta.dirname, "../../migrations");
 const journal = parseJournal(
   await readFile(resolve(migrationsRoot, "meta/_journal.json"), "utf8"),
 );
-const v50Count = 232;
-const v50Manifest = expectedMigrations.slice(0, v50Count);
-const v50Latest = v50Manifest.at(-1);
-assert(v50Latest);
-assert.deepEqual(v50Latest, {
-  tag: "0231_v50_compatibility",
-  createdAt: 1_788_650_095_675,
-  hash: "807fc8896bfde860a40b9d7782288f49f0a72ab34ce1634c22d886fba4cdc0a2",
+const v55Count = 242;
+const v55Manifest = expectedMigrations.slice(0, v55Count);
+const v55Latest = v55Manifest.at(-1);
+assert(v55Latest);
+assert.deepEqual(v55Latest, {
+  tag: "0241_v55_compatibility",
+  createdAt: 1_788_800_892_499,
+  hash: "24f06f8135a5cbe2b0068a1720a92fc2cac524e14996af4cd2cf357659e737c9",
 });
 assert.equal(journal.entries.length, 244);
 assert.equal(expectedMigrationCount, 244);
 assert.equal(expectedMigrations.length, 244);
 assert.deepEqual(
-  journal.entries.slice(-12).map((entry) => entry.tag),
-  [
-    "0232_platform_saml_admission_provenance",
-    "0233_v51_compatibility",
-    "0234_service_readiness_aggregation",
-    "0235_v52_compatibility",
-    "0236_tenant_ldap_configuration_runtime",
-    "0237_v53_compatibility",
-    "0238_local_mfa_policy_recovery",
-    "0239_v54_compatibility",
-    "0240_tenant_profile_projections",
-    "0241_v55_compatibility",
-    "0242_ldap_session_authority_refresh",
-    "0243_v56_compatibility",
-  ],
+  journal.entries.slice(-2).map((entry) => entry.tag),
+  ["0242_ldap_session_authority_refresh", "0243_v56_compatibility"],
 );
-const v50Fingerprint = v50Manifest
+const v55Fingerprint = v55Manifest
   .map((entry) => `${entry.createdAt}@${entry.hash}`)
   .join(":");
-const v50CatalogDigest =
-  "e68c7797c4f72188d1ddd4d133e5adff3f099004578fa77ad9f6472027fea9f8";
-const v51Migration = await readFile(
-  resolve(migrationsRoot, "0233_v51_compatibility.sql"),
-  "utf8",
-);
-const v51CatalogDigest =
-  /private_release_runtime_dependency_surface_hash_v51\(\)<>\s*'([0-9a-f]{64})'/u.exec(
-    v51Migration,
-  )?.[1];
-assert(v51CatalogDigest, "0233 must pin the V51 catalog digest");
-assert.notEqual(
-  v51CatalogDigest,
-  "0".repeat(64),
-  "V51 cannot run with a placeholder digest",
-);
-assert.equal(
-  v51CatalogDigest,
-  "2b1f33e2a513a16dff5f5b6b20ab6bf654cc4c081bd010864db96e09dbf8b51c",
-);
+const v55CatalogDigest =
+  "761cebeea6b40784ee1a302f92729c8b7fdceef4e8452fbb83e8df0a4e23b045";
 const v56Migration = await readFile(
   resolve(migrationsRoot, "0243_v56_compatibility.sql"),
   "utf8",
@@ -185,7 +144,7 @@ const v56CatalogDigest =
   /private_release_runtime_dependency_surface_hash_v56\(\)<>\s*'([0-9a-f]{64})'/u.exec(
     v56Migration,
   )?.[1];
-assert(v56CatalogDigest, "0239 must pin the V56 catalog digest");
+assert(v56CatalogDigest, "0243 must pin the V56 catalog digest");
 assert.notEqual(
   v56CatalogDigest,
   "0".repeat(64),
@@ -229,22 +188,24 @@ const retiredV50Roots = [
   "ticket_metadata_runtime_schema_readiness_v50",
   "notification_dispatch_readiness_v50",
 ];
-const retiredV51Roots = [
-  "schema_compatibility_v51",
-  "release_runtime_schema_readiness_v51",
-  "federated_authentication_schema_readiness_v51",
-  "platform_oidc_direct_runtime_schema_readiness_v51",
-  "platform_saml_direct_runtime_schema_readiness_v51",
-  "platform_local_account_runtime_schema_readiness_v51",
-  "sla_trigger_action_runtime_schema_readiness_v51",
-  "sla_object_event_ingress_schema_readiness_v51",
-  "ticket_bulk_runtime_schema_readiness_v51",
-  "ticket_export_runtime_schema_readiness_v51",
-  "ticket_metadata_runtime_schema_readiness_v51",
-  "notification_dispatch_readiness_v51",
+const retiredV55Roots = [
+  "schema_compatibility_v55",
+  "release_runtime_schema_readiness_v55",
+  "federated_authentication_schema_readiness_v55",
+  "platform_oidc_direct_runtime_schema_readiness_v55",
+  "platform_saml_direct_runtime_schema_readiness_v55",
+  "platform_local_account_runtime_schema_readiness_v55",
+  "sla_trigger_action_runtime_schema_readiness_v55",
+  "sla_object_event_ingress_schema_readiness_v55",
+  "ticket_bulk_runtime_schema_readiness_v55",
+  "ticket_export_runtime_schema_readiness_v55",
+  "ticket_metadata_runtime_schema_readiness_v55",
+  "notification_dispatch_readiness_v55",
+  "api_runtime_schema_readiness_v55",
+  "worker_runtime_schema_readiness_v55",
 ];
 const stageRoot = await mkdtemp(
-  join(tmpdir(), "periapsis-schema-v51-upgrade-"),
+  join(tmpdir(), "periapsis-schema-v56-upgrade-"),
 );
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
 const uuid = (sequence: number): string =>
@@ -311,7 +272,7 @@ async function assertAppliedPrefix(count: number): Promise<void> {
   assert.equal(rows.length, count);
 }
 
-async function sealV50(): Promise<void> {
+async function sealV55(): Promise<void> {
   const [attestation] = await sql<{ value: boolean }[]>`
     SELECT count(*) = 1 AND coalesce(bool_and(
       owner.rolname = 'periapsis_migrator' AND language.lanname = 'plpgsql'
@@ -326,7 +287,7 @@ async function sealV50(): Promise<void> {
       AND procedure.prorettype = 'void'::regtype
       AND procedure.proconfig IS NOT DISTINCT FROM ARRAY['search_path=pg_catalog, public, app']::text[]
       AND encode(sha256(convert_to(procedure.prosrc, 'UTF8')), 'hex') =
-        ${expectedSealSchemaCompatibilityManifestV50SourceHash}
+        ${expectedSealSchemaCompatibilityManifestV55SourceHash}
       AND (SELECT count(*) = 1 AND coalesce(bool_and(
         privilege.grantor = procedure.proowner AND privilege.grantee = procedure.proowner
         AND privilege.privilege_type = 'EXECUTE' AND NOT privilege.is_grantable
@@ -339,10 +300,10 @@ async function sealV50(): Promise<void> {
     WHERE procedure.oid = to_regprocedure('app.seal_schema_compatibility_manifest(bigint,bigint,text,text)')
   `;
   assert.equal(attestation?.value, true);
-  await sql`SELECT app.seal_schema_compatibility_manifest(${v50Count}::bigint,
-    ${v50Latest!.createdAt}::bigint, ${v50Latest!.hash}::text, ${v50Fingerprint}::text)`;
-  await sql`SELECT app.seal_schema_compatibility_manifest(${v50Count}::bigint,
-    ${v50Latest!.createdAt}::bigint, ${v50Latest!.hash}::text, ${v50Fingerprint}::text)`;
+  await sql`SELECT app.seal_schema_compatibility_manifest(${v55Count}::bigint,
+    ${v55Latest!.createdAt}::bigint, ${v55Latest!.hash}::text, ${v55Fingerprint}::text)`;
+  await sql`SELECT app.seal_schema_compatibility_manifest(${v55Count}::bigint,
+    ${v55Latest!.createdAt}::bigint, ${v55Latest!.hash}::text, ${v55Fingerprint}::text)`;
 }
 
 // The same local TOTP session shape as the real Go repository fixture. The
@@ -351,10 +312,10 @@ async function seedLogoutSessions(): Promise<void> {
   await sql.begin(async (transaction) => {
     await transaction`SET LOCAL ROLE periapsis_migrator`;
     await transaction`INSERT INTO public.tenants(id, slug, name)
-      VALUES (${tenant}::uuid, 'v51-logout-upgrade', 'V51 logout upgrade')`;
+      VALUES (${tenant}::uuid, 'v56-logout-upgrade', 'V56 logout upgrade')`;
     await transaction`INSERT INTO public.audit_chain_heads(tenant_id) VALUES (${tenant}::uuid)`;
     await transaction`INSERT INTO public.users(id, email, display_name)
-      VALUES (${user}::uuid, 'v51-logout-upgrade@example.invalid', 'V51 logout upgrade')`;
+      VALUES (${user}::uuid, 'v56-logout-upgrade@example.invalid', 'V56 logout upgrade')`;
     await transaction`INSERT INTO public.tenant_memberships(id, tenant_id, user_id, role, status)
       VALUES (${uuid(5)}::uuid, ${tenant}::uuid, ${user}::uuid, 'tenant_admin', 'active')`;
     await transaction`SELECT app.seed_tenant_authorization(${tenant}::uuid, ${uuid(5)}::uuid)`;
@@ -405,7 +366,7 @@ function logoutCommand(
       requestId: uuid(sequence + 200),
       correlationId: uuid(sequence + 300),
       remoteAddress: "192.0.2.40",
-      userAgent: "schema-v51-logout-upgrade",
+      userAgent: "schema-v56-logout-upgrade",
     },
   };
 }
@@ -541,8 +502,8 @@ async function assertSealedV56(): Promise<void> {
         sourceHash: expectedRetiredSchemaCompatibilityV50SourceHash,
       },
       {
-        signature: "app.schema_compatibility_v51()",
-        sourceHash: expectedRetiredSchemaCompatibilityV51SourceHash,
+        signature: "app.schema_compatibility_v55()",
+        sourceHash: expectedRetiredSchemaCompatibilityV55SourceHash,
       },
     ].map(async (root) => {
       const [retired] = await sql<{ config: string[]; source_hash: string }[]>`
@@ -566,13 +527,13 @@ async function assertSealedV56(): Promise<void> {
     SELECT root.name, (SELECT count(*)::integer FROM (VALUES
       ('periapsis_api'), ('periapsis_worker'), ('periapsis_notifier'), ('periapsis_auditor')
     ) AS role(name) WHERE has_function_privilege(role.name, procedure.oid, 'EXECUTE')) AS runtime_grants
-    FROM unnest(${[...retiredV49Roots, ...retiredV50Roots, ...retiredV51Roots]}::text[]) AS root(name)
+    FROM unnest(${[...retiredV49Roots, ...retiredV50Roots, ...retiredV55Roots]}::text[]) AS root(name)
     JOIN pg_catalog.pg_proc AS procedure ON procedure.oid=to_regprocedure('app.' || root.name || '()')
     ORDER BY root.name
   `;
   assert.deepEqual(
     roots.map(({ name, runtime_grants }) => ({ name, runtime_grants })),
-    [...retiredV49Roots, ...retiredV50Roots, ...retiredV51Roots]
+    [...retiredV49Roots, ...retiredV50Roots, ...retiredV55Roots]
       .toSorted()
       .map((name) => ({ name, runtime_grants: 0 })),
   );
@@ -607,26 +568,26 @@ try {
     isolated_roles: true,
   });
   await sql`SET TIME ZONE 'UTC'`;
-  await stagePrefix(v50Count);
+  await stagePrefix(v55Count);
   await migrateStagedPrefix();
-  await assertAppliedPrefix(v50Count);
+  await assertAppliedPrefix(v55Count);
   const [unsealed] = await sql<
     CompatibilityRow[]
-  >`SELECT * FROM app.schema_compatibility_v50()`;
+  >`SELECT * FROM app.schema_compatibility_v55()`;
   assert.deepEqual(unsealed, unsupported);
-  await sealV50();
+  await sealV55();
   const [sealed] = await sql<
     (CompatibilityRow & { catalog_digest: string; ready: boolean })[]
   >`
-    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v50() AS catalog_digest,
-      app.release_runtime_schema_readiness_v50() AS ready FROM app.schema_compatibility_v50() AS compatibility
+    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v55() AS catalog_digest,
+      app.release_runtime_schema_readiness_v55() AS ready FROM app.schema_compatibility_v55() AS compatibility
   `;
   assert.deepEqual(sealed, {
-    applied_count: String(v50Count),
-    latest_created_at: String(v50Latest.createdAt),
-    latest_hash: v50Latest.hash,
-    migration_fingerprint: v50Fingerprint,
-    catalog_digest: v50CatalogDigest,
+    applied_count: String(v55Count),
+    latest_created_at: String(v55Latest.createdAt),
+    latest_hash: v55Latest.hash,
+    migration_fingerprint: v55Fingerprint,
+    catalog_digest: v55CatalogDigest,
     ready: true,
   });
 
@@ -643,35 +604,17 @@ try {
   assert.equal(livePlatform?.value, true);
   const before = await redactedSnapshot();
 
-  await stagePrefix(233);
-  await sql`ALTER ROLE periapsis_api LOGIN`;
-  try {
-    await assert.rejects(migrateStagedPrefix, (error: unknown) =>
-      hasSqlState(
-        error,
-        "55000",
-        "v51 SAML provenance cutover requires every runtime writer login to be NOLOGIN",
-      ),
-    );
-    await assertAppliedPrefix(v50Count);
-    assert.deepEqual(
-      await redactedSnapshot(),
-      before,
-      "NOLOGIN rejection must roll back the migration without fixture changes",
-    );
-  } finally {
-    await sql`ALTER ROLE periapsis_api NOLOGIN`;
-  }
+  await stagePrefix(243);
   await migrateStagedPrefix();
-  await assertAppliedPrefix(233);
+  await assertAppliedPrefix(243);
   assert.deepEqual(
     await redactedSnapshot(),
     before,
-    "0232 must preserve existing receipt/audit and live platform session",
+    "0242 must preserve existing receipt/audit and live platform session",
   );
   const [partial] = await sql<
     CompatibilityRow[]
-  >`SELECT * FROM app.schema_compatibility_v50()`;
+  >`SELECT * FROM app.schema_compatibility_v55()`;
   assert.deepEqual(partial, unsupported);
   const [interval] = await sql<
     {
@@ -679,16 +622,22 @@ try {
       current_root_absent: boolean;
       current_ready_absent: boolean;
       writers_offline: boolean;
+      api_array: boolean[];
+      worker_array: boolean[];
     }[]
   >`
-    SELECT app.release_runtime_schema_readiness_v50() AS old_ready,
-      to_regprocedure('app.schema_compatibility_v51()') IS NULL AS current_root_absent,
-      to_regprocedure('app.release_runtime_schema_readiness_v51()') IS NULL AS current_ready_absent,
+    SELECT app.release_runtime_schema_readiness_v55() AS old_ready,
+      app.api_runtime_schema_readiness_v56() AS api_array,
+      app.worker_runtime_schema_readiness_v56() AS worker_array,
+      to_regprocedure('app.schema_compatibility_v56()') IS NULL AS current_root_absent,
+      to_regprocedure('app.release_runtime_schema_readiness_v56()') IS NULL AS current_ready_absent,
       NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname IN
         ('periapsis_api','periapsis_worker','periapsis_notifier') AND rolcanlogin) AS writers_offline
   `;
   assert.deepEqual(interval, {
     old_ready: false,
+    api_array: Array<boolean>(8).fill(false),
+    worker_array: Array<boolean>(5).fill(false),
     current_root_absent: true,
     current_ready_absent: true,
     writers_offline: true,
@@ -762,7 +711,7 @@ try {
   } catch {
     // Child errors may contain SQL parameters; do not forward captured output.
     throw new Error(
-      "ordinary SAML admission/runtime proof failed after V50 -> V56 upgrade",
+      "ordinary SAML admission/runtime proof failed after V55 -> V56 upgrade",
     );
   }
   await assertSealedV56();

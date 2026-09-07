@@ -873,7 +873,10 @@ func normalizeSecretString(value *string, minimum, maximum int) (*string, error)
 }
 
 func validInstant(value time.Time) bool {
-	return !value.IsZero() && value.Location() == time.UTC && value.Nanosecond()%1_000 == 0
+	// PostgreSQL JSON uses +00:00, which Go may decode with a local or fixed
+	// zero-offset location rather than the time.UTC pointer.
+	_, offset := value.Zone()
+	return !value.IsZero() && offset == 0 && value.Nanosecond()%1_000 == 0
 }
 
 func normalizeOptionalInstant(value *time.Time) *time.Time {

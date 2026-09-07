@@ -568,7 +568,7 @@ assert(
   ldapLogin.response.headers.get("location") === "/",
   "LDAP login must preserve the validated return path",
 );
-const ldapCookie = issuedCookie(ldapLogin, "real LDAP login");
+let ldapCookie = issuedCookie(ldapLogin, "real LDAP login");
 
 const ldapSession = await request("/api/v1/auth/session", {
   cookie: ldapCookie,
@@ -626,7 +626,7 @@ const secondOperatorLogin = await request(
   },
 );
 expectStatus(secondOperatorLogin, 303, "second real LDAP operator login");
-const secondOperatorCookie = issuedCookie(
+let secondOperatorCookie = issuedCookie(
   secondOperatorLogin,
   "second real LDAP operator login",
 );
@@ -821,6 +821,29 @@ if (process.env.PERIAPSIS_LDAP_ACCEPTANCE_RUN_LIVE_PLAYWRIGHT === "1") {
   });
 }
 
+// Reauthenticate both existing identities, then refresh their authorization pins.
+// Deprovisioning must reject sessions proven live immediately before removal.
+ldapCookie = await loginExistingLDAPPrincipal(
+  directoryUser.username,
+  ldapUserPassword,
+  ldapUserId,
+);
+secondOperatorCookie = await loginExistingLDAPPrincipal(
+  directorySecondOperator.username,
+  ldapSecondUserPassword,
+  secondOperatorUserId,
+);
+({ cookie: ldapCookie } = await refreshLDAPSession(
+  ldapCookie,
+  ldapUserId,
+  tenantId,
+));
+({ cookie: secondOperatorCookie } = await refreshLDAPSession(
+  secondOperatorCookie,
+  secondOperatorUserId,
+  tenantId,
+));
+
 runDirectoryFixture("remove-group");
 
 const afterRemoval = await dryRun(directoryUser.username);
@@ -965,6 +988,40 @@ process.stdout.write(
   "Composed OpenLDAP login, mapping, sync, revalidation, and revocation acceptance passed\n",
 );
 
+async function refreshLDAPSession(cookie, userId, liveTenantId) {
+  let session = await request("/api/v1/auth/session", { cookie });
+  if (
+    session.response.status === 401 &&
+    session.body?.code === "session_rotated"
+  ) {
+    cookie = issuedCookie(session, "LDAP authorization rotation");
+    session = await request("/api/v1/auth/session", { cookie });
+  }
+  expectStatus(session, 200, "current LDAP acceptance session");
+  assert(
+    session.body?.authenticationMethod === "ldap" &&
+      session.body?.activeTenantId === liveTenantId &&
+      session.body?.user?.id === userId,
+    "LDAP session refresh must retain its exact tenant and user",
+  );
+  return { cookie, csrfToken: requiredSessionCSRF(session.body) };
+}
+
+async function loginExistingLDAPPrincipal(username, password, userId) {
+  const login = await request(`/api/v1/auth/ldap/${tenantSlug}/soc_l2`, {
+    method: "POST",
+    origin: browserOrigin,
+    form: { username, password, returnPath: "/" },
+  });
+  expectStatus(login, 303, "existing LDAP identity login");
+  const current = await refreshLDAPSession(
+    issuedCookie(login, "existing LDAP identity login"),
+    userId,
+    tenantId,
+  );
+  return current.cookie;
+}
+
 async function runLivePhaseThreeAcceptance({
   cookie,
   csrfToken,
@@ -976,6 +1033,11 @@ async function runLivePhaseThreeAcceptance({
   serviceAccountRoleId: machineRoleId,
 }) {
   const observedAt = new Date().toISOString();
+  ({ cookie, csrfToken } = await refreshLDAPSession(
+    cookie,
+    operatorUserId,
+    liveTenantId,
+  ));
   const liveBaseUrl = new URL(baseUrl).origin;
   const servedOpenAPI = await request("/openapi.json");
   expectStatus(servedOpenAPI, 200, "served generated OpenAPI contract");
@@ -1086,12 +1148,30 @@ async function runLivePhaseThreeAcceptance({
     observedAt,
     title: alertTitle,
   });
-  const alertId = requiredIdentifier(createdAlert.body?.id, "live Alert ID");
+  const alertId = requiredIdentifier(
+    createdAlert.alert.body?.id,
+    "live Alert ID",
+  );
+  ({ cookie, csrfToken } = await refreshLDAPSession(
+    cookie,
+    operatorUserId,
+    liveTenantId,
+  ));
+  secondOperator = {
+    ...secondOperator,
+    ...(await refreshLDAPSession(
+      secondOperator.cookie,
+      secondOperator.userId,
+      liveTenantId,
+    )),
+  };
 
   await proveConcurrentClaim({
-    assignedOperatorTeamId,
+    alertId: requiredIdentifier(
+      createdAlert.claimRaceAlert.body?.id,
+      "claim-race Alert ID",
+    ),
     liveTenantId,
-    observedAt,
     operator: { cookie, csrfToken, userId: operatorUserId },
     secondOperator,
   });
@@ -1272,6 +1352,19 @@ async function runLivePhaseThreeAcceptance({
       alertId,
       globexPrincipal.userId,
     );
+    ({ cookie, csrfToken } = await refreshLDAPSession(
+      cookie,
+      operatorUserId,
+      liveTenantId,
+    ));
+    customer = {
+      ...customer,
+      ...(await refreshLDAPSession(
+        customer.cookie,
+        customer.userId,
+        liveTenantId,
+      )),
+    };
     const cookieSeparator = cookie.indexOf("=");
     assert(
       cookieSeparator > 0,
@@ -2922,33 +3015,41 @@ async function createServiceAccountAlert({
       .length === 1,
     "service-account replay must leave exactly one searchable Alert",
   );
-  return first;
+  const claimRaceAlert = await request(
+    `/api/v1/tenants/${liveTenantId}/alerts`,
+    {
+      method: "POST",
+      authorization,
+      idempotencyKey: acceptanceKey("claim-race-alert"),
+      json: {
+        title: `Concurrent claim ${uniqueSuffix}`,
+        severity: "medium",
+        source: "live-acceptance",
+        sourceType: "api",
+        detectedAt: observedAt,
+        assignedTeamId: assignedOperatorTeamId,
+      },
+    },
+  );
+  expectStatus(
+    claimRaceAlert,
+    201,
+    "service-account claim-race Alert creation",
+  );
+  assert(
+    claimRaceAlert.body?.id !== first.body?.id &&
+      claimRaceAlert.body?.creator?.serviceAccountId === serviceAccountId,
+    "claim race must use a separate Alert created by the ingestion principal",
+  );
+  return { alert: first, claimRaceAlert };
 }
 
 async function proveConcurrentClaim({
-  assignedOperatorTeamId,
+  alertId,
   liveTenantId,
-  observedAt,
   operator,
   secondOperator,
 }) {
-  const created = await request(`/api/v1/tenants/${liveTenantId}/alerts`, {
-    method: "POST",
-    cookie: operator.cookie,
-    csrfToken: operator.csrfToken,
-    origin: browserOrigin,
-    idempotencyKey: acceptanceKey("claim-race-alert"),
-    json: {
-      title: `Concurrent claim ${uniqueSuffix}`,
-      severity: "medium",
-      source: "live-acceptance",
-      sourceType: "api",
-      detectedAt: observedAt,
-      assignedTeamId: assignedOperatorTeamId,
-    },
-  });
-  expectStatus(created, 201, "claim-race Alert creation");
-  const alertId = requiredIdentifier(created.body?.id, "claim-race Alert ID");
   const path = `/api/v1/tenants/${liveTenantId}/alerts/${alertId}/claim`;
   const [operatorClaim, secondOperatorClaim] = await Promise.all([
     request(path, {
@@ -3512,7 +3613,7 @@ async function prepareNotificationAcceptance(
         port: 1025,
         security: "plain_local",
         username: null,
-        clearPassword: true,
+        clearPassword: false,
         fromName: "Periapsis acceptance",
         fromEmail: "periapsis@acceptance.invalid",
         replyToEmail: null,
@@ -3520,7 +3621,7 @@ async function prepareNotificationAcceptance(
         maximumConnections: 4,
         maximumMessagesPerConnection: 100,
         rateLimitPerSecond: 20,
-        clearDkim: true,
+        clearDkim: false,
         enabled: true,
       },
     },

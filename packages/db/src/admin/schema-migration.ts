@@ -12,7 +12,7 @@ import {
   expectedMigrationFingerprint,
   expectedMigrationHash,
   expectedMigrations,
-  expectedSealSchemaCompatibilityManifestV55SourceHash,
+  expectedSealSchemaCompatibilityManifestV56SourceHash,
   supportedLegacyV45MigrationCount,
   supportedLegacyV45MigrationReplacements,
 } from "./schema-compatibility-manifest.gen.js";
@@ -648,7 +648,7 @@ export async function sealSchemaCompatibilityManifest(
       AND procedure.proconfig IS NOT DISTINCT FROM
         ARRAY['search_path=pg_catalog, public, app']::text[]
       AND encode(sha256(convert_to(procedure.prosrc, 'UTF8')), 'hex') =
-        ${expectedSealSchemaCompatibilityManifestV55SourceHash}
+        ${expectedSealSchemaCompatibilityManifestV56SourceHash}
       AND (
         SELECT count(*) = 1 AND coalesce(bool_and(
           privilege.grantor = procedure.proowner
@@ -672,7 +672,7 @@ export async function sealSchemaCompatibilityManifest(
   if (attestation?.value !== true) {
     throw protocolError(
       "MIGRATION_SEALER_DIVERGED",
-      "the V55 schema compatibility sealer failed source and catalog attestation",
+      "the V56 schema compatibility sealer failed source and catalog attestation",
     );
   }
   await sql`

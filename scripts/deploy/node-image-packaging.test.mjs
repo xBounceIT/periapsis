@@ -226,15 +226,30 @@ test("web server source has no external runtime package imports", async () => {
   );
 });
 
-test("notifier retains target-platform dependency installation and production-only output", async () => {
+test("notifier builds portable production artifacts natively and retains the target runtime", async () => {
   const source = await readSource("deploy/images/Dockerfile.notifier");
   const notifierStages = stages(source);
-  assert.equal(notifierStages[0].from, "FROM ${NODE_IMAGE} AS build");
+  assert.equal(
+    notifierStages[0].from,
+    "FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build",
+  );
   assert.equal(notifierStages[1].from, "FROM ${NODE_IMAGE}");
+  const build = notifierStages[0].instructions.find((instruction) =>
+    instruction.includes("notifier build"),
+  );
+  const commands = build.split(/\s*&&\s*/u);
+  assert.equal(
+    commands[
+      commands.indexOf(
+        "corepack pnpm --filter @periapsis/notifier deploy --legacy --prod --config.hoist-workspace-packages=false /out",
+      ) + 1
+    ],
+    "node deploy/compose/portable-notifier-artifact.mjs /out",
+  );
   assert.ok(
     notifierStages[0].instructions.some((instruction) =>
       instruction.includes(
-        "corepack pnpm --filter @periapsis/notifier deploy --legacy --prod /out",
+        "corepack pnpm --filter @periapsis/notifier deploy --legacy --prod --config.hoist-workspace-packages=false /out",
       ),
     ),
   );

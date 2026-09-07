@@ -17,7 +17,10 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { validateDatabaseTaskPackaging } from "./validate-manifests.mjs";
-import { verifyPortableDatabaseArtifact } from "../../deploy/compose/portable-database-artifact.mjs";
+import {
+  verifyPortableDatabaseArtifact,
+  verifyPortableJavaScriptArtifact,
+} from "../../deploy/compose/portable-database-artifact.mjs";
 
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const databaseSource = join(repository, "packages/db");
@@ -183,10 +186,38 @@ for (const [label, filename, content] of [
             verifyPortableDatabaseArtifact(fixture.modules, fixture.compiled),
           /Native or opaque binary payload|Native artifact extension/u,
         );
+        assert.throws(
+          () => verifyPortableJavaScriptArtifact(fixture.root),
+          /Native or opaque binary payload|Native artifact extension/u,
+        );
       }),
     );
   });
 }
+
+test("JavaScript artifact gate permits portable scripts and rejects platform restrictions", async (t) => {
+  const fixture = await portableFixture(t);
+  const manifestPath = join(fixture.modules, "postgres/package.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({ name: "portable-cli", version: "1.0.0", bin: "index.js" }),
+  );
+  assert.ok(verifyPortableJavaScriptArtifact(fixture.root).files > 0);
+  for (const key of ["os", "cpu", "libc", "gypfile"]) {
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        name: "portable-cli",
+        version: "1.0.0",
+        [key]: "restricted",
+      }),
+    );
+    assert.throws(
+      () => verifyPortableJavaScriptArtifact(fixture.root),
+      /Platform-specific production package metadata/u,
+    );
+  }
+});
 
 test("portability gate rejects unreviewed versions, packages and platform restrictions", async (t) => {
   await Promise.all(

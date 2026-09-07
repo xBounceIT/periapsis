@@ -13,6 +13,40 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] The native notification preflight catches update-only password/DKIM clearing
+      flags in the first SMTP creation request. Correct the acceptance payload;
+      retain the application's rejection of clearing secrets during creation.
+      Complete the actual notifier/Mailpit boundary in Linux acceptance.
+- [ ] SMTP persistence succeeds but projection validation rejects PostgreSQL's
+      numeric UTC offset because Go can decode it with a location other than
+      the `time.UTC` pointer. Validate the actual zero offset and microsecond
+      precision, retaining rejection of nonzero offsets and zero timestamps.
+      The real native HTTP SMTP creation now returns 201; notifier preview and
+      Mailpit delivery remain part of the Linux Compose acceptance gate.
+- [ ] Supply-chain run `34149341870` times out after ARM64 QEMU raises SIGILL
+      during the notifier dependency installation. Build its architecture-neutral
+      TypeScript and production dependencies on `BUILDPLATFORM`, matching the
+      existing web/database-task pattern, while retaining the target-platform
+      runtime image and both architecture runtime checks. Disable workspace
+      hoisting and verify the whole production export has only confined links,
+      portable package metadata and no native/opaque binaries. The actual local
+      8,663-file production export passes. Retain Linux evidence.
+- [ ] Run `34149341882` exposes stale LDAP authorization pins after importing a
+      second user. Migration 0242 projects the immutable session pin and permits
+      a guarded rotation only after current lifecycle and assurance checks;
+      its planning v2 reader returns the exact existing access grant for repeat
+      logins. Migration 0243 seals V56. Native HTTP tests prove two usable users,
+      repeat login, rotation and a successful operator custom-field write.
+      Acceptance refreshes committed rotations and proves both sessions live
+      immediately before deprovisioning. Retain the final Linux result.
+- [ ] The custom-field revision writer omitted `defaultPresence`, `permissions`
+      and `capabilities`, so the database rejected its first write with 23514.
+      Preserve the complete snapshot contract and all three default-presence
+      states. Unit coverage and native PostgreSQL HTTP creation now pass.
+- [ ] Run `34149341882` completes the PostgreSQL security aggregate in 38 minutes,
+      then the Compose provisioner regression fails `initial_attestation` because
+      it calls the retired V54 root. Advance that check to the current seal and
+      include this standalone script in the selected-root regression coverage.
 - [ ] Run `34147994065` passes all LDAP logins and profile/authority/group/roster
       checks, then its audit assertion uses `tenant.identity.ldap` as a prefix.
       The audit API deliberately matches complete dot-separated components;

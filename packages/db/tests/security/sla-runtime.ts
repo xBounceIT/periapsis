@@ -326,7 +326,7 @@ try {
       await transaction`DELETE FROM public.sla_evaluation_jobs`;
       await assertQueueMetricsPlans(transaction);
       const [readiness] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v55() AS ready
+        SELECT app.release_runtime_schema_readiness_v56() AS ready
       `;
       assert.equal(readiness?.ready, true, "SLA readiness is not current");
       const [emptyMetrics] = await asWorker(

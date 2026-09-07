@@ -1007,6 +1007,112 @@ func TestRuntimeFederatedSessionAuthorityTransfersCommittedTransitionsOnce(t *te
 	}
 }
 
+func TestRuntimeLDAPSessionAuthorityTransfersAuthorizationRotationOnce(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	sessionID := uuid.Must(uuid.NewV7())
+	tenantID := uuid.Must(uuid.NewV7())
+	userID := uuid.Must(uuid.NewV7())
+	lookup := authentication.FederatedSessionAuthorityLookup{
+		SessionID: sessionID, TenantID: tenantID, UserID: userID,
+		AuthenticationMethod: "ldap", Audience: "api",
+	}
+
+	for _, testCase := range []struct {
+		name       string
+		result     func(testing.TB) federatedauth.SessionResult
+		wantKind   authentication.FederatedSessionTransitionKind
+		wantExpiry time.Time
+	}{
+		{
+			name: "rotation",
+			result: func(t testing.TB) federatedauth.SessionResult {
+				newSessionID := identity.EntityID(uuid.Must(uuid.NewV7()))
+				expiresAt := now.Add(8 * time.Hour)
+				token := runtimeFederatedOpaque(0x31)
+				csrf := runtimeFederatedOpaque(0x32)
+				reservation, err := mfa.NewSessionReservation(mfa.SessionMaterial{
+					SessionID: newSessionID, FamilyID: identity.EntityID(uuid.Must(uuid.NewV7())),
+					TokenDigest: sha256.Sum256(token), CSRFDigest: sha256.Sum256(csrf),
+					AuthenticationMethod: mfa.SessionAuthenticationMethod(federatedauth.AuthenticationMethodLDAP),
+					IdleExpiresAt:        now.Add(time.Hour), AbsoluteExpiresAt: expiresAt,
+				}, now)
+				if err != nil {
+					t.Fatalf("session reservation: %v", err)
+				}
+				owned, err := federatedauth.NewSessionApplyCredentialReservation(reservation, token, csrf)
+				if err != nil {
+					t.Fatalf("browser credential: %v", err)
+				}
+				credential, released := owned.ReleaseBrowserCredential(newSessionID, identity.EntityID{})
+				if !released {
+					t.Fatal("release rotation credential")
+				}
+				return federatedauth.SessionResult{
+					SessionID: identity.EntityID(sessionID), TenantID: identity.EntityID(tenantID),
+					UserID: identity.EntityID(userID), AuthenticationMethod: federatedauth.AuthenticationMethodLDAP,
+					Decision: mfa.SessionRotate, Reason: mfa.SessionReasonAuthorizationRefresh,
+					NewSessionID: newSessionID, AbsoluteExpiresAt: expiresAt, Credential: credential,
+				}
+			},
+			wantKind: authentication.FederatedSessionTransitionRotated, wantExpiry: now.Add(8 * time.Hour),
+		},
+		{
+			name: "step up",
+			result: func(t testing.TB) federatedauth.SessionResult {
+				continuationID := identity.EntityID(uuid.Must(uuid.NewV7()))
+				expiresAt := now.Add(5 * time.Minute)
+				receipt := runtimeFederatedOpaque(0x41)
+				reservation, err := federatedauth.NewPostPrimaryContinuationReservation(
+					federatedauth.PostPrimaryContinuationMaterial{
+						ContinuationID: continuationID, ReceiptDigest: sha256.Sum256(receipt), ExpiresAt: expiresAt,
+					},
+					now,
+				)
+				if err != nil {
+					t.Fatalf("continuation reservation: %v", err)
+				}
+				owned, err := federatedauth.NewContinuationApplyCredentialReservation(reservation, receipt)
+				if err != nil {
+					t.Fatalf("continuation credential: %v", err)
+				}
+				credential, released := owned.ReleaseBrowserCredential(identity.EntityID{}, continuationID)
+				if !released {
+					t.Fatal("release continuation credential")
+				}
+				return federatedauth.SessionResult{
+					SessionID: identity.EntityID(sessionID), TenantID: identity.EntityID(tenantID),
+					UserID: identity.EntityID(userID), AuthenticationMethod: federatedauth.AuthenticationMethodLDAP,
+					Decision: mfa.SessionStepUp, Reason: mfa.SessionReasonAssuranceInsufficient,
+					ContinuationID: continuationID, Credential: credential,
+				}
+			},
+			wantKind: authentication.FederatedSessionTransitionStepUp, wantExpiry: now.Add(5 * time.Minute),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			result := testCase.result(t)
+			credential := result.Credential
+			authority := &runtimeFederatedSessionAuthority{revalidator: &federatedSessionRevalidatorStub{result: result}}
+			mapped, err := authority.RevalidateFederatedSession(context.Background(), lookup)
+			if err != nil || mapped.Transition == nil || mapped.AllowAuthority || mapped.AllowIdleTouch {
+				t.Fatalf("RevalidateFederatedSession() = %#v, %v", mapped, err)
+			}
+			material, consumed := mapped.Transition.Consume()
+			if !consumed || material.Kind != testCase.wantKind || !material.ExpiresAt.Equal(testCase.wantExpiry) {
+				t.Fatalf("transition material = %s, consumed=%t", material, consumed)
+			}
+			material.Destroy()
+			if _, consumed = mapped.Transition.Consume(); consumed {
+				t.Fatal("transition was consumable twice")
+			}
+			if _, consumed = credential.Consume(); consumed {
+				t.Fatal("source browser credential remained consumable")
+			}
+		})
+	}
+}
+
 func TestRuntimeFederatedSessionAuthorityRejectsDirectContinuationRelabeling(t *testing.T) {
 	t.Parallel()
 	now := time.Now().UTC().Truncate(time.Millisecond)

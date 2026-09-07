@@ -27,7 +27,7 @@ requires its external fixture. See the dated slice in `TASKS.md` for exact local
 
 The matrix retains earlier focused and final-journal results. Those labels do not
 carry forward to a new seal automatically: only the explicitly versioned evidence below
-applies to the named candidate. V55 is currently under verification, not production-validated.
+applies to the named candidate. V56 is currently under verification, not production-validated.
 
 | Scenario                         | Repository evidence                                                                                                                                                                                                                                             | Automated repository gate                                                                                                                                                                                                                                                                                                                                                                                                      | Current proof boundary                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -64,6 +64,18 @@ dashboard. These controls are implementation evidence, not substitutes for obser
 sampled trace or alert in the release environment.
 
 ## Current candidate database evidence
+
+### V56 LDAP session authority candidate
+
+Migration 0242 exposes the exact live LDAP access grant to repeat-login planning
+and rotates immutable session authorization pins only after the existing
+lifecycle, source, membership and assurance checks succeed. Migration 0243 seals
+the 244-entry journal without changing published migrations. Native PostgreSQL
+derives digest `7fed00140286fdae9f79c9fb1a8f5ff1a39353962d4f5364873bef0a4e635f67`.
+The V55-to-V56 upgrade and controlled-directory native HTTP proof pass, including
+two sessions, repeat login, authorization rotation and custom-field creation.
+These local results do not substitute for the pending composed OpenLDAP/browser
+run or production acceptance.
 
 ### V55 tenant profile projection candidate
 

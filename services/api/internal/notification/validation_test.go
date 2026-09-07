@@ -449,6 +449,29 @@ func validInstantFixture() time.Time {
 	return time.Date(2026, time.August, 25, 12, 0, 0, 123_000, time.UTC)
 }
 
+func TestNotificationInstantAcceptsEquivalentUTCRepresentations(t *testing.T) {
+	instant := validInstantFixture()
+	for name, value := range map[string]time.Time{
+		"utc":                instant,
+		"numeric UTC offset": instant.In(time.FixedZone("", 0)),
+		"named zero offset":  instant.In(time.FixedZone("GMT", 0)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !validInstant(value) {
+				t.Fatal("equivalent UTC instant rejected")
+			}
+		})
+	}
+	for _, value := range []time.Time{
+		{}, instant.Add(time.Nanosecond), instant.In(time.FixedZone("east", 3600)),
+		instant.In(time.FixedZone("west", -3600)),
+	} {
+		if validInstant(value) {
+			t.Fatal("invalid notification instant accepted")
+		}
+	}
+}
+
 func webhookWriteFixture(t *testing.T, event EventType, audience Audience) WebhookWriteInput {
 	t.Helper()
 	key := strings.Repeat("k", 32)

@@ -24,6 +24,36 @@ const packageManifest = readFileSync(
   "utf8",
 );
 
+test("Mailpit acceptance creates SMTP without update-only secret clearing", async () => {
+  const start = integration.indexOf(
+    "async function prepareNotificationAcceptance(",
+  );
+  const end = integration.indexOf(
+    "async function createNotificationTemplate(",
+    start,
+  );
+  assert.ok(start >= 0 && end > start);
+  const stop = new Error("captured SMTP creation");
+  let captured;
+  const prepare = runInNewContext(`(${integration.slice(start, end)})`, {
+    acceptanceKey: () => "smtp-acceptance-fixture",
+    administratorRequest: async (path, options) => {
+      captured = { path, ...options };
+      throw stop;
+    },
+  });
+  await assert.rejects(
+    prepare("tenant", "operator", "customer"),
+    (error) => error === stop,
+  );
+  assert.equal(captured.path, "/api/v1/tenants/tenant/smtp-configuration");
+  assert.equal(captured.method, "PUT");
+  assert.equal(captured.json.expectedVersion, undefined);
+  assert.equal(captured.json.clearPassword, false);
+  assert.equal(captured.json.clearDkim, false);
+  assert.equal(captured.json.security, "plain_local");
+});
+
 test("LDAP acceptance selects the session cookie among ceremony cleanup headers", () => {
   const start = integration.indexOf("function issuedCookie(");
   const end = integration.indexOf("function refreshedCookie(", start);
@@ -196,3 +226,78 @@ function workflowJob(name) {
   const nextJob = remainder.search(/\n  [a-z][a-z0-9-]*:\n/u);
   return nextJob === -1 ? remainder : remainder.slice(0, nextJob);
 }
+
+test("LDAP acceptance refreshes one committed rotation and rejects other failures", async () => {
+  const start = integration.indexOf("async function refreshLDAPSession(");
+  const end = integration.indexOf(
+    "async function loginExistingLDAPPrincipal(",
+    start,
+  );
+  assert.ok(start >= 0 && end > start);
+  const active = {
+    response: { status: 200 },
+    body: {
+      authenticationMethod: "ldap",
+      activeTenantId: "tenant",
+      user: { id: "user" },
+      csrfToken: "fresh-csrf",
+    },
+  };
+  const rotation = {
+    response: { status: 401 },
+    body: { code: "session_rotated" },
+  };
+  for (const scenario of [
+    { replies: [active], cookies: ["original"], allowed: true },
+    {
+      replies: [rotation, active],
+      cookies: ["original", "rotated"],
+      allowed: true,
+    },
+    {
+      replies: [
+        { response: { status: 401 }, body: { code: "authentication_failed" } },
+      ],
+      cookies: ["original"],
+    },
+    { replies: [rotation, rotation], cookies: ["original", "rotated"] },
+    {
+      replies: [
+        { ...active, body: { ...active.body, activeTenantId: "other" } },
+      ],
+      cookies: ["original"],
+    },
+    {
+      replies: [{ ...active, body: { ...active.body, user: { id: "other" } } }],
+      cookies: ["original"],
+    },
+  ]) {
+    const cookies = [];
+    const refresh = runInNewContext(`(${integration.slice(start, end)})`, {
+      request: async (path, options) => {
+        assert.equal(path, "/api/v1/auth/session");
+        cookies.push(options.cookie);
+        return scenario.replies[cookies.length - 1];
+      },
+      issuedCookie: (reply) => {
+        assert.equal(reply, rotation);
+        return "rotated";
+      },
+      expectStatus: (reply, status) =>
+        assert.equal(reply.response.status, status),
+      assert: (condition, message) => assert.ok(condition, message),
+      requiredSessionCSRF: (body) => {
+        assert.equal(body.csrfToken, "fresh-csrf");
+        return body.csrfToken;
+      },
+    });
+    if (scenario.allowed) {
+      const result = await refresh("original", "user", "tenant");
+      assert.equal(result.cookie, scenario.cookies.at(-1));
+      assert.equal(result.csrfToken, "fresh-csrf");
+    } else {
+      await assert.rejects(refresh("original", "user", "tenant"));
+    }
+    assert.deepEqual(cookies, scenario.cookies);
+  }
+});

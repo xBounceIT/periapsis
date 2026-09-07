@@ -30,19 +30,20 @@ type federatedSessionProjectionWire struct {
 }
 
 type federatedSessionSnapshotWire struct {
-	SessionID          string                         `json:"sessionId"`
-	RotationFamilyID   string                         `json:"rotationFamilyId"`
-	Version            uint64                         `json:"version"`
-	TenantID           string                         `json:"tenantId"`
-	UserID             string                         `json:"userId"`
-	IdentityEpoch      uint64                         `json:"identityEpoch"`
-	RecoveryRestricted bool                           `json:"recoveryRestricted"`
-	Primary            federatedPrimaryProvenanceWire `json:"primary"`
-	Evidence           []federatedSessionEvidenceWire `json:"evidence"`
-	PolicyRevisions    []policyRevisionWire           `json:"policyRevisions"`
-	IssuedAt           time.Time                      `json:"issuedAt"`
-	IdleExpiresAt      time.Time                      `json:"idleExpiresAt"`
-	AbsoluteExpiresAt  time.Time                      `json:"absoluteExpiresAt"`
+	AuthorizationRevision *uint64                        `json:"authorizationRevision,omitempty"`
+	SessionID             string                         `json:"sessionId"`
+	RotationFamilyID      string                         `json:"rotationFamilyId"`
+	Version               uint64                         `json:"version"`
+	TenantID              string                         `json:"tenantId"`
+	UserID                string                         `json:"userId"`
+	IdentityEpoch         uint64                         `json:"identityEpoch"`
+	RecoveryRestricted    bool                           `json:"recoveryRestricted"`
+	Primary               federatedPrimaryProvenanceWire `json:"primary"`
+	Evidence              []federatedSessionEvidenceWire `json:"evidence"`
+	PolicyRevisions       []policyRevisionWire           `json:"policyRevisions"`
+	IssuedAt              time.Time                      `json:"issuedAt"`
+	IdleExpiresAt         time.Time                      `json:"idleExpiresAt"`
+	AbsoluteExpiresAt     time.Time                      `json:"absoluteExpiresAt"`
 }
 
 type federatedPrimaryProvenanceWire struct {
@@ -182,10 +183,12 @@ func federatedSessionProjectionFromWire(
 	// LDAP's protected apply rechecks this live revision against its persisted
 	// provenance. Other session families do not publish this LDAP-only field.
 	if value.AuthenticationMethod == string(federatedauth.AuthenticationMethodLDAP) {
-		if value.Live.AuthorizationRevision == nil || !validFederatedRevision(*value.Live.AuthorizationRevision) {
+		if value.Live.AuthorizationRevision == nil || !validFederatedRevision(*value.Live.AuthorizationRevision) ||
+			value.Snapshot.AuthorizationRevision == nil || !validFederatedRevision(*value.Snapshot.AuthorizationRevision) ||
+			*value.Live.AuthorizationRevision < *value.Snapshot.AuthorizationRevision {
 			return federatedauth.SessionProjection{}, errFederatedAuthPersistence
 		}
-	} else if value.Live.AuthorizationRevision != nil {
+	} else if value.Live.AuthorizationRevision != nil || value.Snapshot.AuthorizationRevision != nil {
 		return federatedauth.SessionProjection{}, errFederatedAuthPersistence
 	}
 	snapshot, err := federatedSessionSnapshotFromWire(value.Snapshot)
@@ -196,6 +199,10 @@ func federatedSessionProjectionFromWire(
 	if err != nil || entityIDWire(snapshot.SessionID) != wanted.SessionID || entityIDWire(snapshot.TenantID) != wanted.TenantID ||
 		entityIDWire(live.TenantID) != wanted.TenantID || live.UserID != snapshot.UserID || live.Audience != wanted.Audience {
 		return federatedauth.SessionProjection{}, errFederatedAuthPersistence
+	}
+	if value.AuthenticationMethod == string(federatedauth.AuthenticationMethodLDAP) {
+		snapshot.AuthorizationRevision = *value.Snapshot.AuthorizationRevision
+		live.AuthorizationRevision = *value.Live.AuthorizationRevision
 	}
 	return federatedauth.SessionProjection{
 		Snapshot: snapshot, Live: live,
@@ -336,6 +343,9 @@ func federatedSessionMutationToWire(value federatedauth.SessionMutation) (federa
 		!validFederatedAuthenticationMethod(string(value.AuthenticationMethod)) ||
 		!validFederatedSuccessorRevision(value.ExpectedVersion) || !validFederatedDatabaseTime(value.ObservedAt) ||
 		!validFederatedSessionDecisionReason(value.Decision, value.Reason) {
+		return federatedSessionMutationWire{}, errFederatedAuthPersistence
+	}
+	if value.Reason == mfa.SessionReasonAuthorizationRefresh && value.AuthenticationMethod != federatedauth.AuthenticationMethodLDAP {
 		return federatedSessionMutationWire{}, errFederatedAuthPersistence
 	}
 	wire := federatedSessionMutationWire{
@@ -498,7 +508,7 @@ func validFederatedSessionDecisionReason(decision mfa.SessionDecision, reason mf
 	case mfa.SessionUsable:
 		return reason == mfa.SessionReasonCurrent
 	case mfa.SessionRotate:
-		return reason == mfa.SessionReasonPolicyRefresh
+		return reason == mfa.SessionReasonPolicyRefresh || reason == mfa.SessionReasonAuthorizationRefresh
 	case mfa.SessionStepUp:
 		return reason == mfa.SessionReasonAssuranceInsufficient || reason == mfa.SessionReasonRecoveryRestricted
 	case mfa.SessionRevoke:

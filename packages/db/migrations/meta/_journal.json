@@ -1695,6 +1695,20 @@
       "when": 1788800892499,
       "tag": "0241_v55_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1788805350565,
+      "tag": "0242_ldap_session_authority_refresh",
+      "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1788805357439,
+      "tag": "0243_v56_compatibility",
+      "breakpoints": true
     }
   ]
 }

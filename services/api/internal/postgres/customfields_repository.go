@@ -1008,20 +1008,35 @@ func customDefinitionSnapshot(definition kernel.Definition) ([]byte, error) {
 	}
 	constraints := definition.Constraints()
 	defaultValue := any(nil)
+	defaultPresence := "missing"
 	if definition.Default().Presence() != kernel.PresenceMissing {
 		defaultValue = json.RawMessage(definition.Default().CanonicalJSON())
+		defaultPresence = "present"
+		if definition.Default().Presence() == kernel.PresenceNull {
+			defaultPresence = "null"
+		}
 	}
+	visibility, policy := definition.Visibility(), definition.EditPolicy()
 	return json.Marshal(map[string]any{
 		"id": definition.ID().String(), "tenantId": definition.TenantID().String(),
 		"objectType": definition.ObjectType(), "key": definition.Key().String(),
 		"label": definition.Label(), "description": definition.Description(),
 		"dataType": definition.DataType(), "required": definition.Required(),
 		"nullable": definition.Nullable(), "default": defaultValue,
+		"defaultPresence": defaultPresence,
 		"constraints": map[string]any{
 			"minimumLength": constraints.MinimumLength(), "maximumLength": constraints.MaximumLength(),
 			"minimum": constraints.Minimum(), "maximum": constraints.Maximum(), "pattern": constraints.Pattern(),
 		},
 		"options": optionProjection, "visibility": definition.Visibility(),
+		"permissions": []map[string]any{
+			{"audience": "customer", "canRead": visibility.Customer, "canCreate": policy.CustomerCreate, "canUpdate": policy.CustomerUpdate},
+			{"audience": "operator", "canRead": visibility.Operator, "canCreate": policy.OperatorCreate, "canUpdate": policy.OperatorUpdate},
+		},
+		"capabilities": map[string]any{
+			"searchable": definition.Searchable(), "filterable": definition.Filterable(),
+			"sortable": definition.Sortable(), "allowStructuredJson": definition.AllowStructuredJSON(),
+		},
 		"editPolicy": definition.EditPolicy(), "placement": definition.Placement(),
 		"requiredOnTransitions": transitionProjection, "searchable": definition.Searchable(),
 		"filterable": definition.Filterable(), "sortable": definition.Sortable(),

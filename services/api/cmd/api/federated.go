@@ -100,7 +100,9 @@ func (authority *runtimeFederatedSessionAuthority) RevalidateFederatedSession(
 		mapped.AllowIdleTouch = true
 		return mapped, nil
 	case mfa.SessionRotate:
-		if result.Reason != mfa.SessionReasonPolicyRefresh || result.AllowAuthority || result.AllowIdleTouch ||
+		validReason := result.Reason == mfa.SessionReasonPolicyRefresh ||
+			(result.Reason == mfa.SessionReasonAuthorizationRefresh && result.AuthenticationMethod == federatedauth.AuthenticationMethodLDAP)
+		if !validReason || result.AllowAuthority || result.AllowIdleTouch ||
 			!validRuntimeFederatedID(uuid.UUID(result.NewSessionID)) ||
 			uuid.UUID(result.NewSessionID) == lookup.SessionID || result.ContinuationID != zero ||
 			result.AbsoluteExpiresAt.IsZero() || result.AbsoluteExpiresAt.Location() != time.UTC ||

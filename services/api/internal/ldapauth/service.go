@@ -182,6 +182,13 @@ func (service *Service) Authenticate(ctx context.Context, command Command) (Resu
 	externalIdentityID := claim.ExternalIdentityID
 	userID := claim.UserID
 	membershipID := claim.MembershipID
+	accessGrantID := claim.AccessGrantID
+	if claim.Planning.ProviderAccess.AccessGrantLive != (accessGrantID != uuid.Nil) {
+		return Result{}, ErrAuthentication
+	}
+	if accessGrantID == uuid.Nil {
+		accessGrantID = ids[9]
+	}
 	if plan.IdentityAction() == identity.LDAPIdentityCreateUserAndExternalIdentity {
 		externalIdentityID, userID, membershipID = ids[5], ids[6], ids[7]
 	}
@@ -232,7 +239,7 @@ func (service *Service) Authenticate(ctx context.Context, command Command) (Resu
 		ApplicationID: ids[3], AuditEventID: ids[4], AuthorityAuditID: ids[11], Audit: auditMetadata(command),
 		ObservedAt: observedAt, ReturnPath: command.ReturnPath,
 		ExternalIdentityID: externalIdentityID, UserID: userID, MembershipID: membershipID,
-		AccessGrantID: ids[9], ProfileContributionID: ids[10], AliasIDs: aliasIDs,
+		AccessGrantID: accessGrantID, ProfileContributionID: ids[10], AliasIDs: aliasIDs,
 		SubjectFormat: observation.SubjectFormat(), SubjectEnvelope: envelope, SubjectAliases: protectedAliases,
 		Planning: claim.Planning, Plan: plan, Assurance: assurance, Evidence: evidence,
 	}

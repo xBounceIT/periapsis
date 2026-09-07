@@ -71,7 +71,7 @@ function inspectFile(path) {
   );
 }
 
-function inspectTree(input, { dependencies }) {
+function inspectTree(input, { dependencies, portablePackageMetadata = false }) {
   const root = resolve(input);
   assert.ok(
     lstatSync(root).isDirectory(),
@@ -112,6 +112,15 @@ function inspectTree(input, { dependencies }) {
       inspectFile(path);
       regularFiles.push(path);
       files += 1;
+      if (portablePackageMetadata && basename(path) === "package.json") {
+        const manifest = JSON.parse(readFileSync(path, "utf8"));
+        for (const key of ["os", "cpu", "libc", "gypfile"]) {
+          assert.ok(
+            !(key in manifest),
+            "Platform-specific production package metadata",
+          );
+        }
+      }
       if (dependencies && basename(path) === "package.json") {
         const manifest = JSON.parse(readFileSync(path, "utf8"));
         for (const key of ["os", "cpu", "libc", "gypfile", "bin"]) {
@@ -175,6 +184,13 @@ export function verifyPortableDatabaseArtifact(modulesRoot, compiledRoot) {
     dependencies: inspectTree(modulesRoot, { dependencies: true }),
     compiled: inspectTree(compiledRoot, { dependencies: false }),
   };
+}
+
+export function verifyPortableJavaScriptArtifact(root) {
+  return inspectTree(root, {
+    dependencies: false,
+    portablePackageMetadata: true,
+  });
 }
 
 if (import.meta.main) {

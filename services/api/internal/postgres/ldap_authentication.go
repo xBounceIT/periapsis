@@ -35,7 +35,7 @@ const (
 		) AS rate
 		WHERE rate.blocked_until > statement_timestamp()
 	)`
-	claimLDAPAuthenticationSQL = `SELECT * FROM app.claim_tenant_ldap_jit_planning_v1(
+	claimLDAPAuthenticationSQL = `SELECT * FROM app.claim_tenant_ldap_jit_planning_v2(
 		$1,$2,$3,$4,$5,$6,$7,$8,$9)`
 	ldapAssuranceSnapshotSQL = `SELECT requirement,has_enrollable_factor
 		FROM app.tenant_ldap_jit_assurance_snapshot_v1($1,$2,$3,$4)`
@@ -213,6 +213,7 @@ func (repository *LDAPAuthenticationRepository) Claim(
 			&row.MembershipID, &row.ExternalIdentityExists, &row.UserActive,
 			&row.MembershipExists, &row.MembershipActive, &row.AccessGrantLive,
 			&row.Rules, &row.RolePolicies, &row.ExistingRoleIDs, &row.LiveOwnedEdges,
+			&row.AccessGrantID,
 		)
 		if err != nil {
 			return ldapauth.Claim{}, mapLDAPAuthenticationDatabaseError(err)
@@ -249,7 +250,7 @@ type ldapPlanningRow struct {
 	ProviderVersion, BindingVersion, BindingAuthRevision, ConfigurationRevision int32
 	RuleSetRevision, AuthorizationRevision                                      int64
 	JITMode, NoMatchPolicy                                                      string
-	ExternalIdentityID, UserID, MembershipID                                    pgtype.UUID
+	ExternalIdentityID, UserID, MembershipID, AccessGrantID                     pgtype.UUID
 	ExternalIdentityExists, UserActive, MembershipExists, MembershipActive,
 	AccessGrantLive bool
 	Rules, RolePolicies, LiveOwnedEdges []byte
@@ -266,7 +267,8 @@ func mapLDAPPlanningClaim(row ldapPlanningRow, expectedRunID uuid.UUID) (ldapaut
 		row.ExternalIdentityID.Valid != row.ExternalIdentityExists ||
 		row.UserID.Valid != row.ExternalIdentityExists || row.UserActive && !row.ExternalIdentityExists ||
 		row.MembershipID.Valid != row.MembershipExists || row.MembershipExists && !row.ExternalIdentityExists ||
-		row.MembershipActive && !row.MembershipExists || row.AccessGrantLive && !row.MembershipActive {
+		row.MembershipActive && !row.MembershipExists || row.AccessGrantLive && !row.MembershipActive ||
+		row.AccessGrantID.Valid != row.AccessGrantLive {
 		return ldapauth.Claim{}, ldapauth.ErrUnavailable
 	}
 	rules, groups, assignments, err := mapLDAPJITPlanningRules(row.Rules)
@@ -312,6 +314,7 @@ func mapLDAPPlanningClaim(row ldapPlanningRow, expectedRunID uuid.UUID) (ldapaut
 		Delegation: ldapJITMappingDelegation(rolePolicies), LiveOwnedEdges: edges,
 	}
 	return ldapauth.Claim{
+		AccessGrantID:  nullableLDAPUUID(row.AccessGrantID),
 		OperationRunID: row.OperationRunID, TenantID: row.TenantID, ProviderID: row.ProviderID,
 		BindingID: row.BindingID, BindingAuthRevision: int64(row.BindingAuthRevision),
 		ExternalIdentityID: nullableLDAPUUID(row.ExternalIdentityID), UserID: nullableLDAPUUID(row.UserID),

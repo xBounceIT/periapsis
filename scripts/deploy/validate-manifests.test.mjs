@@ -774,13 +774,14 @@ test("Go packaging Dockerfiles close build context and runtime identity", () => 
 test("notifier packaging is pinned and fails closed without its entrypoint", () => {
   const valid = `
 ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:deadbeef
+FROM --platform=$BUILDPLATFORM \${NODE_IMAGE} AS build
 ENV CI=true
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY services/notifier/package.json services/notifier/package.json
 COPY packages/tsconfig/package.json packages/tsconfig/package.json
 RUN corepack pnpm install --frozen-lockfile --filter @periapsis/notifier...
 RUN corepack pnpm --filter @periapsis/notifier build
-RUN corepack pnpm --filter @periapsis/notifier deploy --legacy --prod /out
+RUN corepack pnpm --filter @periapsis/notifier deploy --legacy --prod --config.hoist-workspace-packages=false /out
 RUN test -f /out/dist/main.js
 COPY --from=build --chown=10001:10001 /out/node_modules ./node_modules
 COPY --from=build --chown=10001:10001 /out/dist ./dist
@@ -789,6 +790,11 @@ HEALTHCHECK NONE
 ENTRYPOINT ["node", "dist/main.js"]
 `;
   assert.deepEqual(validateNotifierPackagingDockerfile(valid), []);
+  assert.ok(
+    validateNotifierPackagingDockerfile(
+      valid.replace("--platform=$BUILDPLATFORM ", ""),
+    ).length > 0,
+  );
   assert.ok(
     validateNotifierPackagingDockerfile(
       valid.replace("dist/main.js", "dist/index.js"),

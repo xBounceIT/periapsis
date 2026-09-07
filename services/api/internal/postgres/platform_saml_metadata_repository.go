@@ -18,7 +18,7 @@ import (
 
 const (
 	loadPlatformSAMLMetadataSQL                = `select app.load_platform_saml_metadata_projection_v1($1::text)`
-	platformSAMLReadinessSQL                   = `select app.platform_saml_direct_runtime_schema_readiness_v55()`
+	platformSAMLReadinessSQL                   = `select app.platform_saml_direct_runtime_schema_readiness_v56()`
 	maximumPlatformSAMLMetadataProjectionBytes = 4 * 1024 * 1024
 )
 

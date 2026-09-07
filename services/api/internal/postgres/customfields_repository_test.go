@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -15,6 +16,63 @@ import (
 	"github.com/periapsis-im/periapsis/services/api/internal/authorization"
 	application "github.com/periapsis-im/periapsis/services/api/internal/customfields"
 )
+
+func TestCustomDefinitionSnapshotPreservesDatabaseRevisionContract(t *testing.T) {
+	for _, scenario := range []struct {
+		name  string
+		value kernel.InputValue
+	}{
+		{"missing", kernel.InputValue{}},
+		{"null", kernel.JSONInputValue([]byte("null"))},
+		{"present", kernel.JSONInputValue([]byte(`"host"`))},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			id, _ := kernel.ParseEntityID(uuid.Must(uuid.NewV7()).String())
+			tenant, _ := kernel.ParseEntityID(uuid.Must(uuid.NewV7()).String())
+			key, _ := kernel.NewKey("host")
+			definition, err := kernel.NewDefinition(kernel.DefinitionInput{
+				ID: id, TenantID: tenant, ObjectType: kernel.ObjectAlert,
+				Key: key, Label: "Host", DataType: kernel.TypeShortText,
+				Nullable: true, Default: scenario.value, SchemaVersion: 1,
+				Visibility: kernel.Visibility{Operator: true},
+				EditPolicy: kernel.EditPolicy{OperatorCreate: true, OperatorUpdate: true},
+				Placement:  kernel.Placement{ShowInCreate: true, ShowInDetail: true},
+				Searchable: true, Filterable: true, Sortable: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := customDefinitionSnapshot(definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var snapshot map[string]any
+			if err = json.Unmarshal(encoded, &snapshot); err != nil {
+				t.Fatal(err)
+			}
+			if snapshot["defaultPresence"] != scenario.name {
+				t.Fatal("default presence was lost")
+			}
+			for _, field := range []string{"options", "permissions", "requiredOnTransitions"} {
+				if _, ok := snapshot[field].([]any); !ok {
+					t.Fatalf("%s must be an array", field)
+				}
+			}
+			capabilities, ok := snapshot["capabilities"].(map[string]any)
+			if !ok || capabilities["searchable"] != true || capabilities["filterable"] != true || capabilities["sortable"] != true || capabilities["allowStructuredJson"] != false {
+				t.Fatal("capability projection changed")
+			}
+			permissions := snapshot["permissions"].([]any)
+			if len(permissions) != 2 {
+				t.Fatal("audience permissions are missing")
+			}
+			customer, operator := permissions[0].(map[string]any), permissions[1].(map[string]any)
+			if customer["audience"] != "customer" || customer["canRead"] != false || customer["canCreate"] != false || customer["canUpdate"] != false || operator["audience"] != "operator" || operator["canRead"] != true || operator["canCreate"] != true || operator["canUpdate"] != true {
+				t.Fatal("audience permissions changed")
+			}
+		})
+	}
+}
 
 func TestCustomDefinitionCursorRoundTripAndCanonicalValidation(t *testing.T) {
 	t.Parallel()

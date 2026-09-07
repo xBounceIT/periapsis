@@ -107,6 +107,7 @@ func TestLDAPSessionRevalidationDecodesItsAuthorizationRevision(t *testing.T) {
 			}
 			if !scenario.omit {
 				wire.Live.AuthorizationRevision = &scenario.revision
+				wire.Snapshot.AuthorizationRevision = &scenario.revision
 			}
 			encoded, err := json.Marshal(wire)
 			if err != nil {
@@ -136,7 +137,9 @@ func TestLDAPSessionRevalidationDecodesItsAuthorizationRevision(t *testing.T) {
 				t.Fatalf("LoadSessionForRevalidation() error = %v, allowed = %t", err, scenario.allowed)
 			}
 			if scenario.allowed && (projection.AuthenticationMethod != lookup.AuthenticationMethod ||
-				projection.Snapshot.SessionID != lookup.SessionID) {
+				projection.Snapshot.SessionID != lookup.SessionID ||
+				projection.Snapshot.AuthorizationRevision != scenario.revision ||
+				projection.Live.AuthorizationRevision != scenario.revision) {
 				t.Fatal("LDAP session identity changed during decoding")
 			}
 		})

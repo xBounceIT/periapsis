@@ -714,6 +714,7 @@ export function validateNotifierPackagingDockerfile(
   path = "Dockerfile.notifier",
 ) {
   return requireMarkers(contents, path, [
+    "FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build",
     "ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:",
     "ENV CI=true",
     "COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./",
@@ -721,7 +722,7 @@ export function validateNotifierPackagingDockerfile(
     "COPY packages/tsconfig/package.json packages/tsconfig/package.json",
     "corepack pnpm install --frozen-lockfile --filter @periapsis/notifier...",
     "corepack pnpm --filter @periapsis/notifier build",
-    "corepack pnpm --filter @periapsis/notifier deploy --legacy --prod /out",
+    "corepack pnpm --filter @periapsis/notifier deploy --legacy --prod --config.hoist-workspace-packages=false /out",
     "test -f /out/dist/main.js",
     "COPY --from=build --chown=10001:10001 /out/node_modules ./node_modules",
     "COPY --from=build --chown=10001:10001 /out/dist ./dist",

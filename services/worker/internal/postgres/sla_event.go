@@ -12,7 +12,7 @@ import (
 	"github.com/periapsis-im/periapsis/services/worker/internal/slaevent"
 )
 
-const readySLAObjectEventIngressQuery = `SELECT app.sla_object_event_ingress_schema_readiness_v55()`
+const readySLAObjectEventIngressQuery = `SELECT app.sla_object_event_ingress_schema_readiness_v56()`
 
 const claimSLAObjectEventsQuery = `
 WITH trace_context AS MATERIALIZED (

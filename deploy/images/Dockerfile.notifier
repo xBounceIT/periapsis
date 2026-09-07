@@ -1,6 +1,8 @@
 ARG NODE_IMAGE=node:24.20.0-alpine3.23@sha256:0388af2af070cd4736a1567cfed02469ba117848845b4165d87a333edb53d2ca
 
-FROM ${NODE_IMAGE} AS build
+# TypeScript and the production dependency tree are architecture-independent.
+# Run the build tools natively; the final Node image follows the target platform.
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
 
 # The pinned Node base predates Alpine's OpenSSL 3.5.8 security package.
 RUN apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
@@ -17,9 +19,11 @@ RUN corepack pnpm install --frozen-lockfile --filter @periapsis/notifier...
 
 COPY services/notifier/ services/notifier/
 COPY packages/tsconfig/ packages/tsconfig/
+COPY deploy/compose/portable-database-artifact.mjs deploy/compose/portable-notifier-artifact.mjs deploy/compose/
 
 RUN corepack pnpm --filter @periapsis/notifier build \
-    && corepack pnpm --filter @periapsis/notifier deploy --legacy --prod /out \
+    && corepack pnpm --filter @periapsis/notifier deploy --legacy --prod --config.hoist-workspace-packages=false /out \
+    && node deploy/compose/portable-notifier-artifact.mjs /out \
     && test -f /out/dist/main.js
 
 FROM ${NODE_IMAGE}

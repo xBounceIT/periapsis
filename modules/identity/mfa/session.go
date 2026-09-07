@@ -47,19 +47,20 @@ type SessionEvidence struct {
 
 // SessionSnapshot contains only server-side provenance. It is not a cookie projection.
 type SessionSnapshot struct {
-	SessionID          identity.EntityID
-	RotationFamilyID   identity.EntityID
-	Version            uint64
-	TenantID           identity.EntityID
-	UserID             identity.EntityID
-	IdentityEpoch      uint64
-	RecoveryRestricted bool
-	Primary            PrimaryProvenance
-	Evidence           []SessionEvidence
-	PolicyRevisions    []identity.AssurancePolicyRevision
-	IssuedAt           time.Time
-	IdleExpiresAt      time.Time
-	AbsoluteExpiresAt  time.Time
+	AuthorizationRevision uint64
+	SessionID             identity.EntityID
+	RotationFamilyID      identity.EntityID
+	Version               uint64
+	TenantID              identity.EntityID
+	UserID                identity.EntityID
+	IdentityEpoch         uint64
+	RecoveryRestricted    bool
+	Primary               PrimaryProvenance
+	Evidence              []SessionEvidence
+	PolicyRevisions       []identity.AssurancePolicyRevision
+	IssuedAt              time.Time
+	IdleExpiresAt         time.Time
+	AbsoluteExpiresAt     time.Time
 }
 
 func (s SessionSnapshot) String() string {
@@ -83,6 +84,7 @@ type TrustRuleState struct {
 
 // LiveSessionProjection must be loaded before an idle touch or RBAC decision.
 type LiveSessionProjection struct {
+	AuthorizationRevision    uint64
 	TenantID                 identity.EntityID
 	UserID                   identity.EntityID
 	Audience                 string
@@ -115,6 +117,7 @@ type SessionReason string
 const (
 	SessionReasonCurrent               SessionReason = "current"
 	SessionReasonPolicyRefresh         SessionReason = "policy_refresh"
+	SessionReasonAuthorizationRefresh  SessionReason = "authorization_refresh"
 	SessionReasonAssuranceInsufficient SessionReason = "assurance_insufficient"
 	SessionReasonLifecycle             SessionReason = "lifecycle"
 	SessionReasonIdentityEpoch         SessionReason = "identity_epoch"
@@ -138,7 +141,10 @@ type SessionRevalidation struct {
 // Identity/trust/factor drift revokes; a policy increase creates a restricted
 // step-up, while a still-satisfied policy revision rotates the session pins.
 func RevalidateSession(now time.Time, session SessionSnapshot, live LiveSessionProjection) SessionRevalidation {
-	if !validMFATime(now) || !validSessionSnapshot(now, session) || !validLiveProjection(now, session, live) {
+	if !validMFATime(now) || !validSessionSnapshot(now, session) || !validLiveProjection(now, session, live) ||
+		(session.AuthorizationRevision == 0) != (live.AuthorizationRevision == 0) ||
+		(session.AuthorizationRevision != 0 && (!validStoredVersion(session.AuthorizationRevision) ||
+			!validStoredVersion(live.AuthorizationRevision) || live.AuthorizationRevision < session.AuthorizationRevision)) {
 		return sessionResult(SessionDeny, SessionReasonMalformed, live.Requirement)
 	}
 	if !now.Before(session.IdleExpiresAt) || !now.Before(session.AbsoluteExpiresAt) {
@@ -180,6 +186,9 @@ func RevalidateSession(now time.Time, session SessionSnapshot, live LiveSessionP
 	}
 	if !policyCurrent {
 		return sessionResult(SessionRotate, SessionReasonPolicyRefresh, live.Requirement)
+	}
+	if session.AuthorizationRevision != live.AuthorizationRevision {
+		return sessionResult(SessionRotate, SessionReasonAuthorizationRefresh, live.Requirement)
 	}
 	result := sessionResult(SessionUsable, SessionReasonCurrent, live.Requirement)
 	result.AllowAuthority = true
