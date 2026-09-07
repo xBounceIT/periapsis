@@ -652,6 +652,64 @@ test("edge errors retain only fixed categories and never configuration values", 
   });
 });
 
+test("full diagnostics include notifier readiness without disclosing arbitrary log values", () => {
+  const entries = [
+    {
+      level: "error",
+      service: "notifier",
+      event: "notifier_readiness_failed",
+      reason: "deadline_exceeded",
+      durationMs: 2001,
+      error: canary,
+    },
+    {
+      level: "error",
+      service: "notifier",
+      event: "notifier_stopped",
+      errorClass: canary,
+      reason: canary,
+      durationMs: -1,
+    },
+  ];
+  const output = redactComposeStartupLogs(
+    "notifier",
+    entries.map((entry) => JSON.stringify(entry)).join("\n"),
+  );
+  assert.deepEqual(output.events, [
+    {
+      kind: "notifier_runtime",
+      event: "notifier_readiness_failed",
+      reason: "deadline_exceeded",
+      errorClass: "UNCLASSIFIED",
+      durationMs: 2001,
+    },
+    {
+      kind: "notifier_runtime",
+      event: "notifier_stopped",
+      reason: "UNCLASSIFIED",
+      errorClass: "UNCLASSIFIED",
+      durationMs: null,
+    },
+  ]);
+  assert.ok(!JSON.stringify(output).includes(canary));
+  const calls = [];
+  const result = collectComposeStartupDiagnostics((_command, args, options) => {
+    calls.push({ args, options });
+    if (args[0] === "compose") {
+      assert.equal(args[4], "full");
+      return success(container);
+    }
+    return success(args[0] === "inspect" ? JSON.stringify(state) : "");
+  }, "full");
+  assert.equal(result.profile, "full");
+  assert.deepEqual(
+    result.services.slice(-2).map((entry) => entry.service),
+    ["notifier-provision", "notifier"],
+  );
+  assert.equal(calls.length, 25);
+  assert.ok(calls.every((call) => call.options.timeout === 5000));
+});
+
 test("collector uses at most nineteen bounded read-only commands for seven fixed services", () => {
   const calls = [];
   const result = collectComposeStartupDiagnostics((command, args, options) => {

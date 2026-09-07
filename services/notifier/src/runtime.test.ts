@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { DeliveryRepository, DeliveryRunResult } from "./delivery.js";
+import type {
+  DeliveryLogger,
+  DeliveryRepository,
+  DeliveryRunResult,
+} from "./delivery.js";
+import { NotificationConfigurationError } from "./errors.js";
 import { NotifierMetrics } from "./observability.js";
 import {
   CompositeNotificationBatchRunner,
@@ -11,6 +16,42 @@ import {
 import { disabledTestTracing } from "./test/telemetry.js";
 
 describe("notification runtime", () => {
+  it.each(["configuration", "query", "timeout"])(
+    "records bounded %s readiness diagnostics without error details",
+    async (failure) => {
+      const repository = fakeRepository();
+      repository.readiness = async (signal) => {
+        if (failure === "timeout") {
+          await new Promise((_, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason), {
+              once: true,
+            }),
+          );
+        }
+        throw failure === "configuration"
+          ? new NotificationConfigurationError()
+          : new Error("private-database-canary");
+      };
+      const logger = { info: vi.fn(), error: vi.fn() };
+      const runtime = createRuntime({ runOnce: vi.fn() }, repository, logger);
+      await expect(
+        runtime.readiness(new AbortController().signal),
+      ).resolves.toEqual({ ready: false, queueDepth: 0 });
+      expect(logger.error).toHaveBeenCalledWith("notifier_readiness_failed", {
+        reason:
+          failure === "timeout"
+            ? "deadline_exceeded"
+            : failure === "configuration"
+              ? "configuration_invalid"
+              : "query_failed",
+        durationMs: expect.any(Number),
+      });
+      expect(JSON.stringify(logger.error.mock.calls)).not.toContain(
+        "private-database-canary",
+      );
+    },
+  );
+
   it("polls one bounded batch at a time and stops promptly", async () => {
     const stop = new AbortController();
     const result: DeliveryRunResult = {
@@ -165,12 +206,13 @@ describe("notification runtime", () => {
 function createRuntime(
   worker: DeliveryBatchRunner,
   repository = fakeRepository(),
+  logger: DeliveryLogger = { info() {}, error() {} },
 ): NotificationRuntime {
   return new NotificationRuntime({
     worker,
     repository,
     metrics: new NotifierMetrics(),
-    logger: { info() {}, error() {} },
+    logger,
     tracing: disabledTestTracing,
     options: {
       idlePollIntervalMs: 100,

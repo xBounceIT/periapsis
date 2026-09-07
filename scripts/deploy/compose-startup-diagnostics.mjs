@@ -18,6 +18,27 @@ const loggedServices = new Set([
   "worker",
   "edge",
 ]);
+const notifierEvents = new Set([
+  "notifier_readiness_failed",
+  "notifier_stopped",
+  "notifier_iteration_failed",
+]);
+const notifierReasons = new Set([
+  "deadline_exceeded",
+  "request_canceled",
+  "configuration_invalid",
+  "query_failed",
+]);
+const notifierErrorClasses = new Set([
+  "NotificationConfigurationError",
+  "NotificationValidationError",
+  "NotificationConflictError",
+  "Error",
+  "TypeError",
+  "AbortError",
+  "TimeoutError",
+  "PostgresError",
+]);
 const runtimeErrors = new Set([
   ...apiStartupErrors,
   "validate worker database role",
@@ -234,6 +255,29 @@ function minioEvent(line) {
 function runtimeEvent(service, line) {
   try {
     const entry = JSON.parse(line);
+    if (
+      service === "notifier" &&
+      entry?.service === "notifier" &&
+      entry.level === "error" &&
+      notifierEvents.has(entry.event)
+    ) {
+      return {
+        kind: "notifier_runtime",
+        event: entry.event,
+        reason: notifierReasons.has(entry.reason)
+          ? entry.reason
+          : "UNCLASSIFIED",
+        errorClass: notifierErrorClasses.has(entry.errorClass)
+          ? entry.errorClass
+          : "UNCLASSIFIED",
+        durationMs:
+          Number.isSafeInteger(entry.durationMs) &&
+          entry.durationMs >= 0 &&
+          entry.durationMs <= 30000
+            ? entry.durationMs
+            : null,
+      };
+    }
     if (entry?.level === "WARN") {
       if (
         service === "api" &&
@@ -293,11 +337,11 @@ export function redactComposeStartupLogs(service, source) {
     if (!raw) continue;
     const line = stripVTControlCharacters(raw);
     const event =
-      service === "migration"
+      service === "migration" || service === "notifier-provision"
         ? databaseEvent(line)
         : service === "minio-provision"
           ? minioEvent(line)
-          : service === "api" || service === "worker"
+          : service === "api" || service === "worker" || service === "notifier"
             ? runtimeEvent(service, line)
             : service === "edge" &&
                 (line.startsWith("Error:") ||
@@ -359,17 +403,33 @@ function safeState(source) {
   return "unavailable";
 }
 
-export function collectComposeStartupDiagnostics(execute = spawnSync) {
+export function collectComposeStartupDiagnostics(
+  execute = spawnSync,
+  profile = "minimal",
+) {
+  if (profile !== "minimal" && profile !== "full")
+    throw new Error("unsupported diagnostic profile");
+  const selectedServices =
+    profile === "full"
+      ? [...services, "notifier-provision", "notifier"]
+      : services;
+  const selectedLoggedServices =
+    profile === "full"
+      ? new Set([...loggedServices, "notifier-provision", "notifier"])
+      : loggedServices;
+  const selectedCompose = [...compose.slice(0, -1), profile];
   return {
-    profile: "minimal",
-    services: services.map((service) => {
+    profile,
+    services: selectedServices.map((service) => {
       const result = {
         service,
         state: "unavailable",
-        logs: loggedServices.has(service) ? "unavailable" : "not-collected",
+        logs: selectedLoggedServices.has(service)
+          ? "unavailable"
+          : "not-collected",
       };
       const lookup = docker(
-        [...compose, "ps", "--all", "--quiet", service],
+        [...selectedCompose, "ps", "--all", "--quiet", service],
         execute,
       );
       const container = lookup?.stdout.trim();
@@ -379,7 +439,7 @@ export function collectComposeStartupDiagnostics(execute = spawnSync) {
         execute,
       );
       if (inspected) result.state = safeState(inspected.stdout);
-      if (loggedServices.has(service)) {
+      if (selectedLoggedServices.has(service)) {
         const logs = docker(["logs", "--tail", "100", container], execute);
         if (logs)
           result.logs = redactComposeStartupLogs(
@@ -395,7 +455,7 @@ export function collectComposeStartupDiagnostics(execute = spawnSync) {
 if (import.meta.main) {
   try {
     process.stdout.write(
-      `${JSON.stringify(collectComposeStartupDiagnostics())}\n`,
+      `${JSON.stringify(collectComposeStartupDiagnostics(spawnSync, process.argv[2] ?? "minimal"))}\n`,
     );
   } catch {
     process.stderr.write(

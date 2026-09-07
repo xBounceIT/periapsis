@@ -13,6 +13,14 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Resolve full-profile notifier health on Linux: run `34126074120` passes
+      minimal HTTPS authentication and stale-membership reprovisioning, then
+      reports an unhealthy notifier while Keycloak is healthy. Native PostgreSQL
+      and the real notifier entrypoint return readiness HTTP 200 in 0.4-0.6s
+      (`.tmp/ci-fix/notifier-runtime-native.log`), so no timeout or schema cause is
+      yet established. Retain finite readiness failure categories and duration,
+      and collect notifier/provisioner state and redacted logs for the full
+      profile. The collector uses at most 25 bounded read-only commands.
 - [x] Run `34124857324` passes the complete HTTPS authentication smoke, then
       rejects migration resealing after the stale-membership fixture adds extra
       runtime privileges. Remove only noncanonical memberships from the three

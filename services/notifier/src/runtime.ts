@@ -5,7 +5,10 @@ import type {
   DeliveryRepository,
   DeliveryRunResult,
 } from "./delivery.js";
-import { NotificationConflictError } from "./errors.js";
+import {
+  NotificationConfigurationError,
+  NotificationConflictError,
+} from "./errors.js";
 import type { NotifierMetrics } from "./observability.js";
 import type {
   FanoutRunResult,
@@ -195,6 +198,7 @@ export class NotificationRuntime {
   }> {
     const timeout = AbortSignal.timeout(this.#options.readinessTimeoutMs);
     const bounded = AbortSignal.any([signal, timeout]);
+    const startedAt = performance.now();
     try {
       const result = await this.#tracing.runDatabaseSpan("readiness", () =>
         this.#repository.readiness(bounded),
@@ -205,7 +209,17 @@ export class NotificationRuntime {
         result.oldestPendingSeconds,
       );
       return { ready: true, queueDepth: result.queueDepth };
-    } catch {
+    } catch (error) {
+      this.#logger.error("notifier_readiness_failed", {
+        reason: timeout.aborted
+          ? "deadline_exceeded"
+          : signal.aborted
+            ? "request_canceled"
+            : error instanceof NotificationConfigurationError
+              ? "configuration_invalid"
+              : "query_failed",
+        durationMs: Math.round(performance.now() - startedAt),
+      });
       if (signal.aborted) throw signal.reason;
       this.#metrics.setReadiness(false, 0, 0);
       return { ready: false, queueDepth: 0 };
