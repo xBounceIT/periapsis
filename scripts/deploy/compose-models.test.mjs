@@ -173,6 +173,17 @@ function resolved(result) {
 
 function assertApplicationHardening(model) {
   assertAddressPools(model);
+  const publicOrigin = new URL(
+    model.services.api.environment.PERIAPSIS_PUBLIC_URL,
+  );
+  for (const name of ["api", "worker"]) {
+    assert.ok(
+      model.services[name].environment.PERIAPSIS_FEDERATED_HTTPS_PORTS.split(
+        ",",
+      ).includes(publicOrigin.port || "443"),
+      `${name} must admit the deployment-owned OIDC callback port`,
+    );
+  }
   assertMailpitHostPublication(model);
   for (const name of [
     "api",
@@ -447,7 +458,7 @@ for (const [profile, services] of Object.entries(profiles)) {
       );
       assert.equal(
         model.services[name].environment.PERIAPSIS_FEDERATED_HTTPS_PORTS,
-        "443,18090",
+        "443,18090,18443",
       );
       assert.equal(
         model.services[name].environment

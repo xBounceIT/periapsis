@@ -529,7 +529,7 @@ export function validateComposeDevelopmentTLS(
       "PERIAPSIS_PUBLIC_URL: https://localhost:${PERIAPSIS_WEB_PORT:-8443}",
       publicStorageEndpoint,
       "PERIAPSIS_FEDERATED_CA_BUNDLE_FILE: /run/secrets/periapsis-dev-tls-ca.crt",
-      "PERIAPSIS_FEDERATED_HTTPS_PORTS: ${PERIAPSIS_FEDERATED_HTTPS_PORTS:-443,18090}",
+      "PERIAPSIS_FEDERATED_HTTPS_PORTS: ${PERIAPSIS_FEDERATED_HTTPS_PORTS:-443,${PERIAPSIS_IDP_PORT:-18090},${PERIAPSIS_WEB_PORT:-8443}}",
       "file: ${PERIAPSIS_DEV_TLS_CERT_FILE:?set PERIAPSIS_DEV_TLS_CERT_FILE to an external PEM certificate path}",
       "file: ${PERIAPSIS_DEV_TLS_KEY_FILE:?set PERIAPSIS_DEV_TLS_KEY_FILE to an external PEM private-key path}",
       "file: ${PERIAPSIS_DEV_TLS_CA_FILE:?set PERIAPSIS_DEV_TLS_CA_FILE to an external PEM CA path}",
@@ -1634,7 +1634,7 @@ export async function validateRepository(rootDirectory) {
         "PERIAPSIS_DEV_TLS_KEY_FILE=",
         "PERIAPSIS_DEV_TLS_CA_FILE=",
         "PERIAPSIS_WEB_PORT=8443",
-        "PERIAPSIS_FEDERATED_HTTPS_PORTS=443,18090",
+        "PERIAPSIS_FEDERATED_HTTPS_PORTS=443,18090,8443",
       ]),
     );
     for (const variable of [

@@ -264,8 +264,11 @@ docker compose --env-file .env -f deploy/compose/compose.yaml --profile full dow
 All published ports bind to loopback. The TLS edge defaults are web
 `https://localhost:8443`, Keycloak `https://idp.localhost:18090`, and MinIO API
 `https://storage.localhost:19000`. Each configured edge value is both its host and
-container listener port and must remain in `1024..65535`; if the Keycloak port changes,
-include the same value in `PERIAPSIS_FEDERATED_HTTPS_PORTS`. The API, web upstream,
+container listener port and must remain in `1024..65535`. The default
+`PERIAPSIS_FEDERATED_HTTPS_PORTS` includes 443 plus the configured Keycloak and web
+ports: OIDC validates its own public callback as well as IdP endpoints. When setting
+an explicit list, include both public ports (also when changing `.env.example`).
+The API, web upstream,
 Keycloak HTTP listener, and MinIO API have no direct host binding. Auxiliary defaults are
 Mailpit HTTP `18025`, the loopback-only Mailpit acceptance SMTP port `11025`, MinIO
 console `19001`, and Prometheus `19090`. PostgreSQL, LDAP, production SMTP, and OTLP
