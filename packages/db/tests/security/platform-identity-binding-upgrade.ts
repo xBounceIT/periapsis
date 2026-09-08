@@ -134,8 +134,8 @@ const computedCurrentFingerprint = expectedMigrations
   .map((entry) => `${entry.createdAt}@${entry.hash}`)
   .join(":");
 assert.equal(computedCurrentFingerprint, expectedMigrationFingerprint);
-assert.equal(expectedMigrationCount, 254);
-assert.equal(expectedMigrationCreatedAt, 1788882564359);
+assert.equal(expectedMigrationCount, 256);
+assert.equal(expectedMigrationCreatedAt, 1788887610348);
 assert.equal(expectedMigrationCount, expectedMigrations.length);
 assert.equal(expectedMigrationHash, expectedMigrations.at(-1)?.hash);
 const targetFingerprint = expectedMigrations

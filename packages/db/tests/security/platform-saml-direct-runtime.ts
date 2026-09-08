@@ -457,7 +457,7 @@ try {
   assert.equal(
     await asApi(async (transaction) => {
       const [ready] = await transaction<{ value: boolean }[]>`
-          SELECT app.platform_saml_direct_runtime_schema_readiness_v61() AS value
+          SELECT app.platform_saml_direct_runtime_schema_readiness_v62() AS value
       `;
       return ready?.value;
     }),

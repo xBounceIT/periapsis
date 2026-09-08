@@ -574,7 +574,7 @@ try {
   const [readiness] = await sql<
     { ready: boolean; retired_predecessor_ready: boolean }[]
   >`
-    SELECT app.release_runtime_schema_readiness_v61() AS ready,
+    SELECT app.release_runtime_schema_readiness_v62() AS ready,
            app.ticket_saved_views_schema_readiness_v1()
              AS retired_predecessor_ready
   `;

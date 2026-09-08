@@ -124,35 +124,40 @@ assert.deepEqual(v60Latest, {
   createdAt: 1_788_877_946_518,
   hash: "252672500ce8e1a9f100203a8dfad41a40e36ff1476fb0ed30fdf8564a08399e",
 });
-assert.equal(journal.entries.length, 254);
-assert.equal(expectedMigrationCount, 254);
-assert.equal(expectedMigrations.length, 254);
+assert.equal(journal.entries.length, 256);
+assert.equal(expectedMigrationCount, 256);
+assert.equal(expectedMigrations.length, 256);
 assert.deepEqual(
-  journal.entries.slice(-2).map((entry) => entry.tag),
-  ["0252_ticket_comment_authority", "0253_v61_compatibility"],
+  journal.entries.slice(-4).map((entry) => entry.tag),
+  [
+    "0252_ticket_comment_authority",
+    "0253_v61_compatibility",
+    "0254_ticket_activity_contact_binding",
+    "0255_v62_compatibility",
+  ],
 );
 const v60Fingerprint = v60Manifest
   .map((entry) => `${entry.createdAt}@${entry.hash}`)
   .join(":");
 const v60CatalogDigest =
   "6b34359cbbd03507f2eb268447438630ef38581ed757cdf341c50d93064c4d7f";
-const v61Migration = await readFile(
-  resolve(migrationsRoot, "0253_v61_compatibility.sql"),
+const v62Migration = await readFile(
+  resolve(migrationsRoot, "0255_v62_compatibility.sql"),
   "utf8",
 );
-const v61CatalogDigest =
-  /private_release_runtime_dependency_surface_hash_v61\(\)<>\s*'([0-9a-f]{64})'/u.exec(
-    v61Migration,
+const v62CatalogDigest =
+  /private_release_runtime_dependency_surface_hash_v62\(\)<>\s*'([0-9a-f]{64})'/u.exec(
+    v62Migration,
   )?.[1];
-assert(v61CatalogDigest, "0253 must pin the V61 catalog digest");
+assert(v62CatalogDigest, "0253 must pin the V62 catalog digest");
 assert.notEqual(
-  v61CatalogDigest,
+  v62CatalogDigest,
   "0".repeat(64),
-  "V61 cannot run with a placeholder digest",
+  "V62 cannot run with a placeholder digest",
 );
 assert.equal(
-  v61CatalogDigest,
-  "76a834205fc0aa75b5c30370694a6f45e7d97b78380d0a6c5ecfd877204a5add",
+  v62CatalogDigest,
+  "0d25429b2819338277f57b9b5415d2216091dd14c0c0e44791f2c848d98f7ddf",
 );
 const unsupported: CompatibilityRow = {
   applied_count: "0",
@@ -312,10 +317,10 @@ async function seedLogoutSessions(): Promise<void> {
   await sql.begin(async (transaction) => {
     await transaction`SET LOCAL ROLE periapsis_migrator`;
     await transaction`INSERT INTO public.tenants(id, slug, name)
-      VALUES (${tenant}::uuid, 'v61-logout-upgrade', 'V61 logout upgrade')`;
+      VALUES (${tenant}::uuid, 'v62-logout-upgrade', 'V62 logout upgrade')`;
     await transaction`INSERT INTO public.audit_chain_heads(tenant_id) VALUES (${tenant}::uuid)`;
     await transaction`INSERT INTO public.users(id, email, display_name)
-      VALUES (${user}::uuid, 'v61-logout-upgrade@example.invalid', 'V61 logout upgrade')`;
+      VALUES (${user}::uuid, 'v62-logout-upgrade@example.invalid', 'V62 logout upgrade')`;
     await transaction`INSERT INTO public.tenant_memberships(id, tenant_id, user_id, role, status)
       VALUES (${uuid(5)}::uuid, ${tenant}::uuid, ${user}::uuid, 'tenant_admin', 'active')`;
     await transaction`SELECT app.seed_tenant_authorization(${tenant}::uuid, ${uuid(5)}::uuid)`;
@@ -366,7 +371,7 @@ function logoutCommand(
       requestId: uuid(sequence + 200),
       correlationId: uuid(sequence + 300),
       remoteAddress: "192.0.2.40",
-      userAgent: "schema-v61-logout-upgrade",
+      userAgent: "schema-v62-logout-upgrade",
     },
   };
 }
@@ -466,8 +471,8 @@ async function assertLogoutEffects(
   });
 }
 
-async function assertSealedV61(): Promise<void> {
-  await assertAppliedPrefix(254);
+async function assertSealedV62(): Promise<void> {
+  await assertAppliedPrefix(256);
   const [current] = await sql<
     (CompatibilityRow & {
       catalog_digest: string;
@@ -476,17 +481,17 @@ async function assertSealedV61(): Promise<void> {
       worker_array: boolean[];
     })[]
   >`
-    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v61() AS catalog_digest,
-      app.api_runtime_schema_readiness_v61() AS api_array,
-      app.worker_runtime_schema_readiness_v61() AS worker_array,
-      app.release_runtime_schema_readiness_v61() AS ready FROM app.schema_compatibility_v61() AS compatibility
+    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v62() AS catalog_digest,
+      app.api_runtime_schema_readiness_v62() AS api_array,
+      app.worker_runtime_schema_readiness_v62() AS worker_array,
+      app.release_runtime_schema_readiness_v62() AS ready FROM app.schema_compatibility_v62() AS compatibility
   `;
   assert.deepEqual(current, {
     applied_count: String(expectedMigrationCount),
     latest_created_at: String(expectedMigrationCreatedAt),
     latest_hash: expectedMigrationHash,
     migration_fingerprint: expectedMigrationFingerprint,
-    catalog_digest: v61CatalogDigest,
+    catalog_digest: v62CatalogDigest,
     ready: true,
     api_array: Array<boolean>(8).fill(true),
     worker_array: Array<boolean>(5).fill(true),
@@ -644,16 +649,16 @@ try {
   });
 
   await migrateSchema(sql, migrationsRoot);
-  await assertSealedV61();
+  await assertSealedV62();
   assert.deepEqual(
     await redactedSnapshot(),
     before,
-    "V61 sealing must not mutate historical logout data",
+    "V62 sealing must not mutate historical logout data",
   );
   assert.deepEqual(
     await revoke(tenantCommand),
     tenantReceipt,
-    "historical tenant receipt must replay exactly after V61",
+    "historical tenant receipt must replay exactly after V62",
   );
   assert.deepEqual(await redactedSnapshot(), before);
 
@@ -678,7 +683,7 @@ try {
   );
 
   await migrateSchema(sql, migrationsRoot);
-  await assertSealedV61();
+  await assertSealedV62();
   assert.deepEqual(
     await redactedSnapshot(),
     afterPlatform,
@@ -711,10 +716,10 @@ try {
   } catch {
     // Child errors may contain SQL parameters; do not forward captured output.
     throw new Error(
-      "ordinary SAML admission/runtime proof failed after V60 -> V61 upgrade",
+      "ordinary SAML admission/runtime proof failed after V60 -> V62 upgrade",
     );
   }
-  await assertSealedV61();
+  await assertSealedV62();
   assert.deepEqual(
     await redactedSnapshot(),
     afterPlatform,

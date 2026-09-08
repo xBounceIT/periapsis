@@ -509,6 +509,8 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
     "test:security:schema-compatibility-v58",
     "test:security:schema-compatibility-v59",
     "test:security:schema-compatibility-v60",
+    "test:security:schema-compatibility-v61",
+    "test:security:schema-compatibility-v61",
     "test:security:schema-compatibility-v60",
     "test:security:schema-compatibility-v59",
     "test:security:schema-compatibility-v58",
@@ -533,7 +535,7 @@ test("the PostgreSQL security aggregate and CI matrix cover every fresh runtime 
   }
   assert.match(
     aggregate,
-    /(?:^|\s)run test:security:schema-compatibility-v61(?:\s|$)/u,
+    /(?:^|\s)run test:security:schema-compatibility-v62(?:\s|$)/u,
   );
   const securityScripts = Object.entries(scripts).filter(([name]) =>
     name.startsWith("test:security:"),

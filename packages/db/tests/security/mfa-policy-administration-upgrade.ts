@@ -70,8 +70,8 @@ const parsedJournal: unknown = JSON.parse(
 );
 assert(isJournal(parsedJournal));
 const journal = parsedJournal;
-assert.equal(journal.entries.length, 254);
-assert.equal(expectedMigrationCount, 254);
+assert.equal(journal.entries.length, 256);
+assert.equal(expectedMigrationCount, 256);
 assert.equal(
   journal.entries[181]?.tag,
   "0181_platform_oidc_direct_administration_compatibility",

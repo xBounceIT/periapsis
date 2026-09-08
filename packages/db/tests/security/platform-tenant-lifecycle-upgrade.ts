@@ -107,8 +107,8 @@ assert.equal(
   predecessor.hash,
   "0f5a388806ac70eb58aa11782575b57ff66bc650df981b36fd3a065dfa713c6a",
 );
-assert.equal(expectedMigrationCount, 254);
-assert.equal(expectedMigrationCreatedAt, 1788882564359);
+assert.equal(expectedMigrationCount, 256);
+assert.equal(expectedMigrationCreatedAt, 1788887610348);
 const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-tenant-lifecycle-rolling-0149-"),
 );
@@ -244,12 +244,12 @@ try {
   const appendedCreatedAt = expectedMigrations
     .slice(predecessorIndex + 1)
     .map((entry) => entry.createdAt);
-  assert.equal(appendedCreatedAt.length, 104);
+  assert.equal(appendedCreatedAt.length, 106);
   assert.deepEqual(
     appendedCreatedAt.slice(0, 5),
     [1787758674256, 1787758694313, 1787759373746, 1787852011539, 1787852085088],
   );
-  assert.equal(appendedCreatedAt.at(-1), 1788882564359);
+  assert.equal(appendedCreatedAt.at(-1), 1788887610348);
 
   const [compatibility] = await sql<
     {
@@ -263,7 +263,7 @@ try {
       predecessorFingerprint: string;
       retiredCount: number;
       releaseReady: boolean;
-      federationV61Ready: boolean;
+      federationV62Ready: boolean;
       lifecycleReady: boolean;
       federationReady: boolean;
       savedViewsReady: boolean;
@@ -279,16 +279,16 @@ try {
            predecessor_projection.latest_hash AS "predecessorHash",
            predecessor_projection.migration_fingerprint AS "predecessorFingerprint",
            retired_projection.applied_count::integer AS "retiredCount",
-           app.release_runtime_schema_readiness_v61() AS "releaseReady",
-           app.federated_authentication_schema_readiness_v61()
-             AS "federationV61Ready",
+           app.release_runtime_schema_readiness_v62() AS "releaseReady",
+           app.federated_authentication_schema_readiness_v62()
+             AS "federationV62Ready",
            app.platform_tenant_lifecycle_schema_readiness_v1()
              AS "lifecycleReady",
            app.federated_authentication_schema_readiness_v1()
              AS "federationReady",
            app.ticket_saved_views_schema_readiness_v1() AS "savedViewsReady",
            app.ticket_query_projections_readiness_v1() AS "projectionsReady"
-    FROM app.schema_compatibility_v61() AS current_projection
+    FROM app.schema_compatibility_v62() AS current_projection
     CROSS JOIN app.schema_compatibility_v32() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v31() AS retired_projection
   `;
@@ -303,7 +303,7 @@ try {
     predecessorFingerprint: "UNSUPPORTED",
     retiredCount: 0,
     releaseReady: true,
-    federationV61Ready: true,
+    federationV62Ready: true,
     lifecycleReady: false,
     federationReady: false,
     savedViewsReady: false,

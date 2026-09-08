@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34253971208` passes the full export and isolation scenario, then
+      customer comment creation returns 503. The native PostgreSQL regression
+      reproduces ambiguous `contact_id` in the activity author trigger. V62
+      names the local variable distinctly while retaining the exact live contact
+      and ticket-link checks; verify customer writes and the final composed run.
 - [ ] Run `34252044576` downloads and verifies the real encrypted export and
       passes cross-tenant API rejection. The final UI isolation assertion must
       locate the actual `alert` error component for a hidden (404) resource,

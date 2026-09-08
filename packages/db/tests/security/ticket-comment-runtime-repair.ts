@@ -36,6 +36,7 @@ const fixture = {
   privateCommentRequest: uuid(63),
   publicEditRequest: uuid(64),
   privateEditRequest: uuid(65),
+  customerCommentRequest: uuid(66),
   correlation: uuid(70),
   forgedRevision: uuid(81),
   forgedMention: uuid(82),
@@ -173,7 +174,7 @@ async function listCustomerComments(
 
 try {
   const [readyBefore] = await database<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v61() AS ready
+    SELECT app.release_runtime_schema_readiness_v62() AS ready
   `;
   assert.equal(readyBefore?.ready, true, "0209 readiness is false");
 
@@ -528,6 +529,32 @@ try {
     "an unbound mention survived the deferred aggregate guard",
   );
 
+  const customerReply = await asApi(
+    fixture.tenant,
+    fixture.customerUser,
+    async (transaction) => {
+      const [receipt] = await transaction<CommentReceipt[]>`
+      SELECT comment_id::text,result_revision,replayed
+      FROM app.create_customer_portal_ticket_comment_v2(
+        'alert',${fixture.alert}::uuid,${fixture.customerContact}::uuid,
+        'Customer reply','<p>Customer reply</p>',ARRAY[]::uuid[],
+        ${digest("customer-reply:key")},${digest("customer-reply:request")},
+        ${fixture.customerCommentRequest}::uuid,${fixture.correlation}::uuid,
+        '192.0.2.90'::inet,'ticket-comment-runtime-repair','totp'
+      )
+    `;
+      assert(receipt, "customer reply returned no receipt");
+      return receipt;
+    },
+  );
+  assert.equal(customerReply.result_revision, 1);
+  assert.equal(customerReply.replayed, false);
+  assert(
+    (await listCustomerComments(100)).result_items.some(
+      (item) => item.id === customerReply.comment_id,
+    ),
+  );
+
   const aclRollback = new Error("intentional readiness ACL rollback");
   await assert.rejects(
     database.begin(async (transaction) => {
@@ -536,7 +563,7 @@ try {
         "GRANT EXECUTE ON FUNCTION app.guard_ticket_comment_aggregate_v1() TO periapsis_api",
       );
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v61() AS ready
+        SELECT app.release_runtime_schema_readiness_v62() AS ready
       `;
       assert.equal(tampered?.ready, false, "readiness accepted a widened ACL");
       throw aclRollback;
@@ -544,7 +571,7 @@ try {
     (error: unknown) => error === aclRollback,
   );
   const [readyAfter] = await database<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v61() AS ready
+    SELECT app.release_runtime_schema_readiness_v62() AS ready
   `;
   assert.equal(
     readyAfter?.ready,

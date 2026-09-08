@@ -93,8 +93,8 @@ assert.equal(
   predecessor.hash,
   "211491eec9cf3e475db463fd815d31a98c2e80263e3c3957cf0eef7a5434a9d8",
 );
-assert.equal(expectedMigrationCount, 254);
-assert.equal(expectedMigrationCreatedAt, 1788882564359);
+assert.equal(expectedMigrationCount, 256);
+assert.equal(expectedMigrationCreatedAt, 1788887610348);
 
 const stageRoot = await mkdtemp(
   join(tmpdir(), "periapsis-federated-auth-rolling-0125-"),
@@ -164,12 +164,12 @@ try {
            predecessor_projection.latest_created_at::text AS predecessor_latest,
            predecessor_projection.latest_hash AS predecessor_hash,
            retired_projection.applied_count::integer AS retired_count,
-           app.federated_authentication_schema_readiness_v61()
+           app.federated_authentication_schema_readiness_v62()
              AS federation_ready,
-           app.release_runtime_schema_readiness_v61() AS release_ready,
+           app.release_runtime_schema_readiness_v62() AS release_ready,
            app.identity_mfa_schema_readiness_v1() AS identity_ready,
            app.identity_mfa_device_management_readiness_v1() AS device_ready
-    FROM app.schema_compatibility_v61() AS current_projection
+    FROM app.schema_compatibility_v62() AS current_projection
     CROSS JOIN app.schema_compatibility_v27() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v26() AS retired_projection
   `;

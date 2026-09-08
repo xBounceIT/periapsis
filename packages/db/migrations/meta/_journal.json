@@ -1779,6 +1779,20 @@
       "when": 1788882564359,
       "tag": "0253_v61_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 254,
+      "version": "7",
+      "when": 1788887602419,
+      "tag": "0254_ticket_activity_contact_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 255,
+      "version": "7",
+      "when": 1788887610348,
+      "tag": "0255_v62_compatibility",
+      "breakpoints": true
     }
   ]
 }

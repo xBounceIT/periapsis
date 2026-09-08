@@ -99,8 +99,8 @@ try {
            legacy_projection.latest_created_at::text AS legacy_latest,
            legacy_projection.latest_hash AS legacy_hash,
            legacy_projection.migration_fingerprint AS legacy_fingerprint,
-           app.release_runtime_schema_readiness_v61() AS release_ready
-    FROM app.schema_compatibility_v61() AS current_projection
+           app.release_runtime_schema_readiness_v62() AS release_ready
+    FROM app.schema_compatibility_v62() AS current_projection
     CROSS JOIN app.schema_compatibility_v8() AS legacy_projection
   `;
   assert.deepEqual(compatibility, {
