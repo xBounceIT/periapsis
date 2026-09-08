@@ -380,8 +380,8 @@ try {
           role,
           (sql) =>
             sql<{ bulk: boolean; export: boolean }[]>`
-            SELECT app.ticket_bulk_runtime_schema_readiness_v58() AS bulk,
-                   app.ticket_export_runtime_schema_readiness_v58() AS export
+            SELECT app.ticket_bulk_runtime_schema_readiness_v59() AS bulk,
+                   app.ticket_export_runtime_schema_readiness_v59() AS export
           `,
         );
         assert.deepEqual(readiness, { bulk: true, export: true });
@@ -408,7 +408,7 @@ try {
       }
       await expectSqlState(
         asRole(transaction, "periapsis_auditor", async (sql) => {
-          await sql`SELECT app.ticket_bulk_runtime_schema_readiness_v58()`;
+          await sql`SELECT app.ticket_bulk_runtime_schema_readiness_v59()`;
         }),
         "42501",
         "auditor executed ticket runtime readiness",
@@ -462,6 +462,45 @@ try {
         ),
         "23505",
         "bulk idempotency key accepted a divergent payload",
+      );
+
+      const canonicalRemainders = new Set<number>();
+      for (const search of ["codec", "codec1", "codec12"]) {
+        const spec = savedViewResolveSpec();
+        spec.filters = {
+          ...asObject(spec.filters, "query filters are missing"),
+          search,
+        };
+        // These calls share a transaction and role-switching savepoints.
+        // eslint-disable-next-line no-await-in-loop
+        const result = await asApi(transaction, (sql) =>
+          callApi(sql, "resolve_ticket_export_query_v2", {
+            schemaVersion: 1,
+            actor,
+            tenantId: fixture.tenant,
+            ownerMembershipId: fixture.membership,
+            kind: "alert",
+            audience: "operator",
+            source: { mode: "inline", spec },
+          }),
+        );
+        const query = asObject(result?.query, "query was not resolved");
+        const encoded = asString(
+          query.specCanonicalBase64,
+          "canonical query is missing",
+        );
+        const canonical = Buffer.from(encoded, "base64");
+        assert.equal(canonical.toString("base64").replace(/=+$/u, ""), encoded);
+        assert.equal(
+          createHash("sha256").update(canonical).digest("hex"),
+          query.querySha256,
+        );
+        canonicalRemainders.add(canonical.length % 3);
+      }
+      assert.equal(
+        canonicalRemainders.size,
+        3,
+        "cover both padding lengths and exact Base64 groups",
       );
 
       const resolved = await asApi(transaction, (sql) =>

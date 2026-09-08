@@ -58,11 +58,11 @@ import type { SmtpHealthConfigurationRepository } from "./smtp-health.js";
 import type { NotificationTemplateInput } from "./template.js";
 import {
   expectedMigrationFingerprint,
-  expectedNotificationDispatchReadinessV58SourceHash,
-  expectedPrivateReleaseRuntimeDependencySurfaceHashV58SourceHash,
-  expectedPrivateReleaseRuntimeReadinessV58SourceHash,
-  expectedReleaseRuntimeReadinessV58SourceHash,
-  expectedSchemaCompatibilityV58SourceHash,
+  expectedNotificationDispatchReadinessV59SourceHash,
+  expectedPrivateReleaseRuntimeDependencySurfaceHashV59SourceHash,
+  expectedPrivateReleaseRuntimeReadinessV59SourceHash,
+  expectedReleaseRuntimeReadinessV59SourceHash,
+  expectedSchemaCompatibilityV59SourceHash,
 } from "./schema-compatibility.gen.js";
 import {
   createWebhookDeliveryClaim,
@@ -682,7 +682,7 @@ export class PostgresNotificationRepository
     const availabilityRows = await this.#query(
       () => this.#sql<{ available: boolean }[]>`
         SELECT pg_catalog.to_regprocedure(
-          'app.notification_dispatch_readiness_v58()'
+          'app.notification_dispatch_readiness_v59()'
         ) IS NOT NULL AS available
       `,
       signal,
@@ -703,8 +703,8 @@ export class PostgresNotificationRepository
           ) AS (
             VALUES
               (
-                'app.schema_compatibility_v58()',
-                ${expectedSchemaCompatibilityV58SourceHash}::text,
+                'app.schema_compatibility_v59()',
+                ${expectedSchemaCompatibilityV59SourceHash}::text,
                 'periapsis_migrator', 'plpgsql',
                 ARRAY[
                   'search_path=pg_catalog',
@@ -716,8 +716,8 @@ export class PostgresNotificationRepository
                 ]::text[], true
               ),
               (
-                'app.private_release_runtime_dependency_surface_hash_v58()',
-                ${expectedPrivateReleaseRuntimeDependencySurfaceHashV58SourceHash}::text,
+                'app.private_release_runtime_dependency_surface_hash_v59()',
+                ${expectedPrivateReleaseRuntimeDependencySurfaceHashV59SourceHash}::text,
                 'periapsis_migrator', 'sql',
                 ARRAY[
                   'search_path=pg_catalog, public, app',
@@ -729,15 +729,15 @@ export class PostgresNotificationRepository
                 ARRAY['periapsis_migrator']::text[], false
               ),
               (
-                'app.private_release_runtime_schema_readiness_v58()',
-                ${expectedPrivateReleaseRuntimeReadinessV58SourceHash}::text,
+                'app.private_release_runtime_schema_readiness_v59()',
+                ${expectedPrivateReleaseRuntimeReadinessV59SourceHash}::text,
                 'periapsis_migrator', 'plpgsql',
                 ARRAY['search_path=pg_catalog, public, app']::text[],
                 'boolean', ARRAY['periapsis_migrator']::text[], false
               ),
               (
-                'app.release_runtime_schema_readiness_v58()',
-                ${expectedReleaseRuntimeReadinessV58SourceHash}::text,
+                'app.release_runtime_schema_readiness_v59()',
+                ${expectedReleaseRuntimeReadinessV59SourceHash}::text,
                 'periapsis_migrator', 'plpgsql',
                 ARRAY['search_path=pg_catalog, public, app']::text[],
                 'boolean', ARRAY[
@@ -747,8 +747,8 @@ export class PostgresNotificationRepository
                 ]::text[], false
               ),
               (
-                'app.notification_dispatch_readiness_v58()',
-                ${expectedNotificationDispatchReadinessV58SourceHash}::text,
+                'app.notification_dispatch_readiness_v59()',
+                ${expectedNotificationDispatchReadinessV59SourceHash}::text,
                 'periapsis_notification_readiness_owner', 'plpgsql',
                 ARRAY['search_path=pg_catalog, public, app']::text[],
                 'TABLE(queue_depth bigint, role_safe boolean, schema_safe boolean, oldest_pending_seconds bigint)',
@@ -820,7 +820,7 @@ export class PostgresNotificationRepository
           SELECT readiness.queue_depth, readiness.role_safe,
                  readiness.schema_safe, trusted.source_safe,
                  readiness.oldest_pending_seconds
-          FROM app.notification_dispatch_readiness_v58() AS readiness
+          FROM app.notification_dispatch_readiness_v59() AS readiness
           CROSS JOIN trusted
           `,
           signal,
@@ -838,7 +838,7 @@ export class PostgresNotificationRepository
         );
       }
     } catch (error) {
-      // Once the V58 root has been observed, an undefined dependency is
+      // Once the V59 root has been observed, an undefined dependency is
       // schema drift rather than a rolling-deploy signal. The V4 path is also
       // configuration-invalid if its advertised compatibility root vanished.
       if (!signal.aborted && isUndefinedFunction(error)) {

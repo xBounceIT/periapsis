@@ -287,6 +287,8 @@ describe("PostgreSQL migration chain", () => {
       "0245_v57_compatibility.sql",
       "0246_sla_notification_contact_runtime.sql",
       "0247_v58_compatibility.sql",
+      "0248_ticket_operation_base64.sql",
+      "0249_v59_compatibility.sql",
     ]);
   });
 

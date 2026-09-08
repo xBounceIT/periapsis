@@ -74,6 +74,51 @@ func TestTicketOperationsReadinessFailsBeforeDatabaseUse(t *testing.T) {
 	}
 }
 
+func TestTicketExportAccessAllowsAuthorityLocks(t *testing.T) {
+	tenantID, actorID, membershipID := mustPostgresUUIDv7(t), mustPostgresUUIDv7(t), mustPostgresUUIDv7(t)
+	actor := application.Actor{UserID: actorID, ActiveTenantID: tenantID}
+	response, err := json.Marshal(ticketOperationsExportAccessResponseV1{
+		SchemaVersion: ticketOperationsWireVersion,
+		TenantID:      tenantID.String(), ActorID: actorID.String(), MembershipID: membershipID.String(),
+		Kind: "alert", Audience: "operator", Capability: string(application.AsyncExportCapabilityRequest),
+		Principal: "operator", PublicComments: boolPointer(false), PrivateComments: boolPointer(false), Allowed: boolPointer(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := &savedViewABITransaction{rows: []pgx.Row{
+		rowFunc(func(destinations ...any) error {
+			*destinations[0].(*string), *destinations[1].(*string) = tenantID.String(), actorID.String()
+			return nil
+		}),
+		rowFunc(func(destinations ...any) error {
+			*destinations[0].(*string), *destinations[1].(*string) = "", ""
+			return nil
+		}),
+		rowFunc(func(destinations ...any) error {
+			*destinations[0].(*[]byte) = response
+			return nil
+		}),
+	}}
+	repository := &TicketingRepository{begin: func(ctx context.Context, options pgx.TxOptions) (databaseTransaction, error) {
+		if options.AccessMode != pgx.ReadWrite || options.IsoLevel != pgx.RepeatableRead {
+			t.Fatalf("authority locks require a repeatable-read read-write transaction: %+v", options)
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("authority transaction must have a deadline")
+		}
+		return tx, nil
+	}}
+	access, err := repository.ResolveAsyncExportAccess(context.Background(), actor, tenantID,
+		kernel.AggregateAlert, kernel.TicketExportAudienceOperator, application.AsyncExportCapabilityRequest)
+	if err != nil || !access.Allowed() || access.Membership() != membershipID || !tx.committed {
+		t.Fatalf("ResolveAsyncExportAccess() = (%s, %v), committed: %t", access, err, tx.committed)
+	}
+	if len(tx.queries) != 3 || tx.queries[2] != ticketExportResolveAccessABIQuery {
+		t.Fatalf("export authority queries = %#v", tx.queries)
+	}
+}
+
 func TestTicketOperationsInstantNormalizesOnlyCanonicalUTCPrecision(t *testing.T) {
 	written := time.Date(2026, 8, 30, 10, 11, 12, 345000000, time.UTC)
 	decoded := written.In(time.FixedZone("postgres-json", 0))
@@ -88,6 +133,34 @@ func TestTicketOperationsInstantNormalizesOnlyCanonicalUTCPrecision(t *testing.T
 		if _, err := ticketOperationsInstant(invalid); err == nil {
 			t.Fatalf("ticketOperationsInstant() accepted %v", invalid)
 		}
+	}
+}
+
+func TestTicketOperationReplayAbsenceSurvivesTransactionMapping(t *testing.T) {
+	for _, query := range []string{ticketBulkReplayABIQuery, ticketExportReplayABIQuery} {
+		t.Run(query, func(t *testing.T) {
+			tenantID, actorID := mustPostgresUUIDv7(t), mustPostgresUUIDv7(t)
+			actor := application.Actor{UserID: actorID, ActiveTenantID: tenantID}
+			tx := &savedViewABITransaction{rows: []pgx.Row{
+				rowFunc(func(destinations ...any) error {
+					*destinations[0].(*string), *destinations[1].(*string) = tenantID.String(), actorID.String()
+					return nil
+				}),
+				rowFunc(func(destinations ...any) error {
+					*destinations[0].(*string), *destinations[1].(*string) = "", ""
+					return nil
+				}),
+				rowFunc(func(...any) error { return pgx.ErrNoRows }),
+			}}
+			repository := &TicketingRepository{begin: func(context.Context, pgx.TxOptions) (databaseTransaction, error) {
+				return tx, nil
+			}}
+			document, err := repository.callTicketOperationsHuman(context.Background(), actor, tenantID,
+				ticketOperationsReadOptions(), query, struct{}{}, true)
+			if !errors.Is(err, pgx.ErrNoRows) || document != nil || !tx.committed {
+				t.Fatalf("missing replay = (%q, %v), committed: %t", document, err, tx.committed)
+			}
+		})
 	}
 }
 
@@ -236,7 +309,7 @@ func TestTicketBulkAccessUsesTenantTransactionAndExactVersionedWire(t *testing.T
 		t.Fatalf("ResolveTicketBulkAccess() = (%s, %v)", access, err)
 	}
 	if !tx.committed || len(tx.queries) != 3 || tx.queries[2] != ticketBulkResolveAccessABIQuery ||
-		options.IsoLevel != pgx.RepeatableRead || options.AccessMode != pgx.ReadOnly ||
+		options.IsoLevel != pgx.RepeatableRead || options.AccessMode != pgx.ReadWrite ||
 		len(tx.arguments[2]) != 1 {
 		t.Fatalf("ticket access transaction = committed:%t options:%+v queries:%#v args:%#v", tx.committed, options, tx.queries, tx.arguments)
 	}

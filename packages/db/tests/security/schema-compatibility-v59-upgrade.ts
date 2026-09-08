@@ -26,8 +26,8 @@ import {
   expectedMigrations,
   expectedRetiredSchemaCompatibilityV49SourceHash,
   expectedRetiredSchemaCompatibilityV50SourceHash,
-  expectedRetiredSchemaCompatibilityV57SourceHash,
-  expectedSealSchemaCompatibilityManifestV57SourceHash,
+  expectedRetiredSchemaCompatibilityV58SourceHash,
+  expectedSealSchemaCompatibilityManifestV58SourceHash,
 } from "../../src/admin/schema-compatibility-manifest.gen.js";
 import {
   executeMigrationBatches,
@@ -104,10 +104,10 @@ function parseJournal(source: string): Journal {
 }
 
 const databaseUrl =
-  process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V58_UPGRADE_TEST_DATABASE_URL;
+  process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V59_UPGRADE_TEST_DATABASE_URL;
 if (databaseUrl === undefined || databaseUrl.trim() === "") {
   throw new Error(
-    "PERIAPSIS_SCHEMA_COMPATIBILITY_V58_UPGRADE_TEST_DATABASE_URL must name an isolated empty PostgreSQL 18.6 UTF8 C/C database whose cluster has no periapsis_* roles",
+    "PERIAPSIS_SCHEMA_COMPATIBILITY_V59_UPGRADE_TEST_DATABASE_URL must name an isolated empty PostgreSQL 18.6 UTF8 C/C database whose cluster has no periapsis_* roles",
   );
 }
 
@@ -115,32 +115,27 @@ const migrationsRoot = resolve(import.meta.dirname, "../../migrations");
 const journal = parseJournal(
   await readFile(resolve(migrationsRoot, "meta/_journal.json"), "utf8"),
 );
-const v57Count = 246;
-const v57Manifest = expectedMigrations.slice(0, v57Count);
-const v57Latest = v57Manifest.at(-1);
-assert(v57Latest);
-assert.deepEqual(v57Latest, {
-  tag: "0245_v57_compatibility",
-  createdAt: 1_788_810_622_327,
-  hash: "2da4ce118db9d75b49cb5a1887510b8a8b6afacf74895f6bd9e62bda9caa4283",
+const v58Count = 248;
+const v58Manifest = expectedMigrations.slice(0, v58Count);
+const v58Latest = v58Manifest.at(-1);
+assert(v58Latest);
+assert.deepEqual(v58Latest, {
+  tag: "0247_v58_compatibility",
+  createdAt: 1_788_818_321_637,
+  hash: "bc33d75329e3d463204f52ec9f139c4275b4317f8d63da8108742ee12e749e11",
 });
 assert.equal(journal.entries.length, 250);
 assert.equal(expectedMigrationCount, 250);
 assert.equal(expectedMigrations.length, 250);
 assert.deepEqual(
-  journal.entries.slice(-4).map((entry) => entry.tag),
-  [
-    "0246_sla_notification_contact_runtime",
-    "0247_v58_compatibility",
-    "0248_ticket_operation_base64",
-    "0249_v59_compatibility",
-  ],
+  journal.entries.slice(-2).map((entry) => entry.tag),
+  ["0248_ticket_operation_base64", "0249_v59_compatibility"],
 );
-const v57Fingerprint = v57Manifest
+const v58Fingerprint = v58Manifest
   .map((entry) => `${entry.createdAt}@${entry.hash}`)
   .join(":");
-const v57CatalogDigest =
-  "5633d06c399acd3bfc79f5fc09333230b4a4826f81077e496f5118a42f102fdc";
+const v58CatalogDigest =
+  "48764f1ad74d04086ea480dad0f8bfca836d45b65e7bfae64a4c316478afd11f";
 const v59Migration = await readFile(
   resolve(migrationsRoot, "0249_v59_compatibility.sql"),
   "utf8",
@@ -149,7 +144,7 @@ const v59CatalogDigest =
   /private_release_runtime_dependency_surface_hash_v59\(\)<>\s*'([0-9a-f]{64})'/u.exec(
     v59Migration,
   )?.[1];
-assert(v59CatalogDigest, "0247 must pin the V59 catalog digest");
+assert(v59CatalogDigest, "0249 must pin the V59 catalog digest");
 assert.notEqual(
   v59CatalogDigest,
   "0".repeat(64),
@@ -193,24 +188,24 @@ const retiredV50Roots = [
   "ticket_metadata_runtime_schema_readiness_v50",
   "notification_dispatch_readiness_v50",
 ];
-const retiredV57Roots = [
-  "schema_compatibility_v57",
-  "release_runtime_schema_readiness_v57",
-  "federated_authentication_schema_readiness_v57",
-  "platform_oidc_direct_runtime_schema_readiness_v57",
-  "platform_saml_direct_runtime_schema_readiness_v57",
-  "platform_local_account_runtime_schema_readiness_v57",
-  "sla_trigger_action_runtime_schema_readiness_v57",
-  "sla_object_event_ingress_schema_readiness_v57",
-  "ticket_bulk_runtime_schema_readiness_v57",
-  "ticket_export_runtime_schema_readiness_v57",
-  "ticket_metadata_runtime_schema_readiness_v57",
-  "notification_dispatch_readiness_v57",
-  "api_runtime_schema_readiness_v57",
-  "worker_runtime_schema_readiness_v57",
+const retiredV58Roots = [
+  "schema_compatibility_v58",
+  "release_runtime_schema_readiness_v58",
+  "federated_authentication_schema_readiness_v58",
+  "platform_oidc_direct_runtime_schema_readiness_v58",
+  "platform_saml_direct_runtime_schema_readiness_v58",
+  "platform_local_account_runtime_schema_readiness_v58",
+  "sla_trigger_action_runtime_schema_readiness_v58",
+  "sla_object_event_ingress_schema_readiness_v58",
+  "ticket_bulk_runtime_schema_readiness_v58",
+  "ticket_export_runtime_schema_readiness_v58",
+  "ticket_metadata_runtime_schema_readiness_v58",
+  "notification_dispatch_readiness_v58",
+  "api_runtime_schema_readiness_v58",
+  "worker_runtime_schema_readiness_v58",
 ];
 const stageRoot = await mkdtemp(
-  join(tmpdir(), "periapsis-schema-v58-upgrade-"),
+  join(tmpdir(), "periapsis-schema-v59-upgrade-"),
 );
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
 const uuid = (sequence: number): string =>
@@ -277,7 +272,7 @@ async function assertAppliedPrefix(count: number): Promise<void> {
   assert.equal(rows.length, count);
 }
 
-async function sealV57(): Promise<void> {
+async function sealV58(): Promise<void> {
   const [attestation] = await sql<{ value: boolean }[]>`
     SELECT count(*) = 1 AND coalesce(bool_and(
       owner.rolname = 'periapsis_migrator' AND language.lanname = 'plpgsql'
@@ -292,7 +287,7 @@ async function sealV57(): Promise<void> {
       AND procedure.prorettype = 'void'::regtype
       AND procedure.proconfig IS NOT DISTINCT FROM ARRAY['search_path=pg_catalog, public, app']::text[]
       AND encode(sha256(convert_to(procedure.prosrc, 'UTF8')), 'hex') =
-        ${expectedSealSchemaCompatibilityManifestV57SourceHash}
+        ${expectedSealSchemaCompatibilityManifestV58SourceHash}
       AND (SELECT count(*) = 1 AND coalesce(bool_and(
         privilege.grantor = procedure.proowner AND privilege.grantee = procedure.proowner
         AND privilege.privilege_type = 'EXECUTE' AND NOT privilege.is_grantable
@@ -305,10 +300,10 @@ async function sealV57(): Promise<void> {
     WHERE procedure.oid = to_regprocedure('app.seal_schema_compatibility_manifest(bigint,bigint,text,text)')
   `;
   assert.equal(attestation?.value, true);
-  await sql`SELECT app.seal_schema_compatibility_manifest(${v57Count}::bigint,
-    ${v57Latest!.createdAt}::bigint, ${v57Latest!.hash}::text, ${v57Fingerprint}::text)`;
-  await sql`SELECT app.seal_schema_compatibility_manifest(${v57Count}::bigint,
-    ${v57Latest!.createdAt}::bigint, ${v57Latest!.hash}::text, ${v57Fingerprint}::text)`;
+  await sql`SELECT app.seal_schema_compatibility_manifest(${v58Count}::bigint,
+    ${v58Latest!.createdAt}::bigint, ${v58Latest!.hash}::text, ${v58Fingerprint}::text)`;
+  await sql`SELECT app.seal_schema_compatibility_manifest(${v58Count}::bigint,
+    ${v58Latest!.createdAt}::bigint, ${v58Latest!.hash}::text, ${v58Fingerprint}::text)`;
 }
 
 // The same local TOTP session shape as the real Go repository fixture. The
@@ -507,8 +502,8 @@ async function assertSealedV59(): Promise<void> {
         sourceHash: expectedRetiredSchemaCompatibilityV50SourceHash,
       },
       {
-        signature: "app.schema_compatibility_v57()",
-        sourceHash: expectedRetiredSchemaCompatibilityV57SourceHash,
+        signature: "app.schema_compatibility_v58()",
+        sourceHash: expectedRetiredSchemaCompatibilityV58SourceHash,
       },
     ].map(async (root) => {
       const [retired] = await sql<{ config: string[]; source_hash: string }[]>`
@@ -532,13 +527,13 @@ async function assertSealedV59(): Promise<void> {
     SELECT root.name, (SELECT count(*)::integer FROM (VALUES
       ('periapsis_api'), ('periapsis_worker'), ('periapsis_notifier'), ('periapsis_auditor')
     ) AS role(name) WHERE has_function_privilege(role.name, procedure.oid, 'EXECUTE')) AS runtime_grants
-    FROM unnest(${[...retiredV49Roots, ...retiredV50Roots, ...retiredV57Roots]}::text[]) AS root(name)
+    FROM unnest(${[...retiredV49Roots, ...retiredV50Roots, ...retiredV58Roots]}::text[]) AS root(name)
     JOIN pg_catalog.pg_proc AS procedure ON procedure.oid=to_regprocedure('app.' || root.name || '()')
     ORDER BY root.name
   `;
   assert.deepEqual(
     roots.map(({ name, runtime_grants }) => ({ name, runtime_grants })),
-    [...retiredV49Roots, ...retiredV50Roots, ...retiredV57Roots]
+    [...retiredV49Roots, ...retiredV50Roots, ...retiredV58Roots]
       .toSorted()
       .map((name) => ({ name, runtime_grants: 0 })),
   );
@@ -573,26 +568,26 @@ try {
     isolated_roles: true,
   });
   await sql`SET TIME ZONE 'UTC'`;
-  await stagePrefix(v57Count);
+  await stagePrefix(v58Count);
   await migrateStagedPrefix();
-  await assertAppliedPrefix(v57Count);
+  await assertAppliedPrefix(v58Count);
   const [unsealed] = await sql<
     CompatibilityRow[]
-  >`SELECT * FROM app.schema_compatibility_v57()`;
+  >`SELECT * FROM app.schema_compatibility_v58()`;
   assert.deepEqual(unsealed, unsupported);
-  await sealV57();
+  await sealV58();
   const [sealed] = await sql<
     (CompatibilityRow & { catalog_digest: string; ready: boolean })[]
   >`
-    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v57() AS catalog_digest,
-      app.release_runtime_schema_readiness_v57() AS ready FROM app.schema_compatibility_v57() AS compatibility
+    SELECT compatibility.*, app.private_release_runtime_dependency_surface_hash_v58() AS catalog_digest,
+      app.release_runtime_schema_readiness_v58() AS ready FROM app.schema_compatibility_v58() AS compatibility
   `;
   assert.deepEqual(sealed, {
-    applied_count: String(v57Count),
-    latest_created_at: String(v57Latest.createdAt),
-    latest_hash: v57Latest.hash,
-    migration_fingerprint: v57Fingerprint,
-    catalog_digest: v57CatalogDigest,
+    applied_count: String(v58Count),
+    latest_created_at: String(v58Latest.createdAt),
+    latest_hash: v58Latest.hash,
+    migration_fingerprint: v58Fingerprint,
+    catalog_digest: v58CatalogDigest,
     ready: true,
   });
 
@@ -609,17 +604,17 @@ try {
   assert.equal(livePlatform?.value, true);
   const before = await redactedSnapshot();
 
-  await stagePrefix(247);
+  await stagePrefix(249);
   await migrateStagedPrefix();
-  await assertAppliedPrefix(247);
+  await assertAppliedPrefix(249);
   assert.deepEqual(
     await redactedSnapshot(),
     before,
-    "0246 must preserve existing receipt/audit and live platform session",
+    "0248 must preserve existing receipt/audit and live platform session",
   );
   const [partial] = await sql<
     CompatibilityRow[]
-  >`SELECT * FROM app.schema_compatibility_v57()`;
+  >`SELECT * FROM app.schema_compatibility_v58()`;
   assert.deepEqual(partial, unsupported);
   const [interval] = await sql<
     {
@@ -631,11 +626,11 @@ try {
       worker_array: boolean[];
     }[]
   >`
-    SELECT app.release_runtime_schema_readiness_v57() AS old_ready,
-      app.api_runtime_schema_readiness_v58() AS api_array,
-      app.worker_runtime_schema_readiness_v58() AS worker_array,
-      to_regprocedure('app.schema_compatibility_v58()') IS NULL AS current_root_absent,
-      to_regprocedure('app.release_runtime_schema_readiness_v58()') IS NULL AS current_ready_absent,
+    SELECT app.release_runtime_schema_readiness_v58() AS old_ready,
+      app.api_runtime_schema_readiness_v59() AS api_array,
+      app.worker_runtime_schema_readiness_v59() AS worker_array,
+      to_regprocedure('app.schema_compatibility_v59()') IS NULL AS current_root_absent,
+      to_regprocedure('app.release_runtime_schema_readiness_v59()') IS NULL AS current_ready_absent,
       NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname IN
         ('periapsis_api','periapsis_worker','periapsis_notifier') AND rolcanlogin) AS writers_offline
   `;
@@ -716,7 +711,7 @@ try {
   } catch {
     // Child errors may contain SQL parameters; do not forward captured output.
     throw new Error(
-      "ordinary SAML admission/runtime proof failed after V57 -> V59 upgrade",
+      "ordinary SAML admission/runtime proof failed after V58 -> V59 upgrade",
     );
   }
   await assertSealedV59();

@@ -1737,6 +1737,20 @@
       "when": 1788818321637,
       "tag": "0247_v58_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1788875508897,
+      "tag": "0248_ticket_operation_base64",
+      "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1788875558350,
+      "tag": "0249_v59_compatibility",
+      "breakpoints": true
     }
   ]
 }

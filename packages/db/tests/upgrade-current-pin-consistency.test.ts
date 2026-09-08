@@ -145,9 +145,9 @@ describe("upgrade current-manifest pin consistency", () => {
     ).toBe(manifest.expectedMigrationFingerprint);
   });
 
-  it("keeps all 28 upgrade suites aligned with generated current pins", () => {
+  it("keeps all 29 upgrade suites aligned with generated current pins", () => {
     const sources = upgradeSources();
-    expect(sources).toHaveLength(28);
+    expect(sources).toHaveLength(29);
     const workflow = readFileSync(
       resolve(packageRoot, "../../.github/workflows/ci.yml"),
       "utf8",
@@ -214,8 +214,8 @@ describe("upgrade current-manifest pin consistency", () => {
     assert(common !== undefined);
     const commonHashes = sourceHashIdentifiers(common);
     for (const [service, count, aggregate] of [
-      ["api", 24, "APIRuntimeReadiness"],
-      ["worker", 21, "WorkerRuntimeReadiness"],
+      ["api", 25, "APIRuntimeReadiness"],
+      ["worker", 22, "WorkerRuntimeReadiness"],
     ] as const) {
       const body = new RegExp(
         `const ${service}HealthSourceHashes = \\[([\\s\\S]*?)\\] as const;`,
@@ -240,7 +240,7 @@ describe("upgrade current-manifest pin consistency", () => {
       assert(goBody !== undefined);
       expect(fixtureHashes).toEqual(sourceHashIdentifiers(goBody));
       expect(fixtureHashes).toHaveLength(count);
-      expect(fixtureHashes.slice(-8)).toEqual([
+      expect(fixtureHashes.slice(-9)).toEqual([
         "expectedRetiredSchemaCompatibilityV51SourceHash",
         `expected${aggregate}V${currentReleaseVersion()}SourceHash`,
         "expectedRetiredSchemaCompatibilityV52SourceHash",
@@ -249,6 +249,7 @@ describe("upgrade current-manifest pin consistency", () => {
         "expectedRetiredSchemaCompatibilityV55SourceHash",
         "expectedRetiredSchemaCompatibilityV56SourceHash",
         "expectedRetiredSchemaCompatibilityV57SourceHash",
+        "expectedRetiredSchemaCompatibilityV58SourceHash",
       ]);
       expect(go).toContain(
         `app.${service}_runtime_schema_readiness_v${currentReleaseVersion()}() AS array`,

@@ -6,11 +6,11 @@ import { createFanoutClaim } from "./fanout.js";
 import { createNotificationRule } from "./rule.js";
 import {
   expectedMigrationFingerprint,
-  expectedNotificationDispatchReadinessV58SourceHash,
-  expectedPrivateReleaseRuntimeDependencySurfaceHashV58SourceHash,
-  expectedPrivateReleaseRuntimeReadinessV58SourceHash,
-  expectedReleaseRuntimeReadinessV58SourceHash,
-  expectedSchemaCompatibilityV58SourceHash,
+  expectedNotificationDispatchReadinessV59SourceHash,
+  expectedPrivateReleaseRuntimeDependencySurfaceHashV59SourceHash,
+  expectedPrivateReleaseRuntimeReadinessV59SourceHash,
+  expectedReleaseRuntimeReadinessV59SourceHash,
+  expectedSchemaCompatibilityV59SourceHash,
 } from "./schema-compatibility.gen.js";
 import { baseRule, id } from "./test/fixtures.js";
 
@@ -265,7 +265,7 @@ describe("PostgreSQL notification rolling compatibility", () => {
     expect(database.statements).toHaveLength(1);
   });
 
-  it("binds current V58 readiness to all five generated source pins and the exact journal", async () => {
+  it("binds current V59 readiness to all five generated source pins and the exact journal", async () => {
     const repository = createRepository();
     database.outcomes.push(
       { rows: [{ available: true }] },
@@ -288,10 +288,10 @@ describe("PostgreSQL notification rolling compatibility", () => {
 
     expect(database.statements).toHaveLength(2);
     expect(database.statements[0]).toContain(
-      "'app.notification_dispatch_readiness_v58()'",
+      "'app.notification_dispatch_readiness_v59()'",
     );
     expect(database.statements[1]).toContain(
-      "FROM app.notification_dispatch_readiness_v58()",
+      "FROM app.notification_dispatch_readiness_v59()",
     );
     expect(database.statements[1]).toContain("count(function_oid)=5");
     expect(database.statements[1]).not.toContain("_v49()");
@@ -301,16 +301,16 @@ describe("PostgreSQL notification rolling compatibility", () => {
       "FROM app.notification_dispatch_readiness_v4()",
     );
     expect(database.parameters[1]).toEqual([
-      expectedSchemaCompatibilityV58SourceHash,
+      expectedSchemaCompatibilityV59SourceHash,
       `app.schema_compatibility_fingerprint=${expectedMigrationFingerprint}`,
-      expectedPrivateReleaseRuntimeDependencySurfaceHashV58SourceHash,
-      expectedPrivateReleaseRuntimeReadinessV58SourceHash,
-      expectedReleaseRuntimeReadinessV58SourceHash,
-      expectedNotificationDispatchReadinessV58SourceHash,
+      expectedPrivateReleaseRuntimeDependencySurfaceHashV59SourceHash,
+      expectedPrivateReleaseRuntimeReadinessV59SourceHash,
+      expectedReleaseRuntimeReadinessV59SourceHash,
+      expectedNotificationDispatchReadinessV59SourceHash,
     ]);
   });
 
-  it("does not downgrade V58 readiness on authorization failures", async () => {
+  it("does not downgrade V59 readiness on authorization failures", async () => {
     const repository = createRepository();
     database.outcomes.push({ rows: [{ available: true }] }, { code: "42501" });
 
@@ -319,11 +319,11 @@ describe("PostgreSQL notification rolling compatibility", () => {
     ).rejects.toMatchObject({ code: "notification_configuration_failed" });
     expect(database.statements).toHaveLength(2);
     expect(database.statements[1]).toContain(
-      "app.notification_dispatch_readiness_v58",
+      "app.notification_dispatch_readiness_v59",
     );
   });
 
-  it("does not downgrade when a present V58 root raises undefined_function", async () => {
+  it("does not downgrade when a present V59 root raises undefined_function", async () => {
     const repository = createRepository();
     database.outcomes.push({ rows: [{ available: true }] }, { code: "42883" });
 
@@ -333,14 +333,14 @@ describe("PostgreSQL notification rolling compatibility", () => {
     expect(database.statements).toHaveLength(2);
     expect(database.statements[0]).toContain("pg_catalog.to_regprocedure");
     expect(database.statements[1]).toContain(
-      "app.notification_dispatch_readiness_v58",
+      "app.notification_dispatch_readiness_v59",
     );
     expect(database.statements[1]).not.toContain(
       "FROM app.notification_dispatch_readiness_v4()",
     );
   });
 
-  it("fails closed without a V4 downgrade when the V58 source chain drifts", async () => {
+  it("fails closed without a V4 downgrade when the V59 source chain drifts", async () => {
     const repository = createRepository();
     database.outcomes.push({
       rows: [{ available: true }],
@@ -362,7 +362,7 @@ describe("PostgreSQL notification rolling compatibility", () => {
     ).rejects.toMatchObject({ code: "notification_configuration_failed" });
     expect(database.statements).toHaveLength(2);
     expect(database.statements[1]).toContain(
-      "app.notification_dispatch_readiness_v58",
+      "app.notification_dispatch_readiness_v59",
     );
     expect(database.statements[1]).toContain("pg_catalog.to_regprocedure");
     expect(database.statements[1]).toContain("function_row.prosrc");
@@ -381,7 +381,7 @@ describe("PostgreSQL notification rolling compatibility", () => {
     await expect(readiness).rejects.toBe(reason);
     expect(database.cancellations).toBe(1);
     expect(database.statements[1]).toContain(
-      "app.notification_dispatch_readiness_v58",
+      "app.notification_dispatch_readiness_v59",
     );
   });
 

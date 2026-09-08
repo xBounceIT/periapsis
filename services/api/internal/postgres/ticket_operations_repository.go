@@ -38,9 +38,9 @@ const (
 	ticketExportCommitRevocationQuery    = `SELECT response FROM app.commit_ticket_export_revocation_v2($1::jsonb)`
 	ticketExportReadPageQuery            = `SELECT response FROM app.read_ticket_export_application_page_v2($1::jsonb)`
 
-	ticketBulkReadinessABIQuery   = `SELECT app.ticket_bulk_runtime_schema_readiness_v58()`
-	ticketExportReadinessABIQuery = `SELECT app.ticket_export_runtime_schema_readiness_v58()`
-	ticketMetadataReadinessQuery  = `SELECT app.ticket_metadata_runtime_schema_readiness_v58()`
+	ticketBulkReadinessABIQuery   = `SELECT app.ticket_bulk_runtime_schema_readiness_v59()`
+	ticketExportReadinessABIQuery = `SELECT app.ticket_export_runtime_schema_readiness_v59()`
+	ticketMetadataReadinessQuery  = `SELECT app.ticket_metadata_runtime_schema_readiness_v59()`
 )
 
 type ticketOperationsBulkAccessResponseV1 struct {
@@ -165,7 +165,7 @@ func (repository *TicketingRepository) ResolveTicketBulkAccess(
 		MutationAction string                      `json:"mutationAction"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(actor), tenantID.String(), kind.String(), string(capability), mutation.String()}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, tenantID, phase4ReadOptions(), ticketBulkResolveAccessABIQuery, request, false,
+		ctx, actor, tenantID, ticketOperationsReadOptions(), ticketBulkResolveAccessABIQuery, request, false,
 	)
 	if err != nil {
 		return application.TicketBulkAccess{}, err
@@ -224,7 +224,7 @@ func (repository *TicketingRepository) ResolveTicketBulkQuery(
 		Source        any                         `json:"source"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(actor), tenantID.String(), kind.String(), access.Membership().String(), wireSource}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, tenantID, phase4ReadOptions(), ticketBulkResolveQueryABIQuery, request, false,
+		ctx, actor, tenantID, ticketOperationsReadOptions(), ticketBulkResolveQueryABIQuery, request, false,
 	)
 	if err != nil {
 		return application.TicketBulkQuerySnapshot{}, err
@@ -262,7 +262,7 @@ func (repository *TicketingRepository) LookupTicketBulkReplay(
 	}{ticketOperationsWireVersion, query.TenantID.String(), query.ActorID.String(), query.OwnerMembershipID.String(), query.Kind.String(), query.Action.String(), hex.EncodeToString(query.KeyHash[:])}
 	actor := application.Actor{UserID: query.ActorID, ActiveTenantID: query.TenantID}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, query.TenantID, phase4ReadOptions(), ticketBulkReplayABIQuery, request, true,
+		ctx, actor, query.TenantID, ticketOperationsReadOptions(), ticketBulkReplayABIQuery, request, true,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.TicketBulkResult{}, false, nil
@@ -312,7 +312,7 @@ func (repository *TicketingRepository) GetTicketBulk(
 		JobID         string                      `json:"jobId"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(actor), tenantID.String(), access.Membership().String(), access.Kind().String(), string(access.Capability()), jobID.String()}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, tenantID, phase4ReadOptions(), ticketBulkGetABIQuery, request, true,
+		ctx, actor, tenantID, ticketOperationsReadOptions(), ticketBulkGetABIQuery, request, true,
 	)
 	if err != nil {
 		return application.TicketBulkRecord{}, mapSavedViewDatabaseError(err)
@@ -367,7 +367,7 @@ func (repository *TicketingRepository) ListTicketBulkResults(
 		After         string                      `json:"after"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(query.Actor), query.TenantID.String(), query.Access.Membership().String(), query.Access.Kind().String(), query.JobID.String(), query.Limit, query.After}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, query.Actor, query.TenantID, phase4ReadOptions(), ticketBulkListResultsABIQuery, request, false,
+		ctx, query.Actor, query.TenantID, ticketOperationsReadOptions(), ticketBulkListResultsABIQuery, request, false,
 	)
 	if err != nil {
 		return application.TicketBulkResultPage{}, err
@@ -410,7 +410,7 @@ func (repository *TicketingRepository) ResolveAsyncExportAccess(
 		Capability    string                      `json:"capability"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(actor), tenantID.String(), kind.String(), audience.String(), string(capability)}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, tenantID, phase4ReadOptions(), ticketExportResolveAccessABIQuery, request, false,
+		ctx, actor, tenantID, ticketOperationsReadOptions(), ticketExportResolveAccessABIQuery, request, false,
 	)
 	if err != nil {
 		return application.AsyncExportAccess{}, err
@@ -443,7 +443,7 @@ func (repository *TicketingRepository) ResolveAsyncExportQuery(
 		Source        any                         `json:"source"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(actor), tenantID.String(), access.Membership().String(), kind.String(), audience.String(), wireSource}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, tenantID, phase4ReadOptions(), ticketExportResolveQueryABIQuery, request, false,
+		ctx, actor, tenantID, ticketOperationsReadOptions(), ticketExportResolveQueryABIQuery, request, false,
 	)
 	if err != nil {
 		return application.AsyncExportQuerySnapshot{}, err
@@ -482,7 +482,7 @@ func (repository *TicketingRepository) LookupAsyncExportReplay(
 	}{ticketOperationsWireVersion, query.TenantID.String(), query.ActorID.String(), query.OwnerMembershipID.String(), query.Kind.String(), query.Audience.String(), query.Action.String(), hex.EncodeToString(query.KeyHash[:])}
 	actor := application.Actor{UserID: query.ActorID, ActiveTenantID: query.TenantID}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, query.TenantID, phase4ReadOptions(), ticketExportReplayABIQuery, request, true,
+		ctx, actor, query.TenantID, ticketOperationsReadOptions(), ticketExportReplayABIQuery, request, true,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.AsyncExportResult{}, false, nil
@@ -536,7 +536,7 @@ func (repository *TicketingRepository) GetAsyncExport(
 		JobID         string                      `json:"jobId"`
 	}{ticketOperationsWireVersion, ticketOperationsActorWire(actor), tenantID.String(), access.Membership().String(), access.Kind().String(), access.Audience().String(), string(access.Capability()), jobID.String()}
 	document, err := repository.callTicketOperationsHuman(
-		ctx, actor, tenantID, phase4ReadOptions(), ticketExportGetABIQuery, request, true,
+		ctx, actor, tenantID, ticketOperationsReadOptions(), ticketExportGetABIQuery, request, true,
 	)
 	if err != nil {
 		return application.AsyncExportRecord{}, mapSavedViewDatabaseError(err)
@@ -794,6 +794,12 @@ func (repository *TicketingRepository) reserveTicketOperationsID(
 	return ticketOperationsEntity(id.String())
 }
 
+// Ticket operation reads lock tenant and membership authority with FOR SHARE.
+// PostgreSQL requires a read-write transaction even though these calls only read.
+func ticketOperationsReadOptions() pgx.TxOptions {
+	return pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadWrite}
+}
+
 func (repository *TicketingRepository) callTicketOperationsHuman(
 	ctx context.Context,
 	actor application.Actor,
@@ -807,13 +813,15 @@ func (repository *TicketingRepository) callTicketOperationsHuman(
 	if err != nil {
 		return nil, err
 	}
-	return withinSavedViewTransaction(
+	missing := false
+	document, err := withinSavedViewTransaction(
 		ctx, repository, actor, tenantID, options,
 		func(ctx context.Context, tx databaseTransaction) ([]byte, error) {
 			var response []byte
 			err := tx.QueryRow(ctx, query, payload).Scan(&response)
 			if allowNoRows && errors.Is(err, pgx.ErrNoRows) {
-				return nil, pgx.ErrNoRows
+				missing = true
+				return nil, nil
 			}
 			if err != nil {
 				return nil, mapSavedViewRequiredRowError(err)
@@ -824,6 +832,10 @@ func (repository *TicketingRepository) callTicketOperationsHuman(
 			return response, nil
 		},
 	)
+	if err == nil && missing {
+		return nil, pgx.ErrNoRows
+	}
+	return document, err
 }
 
 func restoreTicketOperationsBulkResult(

@@ -291,7 +291,7 @@ async function publicReadiness(role: RuntimeRole): Promise<boolean> {
   const [result] = await asRole(
     role,
     (transaction) => transaction<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v58() AS ready
+      SELECT app.release_runtime_schema_readiness_v59() AS ready
     `,
   );
   assert(result, `${role} readiness returned no row`);
@@ -584,8 +584,8 @@ try {
     "app.get_platform_identity_account_v2(uuid,uuid,uuid,text)",
     "app.prelink_platform_identity_account_v2(uuid,uuid,uuid,uuid,uuid,text,public.identity_subject_format,bytea,bytea,integer,integer[],bytea[],bytea,bytea,uuid,uuid,uuid,inet,text,text,text)",
     "app.retire_platform_identity_account_v4(uuid,uuid,uuid,bigint,bigint,uuid,uuid,uuid,inet,text,text,text)",
-    "app.schema_compatibility_v58()",
-    "app.release_runtime_schema_readiness_v58()",
+    "app.schema_compatibility_v59()",
+    "app.release_runtime_schema_readiness_v59()",
   ] as const;
   const retiredFunctions = [
     "app.list_platform_identity_accounts_v1(uuid,text,uuid,uuid,integer,boolean)",
@@ -632,7 +632,7 @@ try {
            latest_created_at::text AS "latestCreatedAt",
            latest_hash AS "latestHash",
            migration_fingerprint AS fingerprint
-    FROM app.schema_compatibility_v58()
+    FROM app.schema_compatibility_v59()
   `;
   assert.deepEqual(compatibility, {
     count: expectedMigrationCount,
@@ -663,7 +663,7 @@ try {
       `;
       await transaction.unsafe('SET LOCAL ROLE "periapsis_api"');
       const [downgraded] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v58() AS ready
+        SELECT app.release_runtime_schema_readiness_v59() AS ready
       `;
       assert.equal(downgraded?.ready, false);
       throw rollbackMarker;
@@ -679,7 +679,7 @@ try {
       );
       await transaction.unsafe('SET LOCAL ROLE "periapsis_api"');
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v58() AS ready
+        SELECT app.release_runtime_schema_readiness_v59() AS ready
       `;
       assert.equal(tampered?.ready, false);
       throw rollbackMarker;

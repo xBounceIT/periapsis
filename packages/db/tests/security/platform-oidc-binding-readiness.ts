@@ -35,11 +35,11 @@ const runtimeLogins = [
 async function readiness(): Promise<ReadinessRow> {
   const [row] = await admin<ReadinessRow[]>`
     SELECT
-      app.private_release_runtime_dependency_surface_hash_v58()
+      app.private_release_runtime_dependency_surface_hash_v59()
         AS catalog_digest,
-      app.private_release_runtime_schema_readiness_v58()
+      app.private_release_runtime_schema_readiness_v59()
         AS private_ready,
-      app.release_runtime_schema_readiness_v58()
+      app.release_runtime_schema_readiness_v59()
         AS public_ready
   `;
   assert(row, "readiness query returned no row");

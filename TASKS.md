@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34232473336` reaches browser export creation and returns 503.
+      Native API/PostgreSQL reproduction identifies read-only transactions that
+      reject the authority helper's `FOR SHARE` locks. Keep repeatable-read
+      isolation but allow these locks for export and bulk reads. V59 also aligns
+      inline, saved and persisted query snapshots with the existing strict
+      unpadded Base64 codec; the former decoder rejects valid canonical inputs.
+      Preserve a missing idempotency receipt through transaction error mapping,
+      and locate the job at `record.job.definition.id` during replay/read checks.
+      Complete native request/replay and composed browser acceptance are required.
 - [ ] Run `34230418815` passes LDAP setup and the direct RLS probe, then
       reaches browser acceptance. Read the canonical `alertNumber` property
       from the operator projection when checking the exported CSV; `number`
