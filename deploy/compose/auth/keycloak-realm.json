@@ -7,6 +7,21 @@
   "resetPasswordAllowed": false,
   "rememberMe": false,
   "bruteForceProtected": true,
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "rsa-generated",
+        "providerId": "rsa-generated",
+        "config": {
+          "priority": ["100"],
+          "enabled": ["true"],
+          "active": ["true"],
+          "algorithm": ["RS256"],
+          "keySize": ["2048"]
+        }
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "periapsis-oidc",

@@ -13,6 +13,12 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34218132866` reaches OIDC trust refresh, where the default Keycloak
+      realm's mixed RS256/RSA-OAEP JWKS is rejected by the signing-only trust policy.
+      Configure the disposable realm's generated key provider explicitly for RS256.
+      Native Keycloak 26.7.2 with the imported realm publishes one signing key; the
+      real OIDC parser accepts that document and rejects the default mixed set.
+      Complete composed OIDC/browser acceptance remains required.
 - [ ] Run `34216477706` passes SLA email, audit and DFIR setup, then rejects
       the OIDC fixture's root post-logout URL. Use the required same-origin
       `/signed-out` destination in the provider, its projection assertion and the
