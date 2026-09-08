@@ -117,8 +117,9 @@ jobs:
           export PERIAPSIS_COMPOSE_SECRETS_DIR="${RUNNER_TEMP}/periapsis-compose-secrets"
           PERIAPSIS_S3_ACCESS_KEY="ciapp$(openssl rand -hex 8)"
           PERIAPSIS_S3_SECRET_KEY="$(openssl rand -hex 32)"
-          printf '::add-mask::%s\n' "${PERIAPSIS_S3_ACCESS_KEY}" "${PERIAPSIS_S3_SECRET_KEY}"
-          export PERIAPSIS_S3_ACCESS_KEY PERIAPSIS_S3_SECRET_KEY
+          PERIAPSIS_MINIO_KMS_SECRET_KEY="ci-export:$(openssl rand -base64 32)"
+          printf '::add-mask::%s\n' "${PERIAPSIS_S3_ACCESS_KEY}" "${PERIAPSIS_S3_SECRET_KEY}" "${PERIAPSIS_MINIO_KMS_SECRET_KEY}"
+          export PERIAPSIS_S3_ACCESS_KEY PERIAPSIS_S3_SECRET_KEY PERIAPSIS_MINIO_KMS_SECRET_KEY
           node scripts/deploy/prepare-compose-secrets.mjs
           echo "PERIAPSIS_COMPOSE_SECRETS_DIR=${PERIAPSIS_COMPOSE_SECRETS_DIR}" >> "${GITHUB_ENV}"
       - name: Validate Compose profiles and Swarm model

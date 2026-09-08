@@ -424,7 +424,7 @@ test("the Bash order probe rejects an absent or late mask", async (t) => {
   );
 });
 
-test("deployment S3 generation masks both values before the preparer and publishes only its path", async (t) => {
+test("deployment S3 generation masks credentials and encryption key before the preparer and publishes only its path", async (t) => {
   const prepare = script(
     step(
       job(security, "manifests"),
@@ -442,9 +442,12 @@ test("deployment S3 generation masks both values before the preparer and publish
   const probe = `
 node() {
   [[ $# == 1 && "$1" == scripts/deploy/prepare-compose-secrets.mjs ]]
-  [[ \${#observed_masks[@]} == 2 ]]
+  [[ \${#observed_masks[@]} == 3 ]]
   [[ "\${observed_masks[0]}" == "\${PERIAPSIS_S3_ACCESS_KEY}" ]]
   [[ "\${observed_masks[1]}" == "\${PERIAPSIS_S3_SECRET_KEY}" ]]
+  [[ "\${observed_masks[2]}" == "\${PERIAPSIS_MINIO_KMS_SECRET_KEY}" ]]
+  [[ "\${PERIAPSIS_MINIO_KMS_SECRET_KEY}" =~ ^ci-export:[A-Za-z0-9+/]{43}=$ ]]
+  export -p | grep -q 'declare -x PERIAPSIS_MINIO_KMS_SECRET_KEY='
 }
 `;
   const { result, published } = await runCredentialShell(
@@ -458,7 +461,7 @@ node() {
     ),
   );
   assert.ok(
-    /^::add-mask::ciapp[0-9a-f]{16}\n::add-mask::[0-9a-f]{64}\n$/u.test(
+    /^::add-mask::ciapp[0-9a-f]{16}\n::add-mask::[0-9a-f]{64}\n::add-mask::ci-export:[A-Za-z0-9+/]{43}=\n$/u.test(
       result.stdout,
     ),
   );
