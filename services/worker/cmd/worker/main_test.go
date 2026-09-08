@@ -642,7 +642,8 @@ func TestRunSLAActionWorkerFailsClosedAndRedactsRepositoryErrors(t *testing.T) {
 		output := metrics.RenderPrometheus()
 		return !ready.slaAction.Load() &&
 			strings.Contains(output, `periapsis_worker_sla_action_ready 0`) &&
-			strings.Contains(output, `periapsis_sla_action_worker_runs_total{outcome="failure"} 1`)
+			strings.Contains(output, `periapsis_sla_action_worker_runs_total{outcome="failure"} 1`) &&
+			strings.Contains(logs.String(), "failure=internal")
 	})
 	select {
 	case <-runner.called:
@@ -743,7 +744,8 @@ func TestRunSLAEventIngressReadinessFailureIsRedactedAndSkipsClaim(t *testing.T)
 		return !ready.slaEvent.Load() &&
 			strings.Contains(output, `periapsis_worker_sla_event_ingress_ready 0`) &&
 			strings.Contains(output, `periapsis_sla_event_ingress_worker_runs_total{outcome="failure"} 1`) &&
-			!strings.Contains(output, `periapsis_sla_event_ingress_queue_`)
+			!strings.Contains(output, `periapsis_sla_event_ingress_queue_`) &&
+			strings.Contains(logs.String(), "failure=internal")
 	})
 	select {
 	case <-runner.called:
@@ -849,7 +851,8 @@ func TestRunSLAEngineFailureClearsReadinessWithoutExposingError(t *testing.T) {
 			strings.Contains(output, `periapsis_sla_worker_runs_total{outcome="failure"} 1`) &&
 			!strings.Contains(output, `periapsis_sla_queue_`) &&
 			!strings.Contains(output, "tenant@example.invalid") &&
-			!strings.Contains(output, "secret")
+			!strings.Contains(output, "secret") &&
+			strings.Contains(logs.String(), "failure=internal")
 	})
 	if strings.Contains(logs.String(), "tenant@example.invalid") || strings.Contains(logs.String(), "secret") ||
 		!strings.Contains(logs.String(), "failure=internal") {
@@ -889,7 +892,8 @@ func TestRunSLAEngineFailsClosedWhenQueueObservationIsUnavailable(t *testing.T) 
 		return !ready.sla.Load() &&
 			strings.Contains(output, `periapsis_sla_worker_runs_total{outcome="failure"} 1`) &&
 			strings.Contains(output, `periapsis_sla_worker_jobs_total{outcome="claimed"} 1`) &&
-			!strings.Contains(output, `periapsis_sla_queue_`)
+			!strings.Contains(output, `periapsis_sla_queue_`) &&
+			strings.Contains(logs.String(), "failure=internal")
 	})
 	if strings.Contains(logs.String(), "customer@example.invalid") || strings.Contains(logs.String(), "secret") {
 		t.Fatalf("queue observation failure leaked into logs: %q", logs.String())

@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34216477706` passes SLA email, audit and DFIR setup, then rejects
+      the OIDC fixture's root post-logout URL. Use the required same-origin
+      `/signed-out` destination in the provider, its projection assertion and the
+      Keycloak client registration. Complete Linux acceptance remains required.
+- [ ] Run `34216477706` exposes a worker test synchronization race: readiness
+      and metrics become observable before the failure log is written. Wait for
+      the bounded failure log as well in the SLA engine/action/ingress tests,
+      preserving readiness, shutdown and redaction assertions. Complete Linux
+      acceptance on the successor commit remains required.
 - [ ] Run `34214756368` encounters an intermittent 412 while two SLA columns
       are created concurrently during fixture setup. Serialize these configuration
       writes and retain both successful-creation assertions. The deliberate ticket

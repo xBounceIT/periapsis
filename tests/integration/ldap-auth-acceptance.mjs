@@ -1732,7 +1732,7 @@ async function configureTenantOIDCAcceptance({
   const configuration = {
     issuer,
     clientId,
-    postLogoutRedirectUri: `${liveBaseUrl}/`,
+    postLogoutRedirectUri: `${liveBaseUrl}/signed-out`,
     extraScopes: ["email", "profile", "roles"],
     allowRefreshToken: false,
     useUserInfo: false,
@@ -2097,7 +2097,8 @@ function assertConfiguredTenantOIDCProvider(body, expected) {
       configuration?.clientId === expected.clientId &&
       configuration?.redirectUri ===
         `${expected.liveBaseUrl}/api/v1/auth/federated/oidc/callback` &&
-      configuration?.postLogoutRedirectUri === `${expected.liveBaseUrl}/` &&
+      configuration?.postLogoutRedirectUri ===
+        `${expected.liveBaseUrl}/signed-out` &&
       configuration?.clientSecretPresent === true &&
       configuration?.allowRefreshToken === false &&
       configuration?.useUserInfo === false &&
@@ -2165,7 +2166,7 @@ async function provisionKeycloakOIDCAcceptance(liveBaseUrl) {
           webOrigins: [liveBaseUrl],
           attributes: {
             "pkce.code.challenge.method": "S256",
-            "post.logout.redirect.uris": `${liveBaseUrl}/*`,
+            "post.logout.redirect.uris": `${liveBaseUrl}/signed-out`,
           },
           defaultClientScopes: ["profile", "email", "roles", "web-origins"],
           protocolMappers: [
