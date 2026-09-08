@@ -211,7 +211,7 @@ function assertSqlState(error: unknown, expected: string): boolean {
   return true;
 }
 
-// The V59 release root attests the current catalog and ACL state. Provider data
+// The V60 release root attests the current catalog and ACL state. Provider data
 // invariants outside that catalog surface use explicit probes below.
 async function assertReadinessRejectsTransactionalCatalogMutation(
   label: string,
@@ -222,7 +222,7 @@ async function assertReadinessRejectsTransactionalCatalogMutation(
     admin.begin(async (transaction) => {
       await mutation(transaction);
       const [state] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v59() AS ready
+        SELECT app.release_runtime_schema_readiness_v60() AS ready
       `;
       assert.equal(state?.ready, false, `readiness accepted ${label}`);
       throw rollback;
@@ -231,7 +231,7 @@ async function assertReadinessRejectsTransactionalCatalogMutation(
   );
 
   const [restored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(
     restored?.ready,
@@ -784,7 +784,7 @@ async function seedFixture(): Promise<void> {
 }
 
 async function verifyCompatibilityAndBoundary(): Promise<void> {
-  // V59 is the only live oracle. Historical projections are observed only to
+  // V60 is the only live oracle. Historical projections are observed only to
   // prove their exact fail-closed result.
   const [compatibility] = await admin<
     {
@@ -817,12 +817,12 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
            legacy_projection.latest_created_at::text AS "legacyLatest",
            legacy_projection.latest_hash AS "legacyHash",
            legacy_projection.migration_fingerprint AS "legacyFingerprint",
-           app.release_runtime_schema_readiness_v59() AS ready,
-           app.platform_oidc_direct_runtime_schema_readiness_v59()
+           app.release_runtime_schema_readiness_v60() AS ready,
+           app.platform_oidc_direct_runtime_schema_readiness_v60()
              AS "oidcReady",
-           app.platform_saml_direct_runtime_schema_readiness_v59()
+           app.platform_saml_direct_runtime_schema_readiness_v60()
              AS "samlReady"
-    FROM app.schema_compatibility_v59() AS current_projection
+    FROM app.schema_compatibility_v60() AS current_projection
     CROSS JOIN app.schema_compatibility_v48() AS predecessor_projection
     CROSS JOIN app.schema_compatibility_v40() AS legacy_projection
   `;
@@ -850,7 +850,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       ALTER COLUMN expires_at SET DEFAULT (now() + interval '7 days')
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -864,7 +864,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     `;
   }
   const [defaultRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(
     defaultRestored?.ready,
@@ -875,7 +875,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
   try {
     await admin`ALTER ROLE periapsis_migrator LOGIN`;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -886,14 +886,14 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`ALTER ROLE periapsis_migrator NOLOGIN`;
   }
   const [migratorLoginRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(migratorLoginRestored?.ready, true);
 
   try {
     await admin`ALTER ROLE periapsis_migrator SUPERUSER`;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -904,14 +904,14 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`ALTER ROLE periapsis_migrator NOSUPERUSER`;
   }
   const [migratorSuperuserRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(migratorSuperuserRestored?.ready, true);
 
   try {
     await admin`ALTER ROLE periapsis_ldap_administration_owner LOGIN`;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -922,7 +922,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`ALTER ROLE periapsis_ldap_administration_owner NOLOGIN`;
   }
   const [helperLoginRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(helperLoginRestored?.ready, true);
 
@@ -932,7 +932,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       GRANT EXECUTE ON FUNCTIONS TO PUBLIC
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -946,7 +946,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     `;
   }
   const [globalDefaultAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(globalDefaultAclRestored?.ready, true);
 
@@ -956,7 +956,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       GRANT SELECT ON TABLES TO periapsis_api
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -970,7 +970,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     `;
   }
   const [schemaDefaultAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(schemaDefaultAclRestored?.ready, true);
 
@@ -980,7 +980,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       WITH INHERIT FALSE, SET TRUE
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -991,7 +991,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`REVOKE periapsis_migrator FROM periapsis_api`;
   }
   const [migratorMembershipRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(migratorMembershipRestored?.ready, true);
 
@@ -1005,7 +1005,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       WITH INHERIT FALSE, SET TRUE
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1019,7 +1019,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`DROP ROLE periapsis_platform_identity_review_probe`;
   }
   const [runtimeMembershipRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(runtimeMembershipRestored?.ready, true);
 
@@ -1048,7 +1048,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       WITH INHERIT FALSE, SET TRUE
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1067,14 +1067,14 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     }
   }
   const [runtimeLoginMembershipRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(runtimeLoginMembershipRestored?.ready, true);
 
   try {
     await admin`GRANT CREATE ON SCHEMA public TO periapsis_api`;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1085,7 +1085,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`REVOKE CREATE ON SCHEMA public FROM periapsis_api`;
   }
   const [directSchemaAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(directSchemaAclRestored?.ready, true);
 
@@ -1116,7 +1116,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       TO periapsis_platform_identity_schema_acl_probe
     `;
     const [helperTampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       helperTampered?.ready,
@@ -1129,7 +1129,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       WITH INHERIT FALSE, SET TRUE
     `;
     const [inheritedTampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       inheritedTampered?.ready,
@@ -1147,7 +1147,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`DROP ROLE periapsis_platform_identity_schema_acl_probe`;
   }
   const [inheritedSchemaAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(inheritedSchemaAclRestored?.ready, true);
 
@@ -1168,7 +1168,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       SELECT has_database_privilege(
                'periapsis_api', current_database(), 'CREATE'
              ) AS "apiCanCreate",
-             app.release_runtime_schema_readiness_v59() AS ready
+             app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(tampered?.apiCanCreate, true);
     assert.equal(
@@ -1182,7 +1182,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     );
   }
   const [databaseCreateRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(databaseCreateRestored?.ready, true);
 
@@ -1194,7 +1194,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       SELECT has_schema_privilege(
                'periapsis_api', 'public', 'CREATE'
              ) AS "apiCanCreate",
-             app.release_runtime_schema_readiness_v59() AS ready
+             app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.apiCanCreate,
@@ -1224,14 +1224,14 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     );
   }
   const [databaseOwnerRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(databaseOwnerRestored?.ready, true);
 
   const [compatibilityAcl] = await admin<
     {
-      apiV59: boolean;
-      workerV59: boolean;
+      apiV60: boolean;
+      workerV60: boolean;
       apiV48: boolean;
       workerV48: boolean;
       apiLegacyV40: boolean;
@@ -1242,13 +1242,13 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
   >`
     SELECT
       has_function_privilege(
-        'periapsis_api', 'app.schema_compatibility_v59()'::regprocedure,
+        'periapsis_api', 'app.schema_compatibility_v60()'::regprocedure,
         'EXECUTE'
-      ) AS "apiV59",
+      ) AS "apiV60",
       has_function_privilege(
-        'periapsis_worker', 'app.schema_compatibility_v59()'::regprocedure,
+        'periapsis_worker', 'app.schema_compatibility_v60()'::regprocedure,
         'EXECUTE'
-      ) AS "workerV59",
+      ) AS "workerV60",
       has_function_privilege(
         'periapsis_api', 'app.schema_compatibility_v48()'::regprocedure,
         'EXECUTE'
@@ -1267,18 +1267,18 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       ) AS "workerLegacyV40",
       has_function_privilege(
         'periapsis_api',
-        'app.release_runtime_schema_readiness_v59()'::regprocedure,
+        'app.release_runtime_schema_readiness_v60()'::regprocedure,
         'EXECUTE'
       ) AS "apiReadiness",
       has_function_privilege(
         'periapsis_worker',
-        'app.release_runtime_schema_readiness_v59()'::regprocedure,
+        'app.release_runtime_schema_readiness_v60()'::regprocedure,
         'EXECUTE'
       ) AS "workerReadiness"
   `;
   assert.deepEqual(compatibilityAcl, {
-    apiV59: true,
-    workerV59: true,
+    apiV60: true,
+    workerV60: true,
     apiV48: false,
     workerV48: false,
     apiLegacyV40: true,
@@ -1312,8 +1312,8 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
                  legacy_projection.latest_created_at::text AS "legacyLatest",
                  legacy_projection.latest_hash AS "legacyHash",
                  legacy_projection.migration_fingerprint AS "legacyFingerprint",
-                 app.release_runtime_schema_readiness_v59() AS ready
-          FROM app.schema_compatibility_v59() AS current_projection
+                 app.release_runtime_schema_readiness_v60() AS ready
+          FROM app.schema_compatibility_v60() AS current_projection
           CROSS JOIN app.schema_compatibility_v40() AS legacy_projection
         `;
         return { role, ...row };
@@ -1508,7 +1508,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
   );
   try {
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1521,14 +1521,14 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     );
   }
   const [functionConfigurationRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(functionConfigurationRestored?.ready, true);
 
   await admin`GRANT periapsis_worker TO periapsis_notifier`;
   try {
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1539,7 +1539,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     await admin`REVOKE periapsis_worker FROM periapsis_notifier`;
   }
   const [keyringInheritanceRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(keyringInheritanceRestored?.ready, true);
 
@@ -1548,7 +1548,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       `GRANT EXECUTE ON FUNCTION ${legacyKeyringFunctions[0]} TO periapsis_api`,
     );
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1561,7 +1561,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     );
   }
   const [legacyKeyringAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(legacyKeyringAclRestored?.ready, true);
 
@@ -1571,7 +1571,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       `GRANT EXECUTE ON FUNCTION ${tamperedFunction} TO periapsis_worker`,
     );
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1584,7 +1584,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     );
   }
   const [functionAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(
     functionAclRestored?.ready,
@@ -1598,7 +1598,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       TO periapsis_sla_api_owner
     `;
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1612,7 +1612,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     `;
   }
   const [restored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(
     restored?.ready,
@@ -1625,7 +1625,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
   `;
   try {
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1644,7 +1644,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
   `;
   try {
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1663,7 +1663,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
   `;
   try {
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1692,7 +1692,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       "GRANT EXECUTE ON FUNCTION app.private_platform_identity_text_is_safe_v1(text, boolean) TO periapsis_api_login",
     );
     const [tampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       tampered?.ready,
@@ -1706,7 +1706,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
       `GRANT EXECUTE ON FUNCTION ${keyringFunction} TO periapsis_api_login`,
     );
     const [keyringTampered] = await admin<{ ready: boolean }[]>`
-      SELECT app.release_runtime_schema_readiness_v59() AS ready
+      SELECT app.release_runtime_schema_readiness_v60() AS ready
     `;
     assert.equal(
       keyringTampered?.ready,
@@ -1725,7 +1725,7 @@ async function verifyCompatibilityAndBoundary(): Promise<void> {
     }
   }
   const [exactAclRestored] = await admin<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v59() AS ready
+    SELECT app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.equal(exactAclRestored?.ready, true);
 
@@ -2624,7 +2624,7 @@ async function createAndVerifyProviders(): Promise<void> {
     >`
       SELECT policy.account_mode AS "accountMode",
              policy.platform_login_enabled AS "platformLoginEnabled",
-             app.release_runtime_schema_readiness_v59() AS ready
+             app.release_runtime_schema_readiness_v60() AS ready
       FROM public.platform_federated_provider_policies AS policy
       WHERE policy.provider_id = ${fixture.oidcProvider}::uuid
     `;
@@ -2646,7 +2646,7 @@ async function createAndVerifyProviders(): Promise<void> {
       { platformLoginEnabled: boolean; ready: boolean }[]
     >`
       SELECT policy.platform_login_enabled AS "platformLoginEnabled",
-             app.release_runtime_schema_readiness_v59() AS ready
+             app.release_runtime_schema_readiness_v60() AS ready
       FROM public.platform_federated_provider_policies AS policy
       WHERE policy.provider_id = ${fixture.oidcProvider}::uuid
     `;
@@ -2667,7 +2667,7 @@ async function createAndVerifyProviders(): Promise<void> {
   >`
     SELECT policy.account_mode AS "accountMode",
            policy.platform_login_enabled AS "platformLoginEnabled",
-           app.release_runtime_schema_readiness_v59() AS ready
+           app.release_runtime_schema_readiness_v60() AS ready
     FROM public.platform_federated_provider_policies AS policy
     WHERE policy.provider_id = ${fixture.oidcProvider}::uuid
   `;
@@ -3649,7 +3649,7 @@ async function verifyCasSecretAndArchive(): Promise<void> {
        FROM public.platform_oidc_client_secrets AS secret
        WHERE secret.provider_id = ${fixture.oidcProvider}::uuid
          AND secret.retired_at IS NULL) AS "liveSecrets",
-      app.release_runtime_schema_readiness_v59() AS ready
+      app.release_runtime_schema_readiness_v60() AS ready
   `;
   assert.deepEqual(retiredEnvelopeState, { liveSecrets: 0, ready: true });
 
@@ -3809,7 +3809,7 @@ async function main(): Promise<void> {
       role,
       ready: await asRole(admin, role, async (transaction) => {
         const [row] = await transaction<{ ready: boolean }[]>`
-          SELECT app.release_runtime_schema_readiness_v59() AS ready
+          SELECT app.release_runtime_schema_readiness_v60() AS ready
         `;
         return row?.ready;
       }),

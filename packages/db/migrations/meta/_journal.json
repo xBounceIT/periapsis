@@ -1751,6 +1751,20 @@
       "when": 1788875558350,
       "tag": "0249_v59_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1788877870160,
+      "tag": "0250_ticket_export_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1788877946518,
+      "tag": "0251_v60_compatibility",
+      "breakpoints": true
     }
   ]
 }

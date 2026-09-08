@@ -350,7 +350,7 @@ try {
         "periapsis_worker",
         (sql) =>
           sql<{ ready: boolean }[]>`
-            SELECT app.sla_trigger_action_runtime_schema_readiness_v59()
+            SELECT app.sla_trigger_action_runtime_schema_readiness_v60()
               AS ready
           `,
       );

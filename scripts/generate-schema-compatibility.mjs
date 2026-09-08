@@ -3917,6 +3917,112 @@ if (migrationFiles.includes("0249_v59_compatibility.sql")) {
   );
 }
 
+if (migrationFiles.includes("0250_ticket_export_authority.sql")) {
+  functionSourceDefinitions.push(
+    {
+      constant: "APIRuntimeReadinessV60",
+      migration: "0250_ticket_export_authority.sql",
+      name: "api_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "WorkerRuntimeReadinessV60",
+      migration: "0250_ticket_export_authority.sql",
+      name: "worker_runtime_schema_readiness_v60",
+    },
+  );
+}
+if (migrationFiles.includes("0251_v60_compatibility.sql")) {
+  functionSourceDefinitions.push(
+    {
+      constant: "SchemaCompatibilityV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "schema_compatibility_v60",
+    },
+    {
+      constant: "RetiredSchemaCompatibilityV59",
+      name: "schema_compatibility_v59",
+      sourceConstant: "SchemaCompatibilityV59",
+    },
+    {
+      constant: "PrivateSchemaCompatibilityJournalV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "private_schema_compatibility_journal_v60",
+    },
+    {
+      constant: "PrivateReleaseRuntimeDependencySurfaceHashV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "private_release_runtime_dependency_surface_hash_v60",
+    },
+    {
+      constant: "PrivateReleaseRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "private_release_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "ReleaseRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "release_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "FederatedAuthenticationReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "federated_authentication_schema_readiness_v60",
+    },
+    {
+      constant: "PlatformOIDCDirectRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "platform_oidc_direct_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "PlatformSAMLDirectRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "platform_saml_direct_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "PlatformLocalAccountRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "platform_local_account_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "SLATriggerActionRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "sla_trigger_action_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "SLAObjectEventIngressReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "sla_object_event_ingress_schema_readiness_v60",
+    },
+    {
+      constant: "TicketBulkRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "ticket_bulk_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "TicketExportRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "ticket_export_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "TicketMetadataRuntimeReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "ticket_metadata_runtime_schema_readiness_v60",
+    },
+    {
+      constant: "NotificationDispatchReadinessV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "notification_dispatch_readiness_v60",
+    },
+    {
+      constant: "SealSchemaCompatibilityManifestV60",
+      migration: "0251_v60_compatibility.sql",
+      name: "seal_schema_compatibility_manifest",
+      hasArguments: true,
+      runtime: false,
+    },
+  );
+}
+
 if (
   new Set(functionSourceDefinitions.map(({ constant }) => constant)).size !==
   functionSourceDefinitions.length
@@ -4036,17 +4142,17 @@ writeFileSync(
 );
 
 const notifierSourceConstants = new Set([
-  "SchemaCompatibilityV59",
-  "PrivateReleaseRuntimeDependencySurfaceHashV59",
-  "PrivateReleaseRuntimeReadinessV59",
-  "ReleaseRuntimeReadinessV59",
-  "NotificationDispatchReadinessV59",
+  "SchemaCompatibilityV60",
+  "PrivateReleaseRuntimeDependencySurfaceHashV60",
+  "PrivateReleaseRuntimeReadinessV60",
+  "ReleaseRuntimeReadinessV60",
+  "NotificationDispatchReadinessV60",
 ]);
 const notifierFunctionSourceHashes = functionSourceHashes.filter(
   ({ constant }) => notifierSourceConstants.has(constant),
 );
 if (notifierFunctionSourceHashes.length !== notifierSourceConstants.size) {
-  throw new Error("Missing a trusted V59 notifier function source");
+  throw new Error("Missing a trusted V60 notifier function source");
 }
 const notifierTypescriptTarget = resolve(
   repositoryRoot,

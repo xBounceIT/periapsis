@@ -13,6 +13,14 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34236982037` reaches export creation but rejects the LDAP operator.
+      Native reproduction retains all explicit grants and changes only the legacy
+      membership label to `read_only`, reproducing 403. V60 authorizes export
+      request/revalidation and downstream comment/notification visibility through
+      live permissions and customer links, as required by ADR-0006, instead of
+      compatibility labels. Verify both a permitted operator
+      with that label and an administrator label without grants in the active tenant.
+      Complete native and composed browser acceptance remains required.
 - [ ] Run `34232473336` reaches browser export creation and returns 503.
       Native API/PostgreSQL reproduction identifies read-only transactions that
       reject the authority helper's `FOR SHARE` locks. Keep repeatable-read

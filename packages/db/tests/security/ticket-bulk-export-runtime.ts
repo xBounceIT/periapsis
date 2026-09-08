@@ -21,8 +21,11 @@ const fixture = {
   foreignUser: "01a0b100-0000-7000-8000-000000000102",
   membership: "01a0b100-0000-7000-8000-000000000201",
   foreignMembership: "01a0b100-0000-7000-8000-000000000202",
+  unprivilegedMembership: "01a0b100-0000-7000-8000-000000000203",
   session: "01a0b100-0000-7000-8000-000000000301",
   sessionFamily: "01a0b100-0000-7000-8000-000000000302",
+  unprivilegedSession: "01a0b100-0000-7000-8000-000000000303",
+  unprivilegedSessionFamily: "01a0b100-0000-7000-8000-000000000304",
   alert: "01a0b100-0000-7000-8000-000000000401",
   bulkJob: "01a0b100-0000-7000-8000-000000000501",
   exportJob: "01a0b100-0000-7000-8000-000000000502",
@@ -227,6 +230,7 @@ async function callApi(
     | "commit_ticket_bulk_cancellation_v1"
     | "get_ticket_bulk_v1"
     | "resolve_ticket_export_query_v2"
+    | "resolve_ticket_export_access_v2"
     | "commit_ticket_export_request_v2"
     | "commit_ticket_export_owner_transition_v2"
     | "get_ticket_export_v2",
@@ -302,6 +306,11 @@ try {
       `;
       assert(sessionWindow, "database session window is missing");
       const { now, expires } = sessionWindow;
+      // LDAP JIT uses this compatibility label even for explicit operator grants.
+      await transaction`
+        UPDATE public.tenant_memberships SET role = 'read_only'
+        WHERE id = ${fixture.membership}::uuid
+      `;
       await transaction`
         INSERT INTO public.auth_sessions (
           id, user_id, rotation_family_id, active_tenant_id,
@@ -380,8 +389,8 @@ try {
           role,
           (sql) =>
             sql<{ bulk: boolean; export: boolean }[]>`
-            SELECT app.ticket_bulk_runtime_schema_readiness_v59() AS bulk,
-                   app.ticket_export_runtime_schema_readiness_v59() AS export
+            SELECT app.ticket_bulk_runtime_schema_readiness_v60() AS bulk,
+                   app.ticket_export_runtime_schema_readiness_v60() AS export
           `,
         );
         assert.deepEqual(readiness, { bulk: true, export: true });
@@ -408,7 +417,7 @@ try {
       }
       await expectSqlState(
         asRole(transaction, "periapsis_auditor", async (sql) => {
-          await sql`SELECT app.ticket_bulk_runtime_schema_readiness_v59()`;
+          await sql`SELECT app.ticket_bulk_runtime_schema_readiness_v60()`;
         }),
         "42501",
         "auditor executed ticket runtime readiness",
@@ -1029,6 +1038,46 @@ try {
       assert.equal(
         asNumber(claimedExportJob.revision, "revision is missing"),
         2,
+      );
+      // A legacy administrator label must not grant authority or import grants
+      // from the other tenant where this user really is an administrator.
+      await transaction`
+        INSERT INTO public.tenant_memberships (id, tenant_id, user_id, role, status)
+        VALUES (${fixture.unprivilegedMembership}::uuid, ${fixture.tenant}::uuid,
+          ${fixture.foreignUser}::uuid, 'tenant_admin', 'active')
+      `;
+      await transaction`
+        INSERT INTO public.auth_sessions (
+          id, user_id, rotation_family_id, active_tenant_id,
+          token_digest, csrf_secret_digest, authentication_method,
+          mfa_satisfied_at, last_seen_at, idle_expires_at,
+          absolute_expires_at, created_at
+        ) VALUES (
+          ${fixture.unprivilegedSession}::uuid, ${fixture.foreignUser}::uuid,
+          ${fixture.unprivilegedSessionFamily}::uuid, ${fixture.tenant}::uuid,
+          ${Buffer.from(digest("unprivileged-session-token"), "hex")}::bytea,
+          ${Buffer.from(digest("unprivileged-session-csrf"), "hex")}::bytea,
+          'totp', ${now}, ${now}, ${expires}, ${expires}, ${now}
+        )
+      `;
+      await expectSqlState(
+        asApi(transaction, async (sql) => {
+          await sql`SELECT set_config('app.user_id', ${fixture.foreignUser}, true)`;
+          return callApi(sql, "resolve_ticket_export_access_v2", {
+            schemaVersion: 1,
+            actor: {
+              ...actor,
+              userId: fixture.foreignUser,
+              sessionId: fixture.unprivilegedSession,
+            },
+            tenantId: fixture.tenant,
+            kind: "alert",
+            audience: "operator",
+            capability: "ticket_export.request",
+          });
+        }),
+        "42501",
+        "legacy administrator label or foreign grants authorized an export",
       );
       throw rollbackMarker;
     }),

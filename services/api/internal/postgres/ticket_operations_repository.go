@@ -38,9 +38,9 @@ const (
 	ticketExportCommitRevocationQuery    = `SELECT response FROM app.commit_ticket_export_revocation_v2($1::jsonb)`
 	ticketExportReadPageQuery            = `SELECT response FROM app.read_ticket_export_application_page_v2($1::jsonb)`
 
-	ticketBulkReadinessABIQuery   = `SELECT app.ticket_bulk_runtime_schema_readiness_v59()`
-	ticketExportReadinessABIQuery = `SELECT app.ticket_export_runtime_schema_readiness_v59()`
-	ticketMetadataReadinessQuery  = `SELECT app.ticket_metadata_runtime_schema_readiness_v59()`
+	ticketBulkReadinessABIQuery   = `SELECT app.ticket_bulk_runtime_schema_readiness_v60()`
+	ticketExportReadinessABIQuery = `SELECT app.ticket_export_runtime_schema_readiness_v60()`
+	ticketMetadataReadinessQuery  = `SELECT app.ticket_metadata_runtime_schema_readiness_v60()`
 )
 
 type ticketOperationsBulkAccessResponseV1 struct {
