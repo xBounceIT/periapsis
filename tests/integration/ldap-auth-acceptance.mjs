@@ -2640,7 +2640,6 @@ async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
   );
 
   const providerDocument = {
-    kind: "ldap",
     key: `acceptance_globex_${uniqueSuffix}`,
     displayName: "Globex acceptance OpenLDAP",
     description: "Disposable second-tenant isolation provider",
@@ -2652,7 +2651,7 @@ async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
     {
       method: "POST",
       idempotencyKey: acceptanceKey("globex-provider"),
-      json: providerDocument,
+      json: { kind: "ldap", ...providerDocument },
     },
   );
   expectStatus(provider, 201, "Globex LDAP provider creation");

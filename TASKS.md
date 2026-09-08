@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34222173605` completes tenant OIDC configuration and reaches the
+      second tenant's LDAP setup. Its update incorrectly repeats the creation-only
+      `kind` field, rejected by the strict update contract. Send `kind` only on
+      creation, preserving provider enablement and tenant-isolation assertions.
+      Complete composed browser acceptance remains required.
 - [ ] Run `34220144226` passes OIDC document parsing but rejects snapshot
       admission: native Keycloak returns immediately stale discovery/JWKS cache
       metadata. The disposable realm's edge now publishes only successful GETs
