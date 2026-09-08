@@ -240,9 +240,13 @@ test("served Swagger contract and live tenant boundaries agree", async ({
 
     await globexPage.goto(`/alerts/${state.alertId}`);
     await expect(
-      globexPage.getByRole("heading", {
-        name: /^(?:Access was denied by the server\.|Alert unavailable)$/u,
-      }),
+      globexPage
+        .getByRole("heading", { name: "Access was denied by the server." })
+        .or(
+          globexPage
+            .getByRole("alert")
+            .getByText("Alert unavailable", { exact: true }),
+        ),
     ).toBeVisible();
     await expect(
       globexPage.getByRole("heading", { name: state.alertTitle }),

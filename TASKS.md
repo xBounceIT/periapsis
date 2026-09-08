@@ -13,6 +13,10 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34252044576` downloads and verifies the real encrypted export and
+      passes cross-tenant API rejection. The final UI isolation assertion must
+      locate the actual `alert` error component for a hidden (404) resource,
+      alongside the existing access-denied heading for 403 responses.
 - [ ] Run `34249436678` prepares the export successfully, then the browser fetch
       is blocked by the web server's self-only connection policy. Permit only the
       validated configured HTTPS storage origin, shared with API/worker deployment
