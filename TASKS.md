@@ -13,6 +13,12 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34245165308` completes the encrypted export but rejects prepare-download.
+      The API compared final job revision 3 with immutable object revision 2. Bind
+      the download HEAD to the claim revision retained by the worker and SQL manifest;
+      the existing lifecycle test reproduces the mismatch. The deployment-validation
+      workflow must also generate and mask its own KMS file-secret input. Retain the
+      complete browser/download and PostgreSQL results on the final commit.
 - [ ] Run `34241850543` accepts the LDAP export request but times out awaiting
       worker completion. Native API/PostgreSQL claim and populated export through
       the real Go worker succeed with a test artifact store. The pinned MinIO rejects

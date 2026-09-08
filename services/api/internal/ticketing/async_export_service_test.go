@@ -92,7 +92,8 @@ func TestAsyncExportPrepareDownloadReauthorizesAndBindsExactManifest(t *testing.
 	if storage.location.TenantID != definition.Tenant() ||
 		storage.location.JobID != definition.ID() ||
 		storage.location.ArtifactID != artifact.ID() ||
-		storage.location.Revision != finished.Record.Job.Revision() ||
+		storage.location.Revision != claimed.Record.Job.Revision() ||
+		finished.Record.Job.Revision() != claimed.Record.Job.Revision()+1 ||
 		storage.location.Attempt != finished.Record.Job.Attempts() ||
 		storage.location.Projection != definition.ProjectionVersion() ||
 		storage.location.Digest != digest || storage.location.Rows != 17 ||

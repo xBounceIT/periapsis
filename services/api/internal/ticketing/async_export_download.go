@@ -97,6 +97,9 @@ func (service *AsyncExportService) PrepareDownload(
 	if job.State() != kernel.TicketExportSucceeded || artifact == nil {
 		return AsyncExportPreparedDownload{}, ErrConflict
 	}
+	if job.Revision() < 3 {
+		return AsyncExportPreparedDownload{}, ErrUnavailable
+	}
 	now, err := service.now()
 	if err != nil {
 		return AsyncExportPreparedDownload{}, err
@@ -112,9 +115,11 @@ func (service *AsyncExportService) PrepareDownload(
 		return AsyncExportPreparedDownload{}, ErrConflict
 	}
 	definition := job.Definition()
+	// The worker seals the object under its claim revision. Successful publication
+	// increments only the job revision; the immutable object metadata stays pinned.
 	location := AsyncExportArtifactLocation{
 		TenantID: definition.Tenant(), JobID: definition.ID(), ArtifactID: artifact.ID(),
-		Revision: job.Revision(), Attempt: job.Attempts(), Projection: definition.ProjectionVersion(),
+		Revision: job.Revision() - 1, Attempt: job.Attempts(), Projection: definition.ProjectionVersion(),
 		Digest: artifact.Digest(), Rows: artifact.Rows(), Bytes: artifact.Bytes(),
 	}
 	if _, _, keyErr := kernel.TicketExportArtifactObjectKeys(
