@@ -3,7 +3,7 @@
 import { createServer, request as httpRequest } from "node:http";
 import { connect } from "node:net";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildProxyHeaders,
@@ -29,9 +29,54 @@ afterEach(async () => {
     ),
   );
   servers.clear();
+  vi.unstubAllEnvs();
 });
 
 describe("web server trust boundary", () => {
+  it.each([
+    "",
+    "https://storage.localhost:19000",
+    "https://evidence.example.com",
+  ])(
+    "limits browser connections to self and the configured storage origin %s",
+    async (storageOrigin) => {
+      vi.stubEnv("PERIAPSIS_S3_PUBLIC_ENDPOINT", storageOrigin);
+      const server = createWebServer();
+      servers.add(server);
+      await listenOnLoopback(server);
+      const response = await fetch(
+        `http://127.0.0.1:${listenerPort(server)}/health/live`,
+      );
+      const policy = response.headers.get("content-security-policy") ?? "";
+      expect(
+        policy
+          .split("; ")
+          .find((directive) => directive.startsWith("connect-src")),
+      ).toBe(
+        `connect-src 'self'${storageOrigin === "" ? "" : ` ${storageOrigin}`}`,
+      );
+      expect(policy).toContain("script-src 'self';");
+      expect(policy).toContain("object-src 'none';");
+      await response.arrayBuffer();
+    },
+  );
+
+  it.each([
+    "http://storage.example.com",
+    "https://*.example.com",
+    "https://user:secret@storage.example.com",
+    "https://storage.example.com/path",
+    "https://storage.example.com?token=secret",
+    "https://storage.example.com#fragment",
+    "https://storage.example.com; script-src *",
+    "https://storage.example.com https://other.example.com",
+    " https://storage.example.com",
+  ])("rejects unsafe storage CSP configuration %s", (storagePublicEndpoint) => {
+    expect(() => createWebServer({ storagePublicEndpoint })).toThrow(
+      /PERIAPSIS_S3_PUBLIC_ENDPOINT/,
+    );
+  });
+
   it("pins outbound authority while preserving routed paths and never follows API redirects", async () => {
     let alternateRequests = 0;
     const alternate = createServer((_request, response) => {

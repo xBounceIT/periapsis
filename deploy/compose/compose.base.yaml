@@ -353,6 +353,7 @@ services:
     image: periapsis/web:${PERIAPSIS_IMAGE_TAG:-development}
     environment:
       PERIAPSIS_API_URL: http://api:8080
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: https://storage.localhost:${PERIAPSIS_MINIO_API_PORT:-19000}
       PERIAPSIS_ENV: development
       PERIAPSIS_RELEASE: ${PERIAPSIS_IMAGE_TAG:-development}
       # Only the TLS edge below may supply a sanitized forwarding chain.

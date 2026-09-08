@@ -555,7 +555,7 @@ export function validateComposeDevelopmentTLS(
       "127.0.0.1:${PERIAPSIS_MINIO_API_PORT:-19000}:${PERIAPSIS_MINIO_API_PORT:-19000}",
       "curl --fail --silent --show-error --max-time 2 --cacert /run/secrets/periapsis-dev-tls-ca.crt",
     ]),
-    ...requireMarkerCount(compose, composePath, publicStorageEndpoint, 2),
+    ...requireMarkerCount(compose, composePath, publicStorageEndpoint, 3),
     ...requireMarkers(caddyfile, caddyfilePath, [
       "auto_https off",
       "tls /run/secrets/periapsis-dev-tls.crt /run/secrets/periapsis-dev-tls.key",
@@ -1738,7 +1738,14 @@ export async function validateRepository(rootDirectory) {
         if (variable === "PERIAPSIS_S3_BUCKET" && path.includes("compose")) {
           continue;
         }
-        errors.push(...requireYamlKeyCount(contents, path, variable, 2));
+        errors.push(
+          ...requireYamlKeyCount(
+            contents,
+            path,
+            variable,
+            variable === "PERIAPSIS_S3_PUBLIC_ENDPOINT" ? 3 : 2,
+          ),
+        );
       }
     } catch {
       // The parity loop above already reports unreadable sources.

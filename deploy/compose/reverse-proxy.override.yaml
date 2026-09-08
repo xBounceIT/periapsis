@@ -2,6 +2,7 @@ services:
   web:
     environment:
       PERIAPSIS_WEB_PROXY_ONLY: "true"
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: ${PERIAPSIS_S3_PUBLIC_ENDPOINT:?set the public HTTPS object-storage origin}
       PERIAPSIS_PUBLIC_URL: ${PERIAPSIS_PUBLIC_URL:?set the canonical public HTTPS origin}
       PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS: ${PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS:?set the exact external proxy peer CIDRs}
     ports:

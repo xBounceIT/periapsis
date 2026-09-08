@@ -398,6 +398,10 @@ for (const [profile, services] of Object.entries(profiles)) {
       model.services.worker.environment.PERIAPSIS_S3_PUBLIC_ENDPOINT,
       "https://storage.localhost:19000",
     );
+    assert.equal(
+      model.services.web.environment.PERIAPSIS_S3_PUBLIC_ENDPOINT,
+      "https://storage.localhost:19000",
+    );
     for (const name of ["api", "worker"]) {
       assert.equal(
         model.services[name].environment.PERIAPSIS_FEDERATED_CA_BUNDLE_FILE,
@@ -482,6 +486,10 @@ for (const [profile, services] of Object.entries(profiles)) {
     assert.equal(
       model.services.web.environment.PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS,
       inputs.proxy.PERIAPSIS_WEB_TRUSTED_PROXY_CIDRS,
+    );
+    assert.equal(
+      model.services.web.environment.PERIAPSIS_S3_PUBLIC_ENDPOINT,
+      inputs.proxy.PERIAPSIS_S3_PUBLIC_ENDPOINT,
     );
     for (const name of ["api", "web"])
       assert.equal(

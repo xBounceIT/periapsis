@@ -13,6 +13,10 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34249436678` prepares the export successfully, then the browser fetch
+      is blocked by the web server's self-only connection policy. Permit only the
+      validated configured HTTPS storage origin, shared with API/worker deployment
+      settings, and retain the complete browser and PostgreSQL results.
 - [ ] The same run reaches the comment runtime proof and exposes `min(uuid)` in
       customer export authority, reintroduced by V60 from an older definition.
       Native HTTP also reproduces operator comment rejection with an LDAP-style

@@ -31,11 +31,23 @@ interface WebServerOptions {
   apiBaseUrl?: URL;
   proxyOnly?: boolean;
   publicUrl?: string;
+  storagePublicEndpoint?: string;
   trustedProxyCIDRs?: string;
 }
 
 export function createWebServer(options: WebServerOptions = {}) {
   const apiBaseUrl = new URL(options.apiBaseUrl ?? configuredApiBaseUrl);
+  const storageEndpoint =
+    options.storagePublicEndpoint ??
+    process.env["PERIAPSIS_S3_PUBLIC_ENDPOINT"] ??
+    "";
+  const storageOrigin =
+    storageEndpoint === ""
+      ? undefined
+      : parseCanonicalHTTPSOrigin(
+          storageEndpoint,
+          "PERIAPSIS_S3_PUBLIC_ENDPOINT must be a canonical HTTPS origin",
+        );
   const proxyOnly =
     options.proxyOnly ??
     parseProxyOnly(process.env["PERIAPSIS_WEB_PROXY_ONLY"] ?? "false");
@@ -58,7 +70,7 @@ export function createWebServer(options: WebServerOptions = {}) {
     { joinDuplicateHeaders: true },
     (request, response) => {
       const startedAt = performance.now();
-      setSecurityHeaders(response);
+      setSecurityHeaders(response, storageOrigin);
 
       response.once("finish", () => {
         writeLog("info", "http_request", {
@@ -707,10 +719,13 @@ function contentType(path: string): string {
   return types[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
-function setSecurityHeaders(response: ServerResponse): void {
+function setSecurityHeaders(
+  response: ServerResponse,
+  storageOrigin?: string,
+): void {
   response.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'",
+    `default-src 'self'; base-uri 'none'; connect-src 'self'${storageOrigin === undefined ? "" : ` ${storageOrigin}`}; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`,
   );
   response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   response.setHeader(
@@ -802,9 +817,14 @@ function parseProxyOnly(raw: string): boolean {
 }
 
 function parseProxyPublicOrigin(raw: string): string {
-  const error = new Error(
+  return parseCanonicalHTTPSOrigin(
+    raw,
     "PERIAPSIS_PUBLIC_URL must be a canonical HTTPS origin in proxy-only mode",
   );
+}
+
+function parseCanonicalHTTPSOrigin(raw: string, message: string): string {
+  const error = new Error(message);
   let parsed: URL;
   try {
     parsed = new URL(raw);

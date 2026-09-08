@@ -430,6 +430,7 @@ services:
     image: ${PERIAPSIS_WEB_IMAGE:?set immutable web image digest}
     environment:
       PERIAPSIS_API_URL: http://api:8080
+      PERIAPSIS_S3_PUBLIC_ENDPOINT: ${PERIAPSIS_S3_PUBLIC_ENDPOINT:?set browser-reachable S3 endpoint}
       PERIAPSIS_ENV: production
       PERIAPSIS_RELEASE: ${PERIAPSIS_RELEASE:?set immutable release identifier}
       PERIAPSIS_WEB_ADDR: 0.0.0.0:8081
