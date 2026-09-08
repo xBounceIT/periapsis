@@ -1361,6 +1361,7 @@ async function runLivePhaseThreeAcceptance({
       secondTenantId,
       alertId,
       globexPrincipal.userId,
+      operatorUserId,
     );
     ({ cookie, csrfToken } = await refreshLDAPSession(
       cookie,
@@ -4211,18 +4212,22 @@ function proveTenantRLSIsolation(
   activeTenantId,
   alertId,
   activeUserId,
+  sourceUserId,
 ) {
   const environment = {
     ...process.env,
     PGPASSWORD: requiredEnvironment("PERIAPSIS_API_DATABASE_PASSWORD"),
   };
   const sql = [
-    "WITH context AS MATERIALIZED (",
-    "SELECT set_config('app.tenant_id', :'tenant_id', false),",
-    "set_config('app.user_id', :'user_id', false)",
-    ") SELECT count(*) FROM context CROSS JOIN public.alerts",
-    "WHERE alerts.id = :'alert_id'::uuid;",
-  ].join(" ");
+    "BEGIN;",
+    "SELECT set_config('app.tenant_id', :'source_tenant_id', true) AS tenant_context,",
+    "set_config('app.user_id', :'source_user_id', true) AS user_context \\gset",
+    "SELECT count(*) FROM public.alerts WHERE id = :'alert_id'::uuid;",
+    "SELECT set_config('app.tenant_id', :'tenant_id', true) AS tenant_context,",
+    "set_config('app.user_id', :'user_id', true) AS user_context \\gset",
+    "SELECT count(*) FROM public.alerts WHERE id = :'alert_id'::uuid;",
+    "ROLLBACK;",
+  ].join("\n");
   const result = spawnSync(
     "docker",
     [
@@ -4240,6 +4245,7 @@ function proveTenantRLSIsolation(
       "-X",
       "-A",
       "-t",
+      "-q",
       "-v",
       "ON_ERROR_STOP=1",
       "-v",
@@ -4248,18 +4254,21 @@ function proveTenantRLSIsolation(
       `user_id=${activeUserId}`,
       "-v",
       `alert_id=${alertId}`,
+      "-v",
+      `source_tenant_id=${sourceTenantId}`,
+      "-v",
+      `source_user_id=${sourceUserId}`,
       "-U",
       "periapsis_api_login",
       "-d",
       "periapsis",
-      "-c",
-      sql,
     ],
-    { cwd: process.cwd(), env: environment, encoding: "utf8" },
+    { cwd: process.cwd(), env: environment, encoding: "utf8", input: sql },
   );
   if (result.error) throw result.error;
   assert(
-    result.status === 0 && result.stdout.trim() === "0",
+    result.status === 0 &&
+      result.stdout.trim().split(/\s+/u).join(",") === "1,0",
     `RLS wrong-context probe failed for ${sourceTenantId}`,
   );
 }

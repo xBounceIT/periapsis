@@ -13,6 +13,12 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34226289187` completes Globex LDAP setup and fails in the direct
+      RLS probe. Feed SQL through psql stdin so quoted psql variables expand;
+      install transaction-local contexts in separate statements before querying.
+      Require one visible source row followed by zero rows in the second tenant,
+      preventing an always-empty query from passing the isolation check.
+      Complete composed browser acceptance remains required.
 - [ ] Run `34223903645` reaches Globex LDAP mapping creation. Mapping the
       protected administrator role exceeds the LDAP delegation policy; reproduce
       the 403 with native API/PostgreSQL. Give the isolation fixture an explicit
