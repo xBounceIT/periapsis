@@ -2616,9 +2616,10 @@ async function keycloakDelete(token, path, operation) {
 
 async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
   await publishAcceptanceBaseline(liveTenantId);
-  const tenantAdminRoleId = await resolveBuiltInRole(
-    "tenant_admin",
-    "human",
+  const isolationRoleId = await createAcceptanceRole(
+    "isolation",
+    ["alert.read"],
+    "tenant",
     liveTenantId,
   );
   const group = await administratorRequest(
@@ -2723,7 +2724,7 @@ async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
   };
   const target = {
     tenantSecurityGroupId: groupId,
-    roleIds: [tenantAdminRoleId],
+    roleIds: [isolationRoleId],
     operatorTeamAssignment: null,
   };
   const mapping = await administratorRequest(
@@ -2838,10 +2839,12 @@ async function prepareIsolationLDAPPrincipal({ liveTenantId, liveTenantSlug }) {
   expectStatus(authority, 200, "Globex LDAP isolation authority");
   assert(
     authority.body?.roleGrants?.some(
-      (grant) => grant.roleId === tenantAdminRoleId,
+      (grant) => grant.roleId === isolationRoleId,
     ) &&
       authority.body?.permissions?.some(
-        (permission) => permission.permissionKey === "alert.read",
+        (permission) =>
+          permission.permissionKey === "alert.read" &&
+          permission.scope === "tenant",
       ),
     "Globex isolation user must receive the mapped tenant-local authority",
   );
@@ -2867,23 +2870,31 @@ async function resolveBuiltInRole(key, principalKind, roleTenantId = tenantId) {
   return requiredIdentifier(role?.id, `built-in ${key} role ID`);
 }
 
-async function createAcceptanceRole(label, permissionKeys, scope = "tenant") {
-  const role = await administratorRequest(`/api/v1/tenants/${tenantId}/roles`, {
-    method: "POST",
-    idempotencyKey: acceptanceKey(`${label}-role`),
-    json: {
-      key: `live_${label}_${uniqueSuffix}`,
-      name: `Live acceptance ${label}`,
-      description: `Disposable ${label} role for composed acceptance`,
-      policy: {
-        permissions: permissionKeys.map((permissionKey) => ({
-          permissionKey,
-          scope,
-        })),
-        delegationCeiling: [],
+async function createAcceptanceRole(
+  label,
+  permissionKeys,
+  scope = "tenant",
+  roleTenantId = tenantId,
+) {
+  const role = await administratorRequest(
+    `/api/v1/tenants/${roleTenantId}/roles`,
+    {
+      method: "POST",
+      idempotencyKey: acceptanceKey(`${label}-role`),
+      json: {
+        key: `live_${label}_${uniqueSuffix}`,
+        name: `Live acceptance ${label}`,
+        description: `Disposable ${label} role for composed acceptance`,
+        policy: {
+          permissions: permissionKeys.map((permissionKey) => ({
+            permissionKey,
+            scope,
+          })),
+          delegationCeiling: [],
+        },
       },
     },
-  });
+  );
   expectStatus(role, 201, `live ${label} role creation`);
   const createdRoleId = requiredIdentifier(
     role.body?.id,

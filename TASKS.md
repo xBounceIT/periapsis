@@ -13,6 +13,13 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34223903645` reaches Globex LDAP mapping creation. Mapping the
+      protected administrator role exceeds the LDAP delegation policy; reproduce
+      the 403 with native API/PostgreSQL. Give the isolation fixture an explicit
+      human role with tenant-scoped `alert.read`, which also authorizes operator
+      exports. Retain the own-tenant search, foreign-resource/export denial and
+      RLS assertions, and verify the effective permission scope after login.
+      Complete composed browser acceptance remains required.
 - [ ] Run `34222173605` completes tenant OIDC configuration and reaches the
       second tenant's LDAP setup. Its update incorrectly repeats the creation-only
       `kind` field, rejected by the strict update contract. Send `kind` only on
