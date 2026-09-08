@@ -426,7 +426,7 @@ func (repository *DFIRRepository) createAlertStorageObject(
 				}
 				if !validDFIRPreparedUploadReplay(receipt, historicalAttachment, storedObject, storedAttachment,
 					attachmentVersion, write, write.Storage.CreatedAt()) {
-					return application.PreparedUploadRecord{}, application.ErrRepositoryPrecondition
+					return application.PreparedUploadRecord{}, application.ErrRepositoryConflict
 				}
 				return application.PreparedUploadRecord{Storage: storedObject, Attachment: historicalAttachment, Replayed: true}, nil
 			}

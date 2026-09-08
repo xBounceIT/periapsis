@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34260601299` completes real DFIR upload and scanner processing, then
+      consumed upload replay returns 412 instead of the contracted 409. Return
+      repository conflict for failed live upload-replay eligibility on both Alert
+      and Case roots; preserve the state checks and absence of a new upload grant.
+      Retain the complete evidence, custody and browser run on the final commit.
 - [ ] Run `34256987533` passes export, isolation and customer-comment scenarios,
       then DFIR upload preparation returns 503. Native API reproduction identifies
       non-canonical storage and attachment timestamps after PostgreSQL readback.
