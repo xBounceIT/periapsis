@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34230418815` passes LDAP setup and the direct RLS probe, then
+      reaches browser acceptance. Read the canonical `alertNumber` property
+      from the operator projection when checking the exported CSV; `number`
+      belongs to a different response shape. Retain the exact CSV comparison.
+      Complete composed browser acceptance remains required.
 - [ ] Run `34228500759` still fails the direct RLS probe: Compose initializes
       local PostgreSQL sockets with peer authentication. Connect the API login
       over loopback TCP using its password, including the audit immutability

@@ -80,7 +80,7 @@ test("served Swagger contract and live tenant boundaries agree", async ({
     customFields: { host: "live-e2e-host" },
     rawPayload: { producer: "live-acceptance" },
   });
-  const alertNumber = objectValue(direct.body, "number");
+  const alertNumber = objectValue(direct.body, "alertNumber");
 
   const search = await browserRequest(
     page,
