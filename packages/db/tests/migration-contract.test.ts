@@ -291,6 +291,8 @@ describe("PostgreSQL migration chain", () => {
       "0249_v59_compatibility.sql",
       "0250_ticket_export_authority.sql",
       "0251_v60_compatibility.sql",
+      "0252_ticket_comment_authority.sql",
+      "0253_v61_compatibility.sql",
     ]);
   });
 

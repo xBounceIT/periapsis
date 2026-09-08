@@ -44,7 +44,7 @@ const (
 	ticketExportReconcileFinalizeQuery = `SELECT response FROM app.finalize_ticket_export_artifact_reconciliation_v2($1::jsonb)`
 	ticketExportReconcileFailureQuery  = `SELECT response FROM app.report_ticket_export_artifact_reconciliation_failure_v2($1::jsonb)`
 	ticketExportReconcileMetricsQuery  = `SELECT response FROM app.read_ticket_export_reconciliation_metrics_v2($1::jsonb)`
-	ticketRuntimeReadinessQuery        = `SELECT app.worker_runtime_schema_readiness_v60()`
+	ticketRuntimeReadinessQuery        = `SELECT app.worker_runtime_schema_readiness_v61()`
 )
 
 type TicketRuntimeRepository struct {
@@ -282,7 +282,7 @@ func (repository *TicketRuntimeRepository) Ready(ctx context.Context) error {
 		return err
 	}
 	// The sealed worker projection attests the release once, then checks both
-	// ticket ABIs. Separate v60 wrappers each repeat the full catalog attestation.
+	// ticket ABIs. Separate v61 wrappers each repeat the full catalog attestation.
 	var ready []bool
 	err := repository.pool.QueryRow(ctx, ticketRuntimeReadinessQuery).Scan(&ready)
 	if contextErr := ctx.Err(); contextErr != nil {

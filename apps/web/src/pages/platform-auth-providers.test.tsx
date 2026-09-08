@@ -1041,7 +1041,7 @@ describe("PlatformAuthProvidersPage", () => {
     ).toBeVisible();
     expect(screen.queryByText(/was staged disabled/i)).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", {
+      await screen.findByRole("button", {
         name: "Activate direct platform login",
       }),
     ).toBeVisible();

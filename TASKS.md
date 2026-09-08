@@ -13,6 +13,16 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] The same run reaches the comment runtime proof and exposes `min(uuid)` in
+      customer export authority, reintroduced by V60 from an older definition.
+      Native HTTP also reproduces operator comment rejection with an LDAP-style
+      `read_only` label. V61 derives from the installed V60 functions, restores
+      the UUID-safe aggregate, and removes the compatibility-label filter from
+      the shared watcher scope helper while retaining live explicit permissions.
+      Mention discovery, preview and relation admission use the same live scope;
+      detached mentions must still fail the deferred comment-revision constraint.
+      Verify operator public/private writes, customer isolation and export access,
+      the V60 upgrade, full dependency attestation and the complete composed run.
 - [ ] Run `34245165308` completes the encrypted export but rejects prepare-download.
       The API compared final job revision 3 with immutable object revision 2. Bind
       the download HEAD to the claim revision retained by the worker and SQL manifest;

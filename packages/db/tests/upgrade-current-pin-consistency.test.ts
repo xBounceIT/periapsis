@@ -145,9 +145,9 @@ describe("upgrade current-manifest pin consistency", () => {
     ).toBe(manifest.expectedMigrationFingerprint);
   });
 
-  it("keeps all 30 upgrade suites aligned with generated current pins", () => {
+  it("keeps all 31 upgrade suites aligned with generated current pins", () => {
     const sources = upgradeSources();
-    expect(sources).toHaveLength(30);
+    expect(sources).toHaveLength(31);
     const workflow = readFileSync(
       resolve(packageRoot, "../../.github/workflows/ci.yml"),
       "utf8",
@@ -214,8 +214,8 @@ describe("upgrade current-manifest pin consistency", () => {
     assert(common !== undefined);
     const commonHashes = sourceHashIdentifiers(common);
     for (const [service, count, aggregate] of [
-      ["api", 26, "APIRuntimeReadiness"],
-      ["worker", 23, "WorkerRuntimeReadiness"],
+      ["api", 27, "APIRuntimeReadiness"],
+      ["worker", 24, "WorkerRuntimeReadiness"],
     ] as const) {
       const body = new RegExp(
         `const ${service}HealthSourceHashes = \\[([\\s\\S]*?)\\] as const;`,
@@ -240,7 +240,7 @@ describe("upgrade current-manifest pin consistency", () => {
       assert(goBody !== undefined);
       expect(fixtureHashes).toEqual(sourceHashIdentifiers(goBody));
       expect(fixtureHashes).toHaveLength(count);
-      expect(fixtureHashes.slice(-10)).toEqual([
+      expect(fixtureHashes.slice(-11)).toEqual([
         "expectedRetiredSchemaCompatibilityV51SourceHash",
         `expected${aggregate}V${currentReleaseVersion()}SourceHash`,
         "expectedRetiredSchemaCompatibilityV52SourceHash",
@@ -251,6 +251,7 @@ describe("upgrade current-manifest pin consistency", () => {
         "expectedRetiredSchemaCompatibilityV57SourceHash",
         "expectedRetiredSchemaCompatibilityV58SourceHash",
         "expectedRetiredSchemaCompatibilityV59SourceHash",
+        "expectedRetiredSchemaCompatibilityV60SourceHash",
       ]);
       expect(go).toContain(
         `app.${service}_runtime_schema_readiness_v${currentReleaseVersion()}() AS array`,

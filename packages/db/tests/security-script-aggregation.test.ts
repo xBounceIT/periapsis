@@ -99,6 +99,7 @@ describe("database security script aggregation", () => {
         file === "schema-compatibility-v57-runtime.ts" ||
         file === "schema-compatibility-v58-runtime.ts" ||
         file === "schema-compatibility-v59-runtime.ts" ||
+        file === "schema-compatibility-v60-runtime.ts" ||
         file.endsWith("-upgrade.ts")
       ) {
         expect(
@@ -114,7 +115,7 @@ describe("database security script aggregation", () => {
     }
   });
 
-  it("retains V49/V50/V51 predecessor coverage and runs V60 on its dedicated fresh database", async () => {
+  it("retains V49/V50/V51 predecessor coverage and runs V61 on its dedicated fresh database", async () => {
     const manifest = await loadManifest();
     const workflow = await readFile(
       resolve(packageRoot, "../../.github/workflows/ci.yml"),
@@ -123,7 +124,7 @@ describe("database security script aggregation", () => {
     const runtime = await readFile(
       resolve(
         packageRoot,
-        "tests/security/schema-compatibility-v60-runtime.ts",
+        "tests/security/schema-compatibility-v61-runtime.ts",
       ),
       "utf8",
     );
@@ -139,8 +140,8 @@ describe("database security script aggregation", () => {
     expect(manifest.scripts["test:security:schema-compatibility-v51"]).toBe(
       "tsx tests/security/schema-compatibility-v51-runtime.ts",
     );
-    expect(manifest.scripts["test:security:schema-compatibility-v60"]).toBe(
-      "tsx tests/security/schema-compatibility-v60-runtime.ts",
+    expect(manifest.scripts["test:security:schema-compatibility-v61"]).toBe(
+      "tsx tests/security/schema-compatibility-v61-runtime.ts",
     );
     for (const version of [50, 51, 52, 53]) {
       expect(
@@ -156,11 +157,11 @@ describe("database security script aggregation", () => {
       /script: test:security:schema-compatibility-v49-upgrade\s+database_env: PERIAPSIS_SCHEMA_COMPATIBILITY_V49_UPGRADE_TEST_DATABASE_URL/u,
     );
     expect(runtime).toContain(
-      "process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V60_SECURITY_TEST_DATABASE_URL",
+      "process.env.PERIAPSIS_SCHEMA_COMPATIBILITY_V61_SECURITY_TEST_DATABASE_URL",
     );
     expect(workflow).toMatch(
-      /^\s+PERIAPSIS_SCHEMA_COMPATIBILITY_V60_SECURITY_TEST_DATABASE_URL: postgresql:\/\/[^\r\n]+@127\.0\.0\.1:5432\/periapsis_schema_compatibility_v60\?sslmode=disable$/mu,
+      /^\s+PERIAPSIS_SCHEMA_COMPATIBILITY_V61_SECURITY_TEST_DATABASE_URL: postgresql:\/\/[^\r\n]+@127\.0\.0\.1:5432\/periapsis_schema_compatibility_v61\?sslmode=disable$/mu,
     );
-    expect(workflow).toMatch(/^\s+periapsis_schema_compatibility_v60 \\$/mu);
+    expect(workflow).toMatch(/^\s+periapsis_schema_compatibility_v61 \\$/mu);
   });
 });

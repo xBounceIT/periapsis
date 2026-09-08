@@ -173,7 +173,7 @@ async function listCustomerComments(
 
 try {
   const [readyBefore] = await database<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v60() AS ready
+    SELECT app.release_runtime_schema_readiness_v61() AS ready
   `;
   assert.equal(readyBefore?.ready, true, "0209 readiness is false");
 
@@ -227,6 +227,11 @@ try {
       SELECT app.seed_tenant_authorization(
         ${fixture.tenant}::uuid,${fixture.adminMembership}::uuid
       )
+    `;
+    // LDAP JIT uses this compatibility label even with explicit operator grants.
+    await transaction`
+      UPDATE public.tenant_memberships SET role='read_only'
+      WHERE tenant_id=${fixture.tenant}::uuid AND id=${fixture.adminMembership}::uuid
     `;
     await transaction`
       INSERT INTO public.tenant_user_profiles(
@@ -531,7 +536,7 @@ try {
         "GRANT EXECUTE ON FUNCTION app.guard_ticket_comment_aggregate_v1() TO periapsis_api",
       );
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v60() AS ready
+        SELECT app.release_runtime_schema_readiness_v61() AS ready
       `;
       assert.equal(tampered?.ready, false, "readiness accepted a widened ACL");
       throw aclRollback;
@@ -539,7 +544,7 @@ try {
     (error: unknown) => error === aclRollback,
   );
   const [readyAfter] = await database<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v60() AS ready
+    SELECT app.release_runtime_schema_readiness_v61() AS ready
   `;
   assert.equal(
     readyAfter?.ready,

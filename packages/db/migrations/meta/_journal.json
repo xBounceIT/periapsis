@@ -1765,6 +1765,20 @@
       "when": 1788877946518,
       "tag": "0251_v60_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1788882556811,
+      "tag": "0252_ticket_comment_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 253,
+      "version": "7",
+      "when": 1788882564359,
+      "tag": "0253_v61_compatibility",
+      "breakpoints": true
     }
   ]
 }
