@@ -10,6 +10,7 @@ import {
   type PlannedEmailDelivery,
 } from "./fanout.js";
 import type { NotificationRuleInput } from "./rule.js";
+import { StructuredNotifierLogger } from "./observability.js";
 import type { NotificationTemplateInput } from "./template.js";
 import { baseRule, id } from "./test/fixtures.js";
 import { disabledTestTracing } from "./test/telemetry.js";
@@ -239,7 +240,11 @@ function workerFor(
 ): NotificationFanoutWorker {
   return new NotificationFanoutWorker({
     repository,
-    logger: { info() {}, error() {} },
+    logger: new StructuredNotifierLogger({
+      output: { write() {} },
+      errors: { write() {} },
+      release: "test",
+    }),
     tracing: disabledTestTracing,
     now: () => new Date(now),
     options: {

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDeliveryClaim, type DeliveryClaim } from "./delivery.js";
 import { PostgresNotificationRepository } from "./postgres-repository.js";
+import { createFanoutClaim } from "./fanout.js";
+import { createNotificationRule } from "./rule.js";
 import {
   expectedMigrationFingerprint,
   expectedNotificationDispatchReadinessV58SourceHash,
@@ -10,7 +12,7 @@ import {
   expectedReleaseRuntimeReadinessV58SourceHash,
   expectedSchemaCompatibilityV58SourceHash,
 } from "./schema-compatibility.gen.js";
-import { id } from "./test/fixtures.js";
+import { baseRule, id } from "./test/fixtures.js";
 
 type QueryOutcome =
   | { readonly rows: readonly Record<string, unknown>[] }
@@ -69,6 +71,69 @@ describe("PostgreSQL notification rolling compatibility", () => {
     database.parameters.length = 0;
     database.statements.length = 0;
   });
+
+  it.each([
+    [{ mode: "none", windowMs: 0, maximumItems: 1 }, true],
+    [{ mode: "none" }, true],
+    [{ mode: "none", windowMs: 1000, maximumItems: 1 }, false],
+    [{ mode: "none", windowMs: 0, maximumItems: 2 }, false],
+  ])(
+    "decodes persisted ungrouped policies without permitting a window: %j",
+    async (grouping, valid) => {
+      const repository = createRepository();
+      const claim = createFanoutClaim({
+        id: id(1),
+        tenantId: id(2),
+        attempt: 1,
+        maximumAttempts: 3,
+        fenceToken: id(3),
+        leaseUntil: new Date("2026-09-08T00:01:00Z"),
+        event: {
+          id: id(1),
+          tenantId: id(2),
+          type: "sla.warning",
+          objectType: "alert",
+          objectId: id(4),
+          objectVersion: 1,
+          occurredAt: new Date("2026-09-08T00:00:00Z"),
+          actorKind: "system",
+          source: "sla-action",
+          maximumAudience: "operator",
+          context: {},
+        },
+      });
+      database.outcomes.push({
+        rows: [
+          {
+            value: {
+              rules: [JSON.parse(JSON.stringify({ ...baseRule(), grouping }))],
+              candidates: [],
+              templates: [],
+              smtpConfiguration: null,
+            },
+          },
+        ],
+      });
+      try {
+        const result = repository.loadFanoutInputs(
+          claim,
+          new AbortController().signal,
+        );
+        if (valid) {
+          const inputs = await result;
+          expect(createNotificationRule(inputs.rules[0]!).grouping).toEqual({
+            mode: "none",
+            windowMs: 0,
+            maximumItems: 1,
+          });
+        } else {
+          await expect(result).rejects.toThrow("invalid ungrouped policy");
+        }
+      } finally {
+        await repository.close();
+      }
+    },
+  );
 
   it("encodes claim timestamps for Drizzle's pass-through postgres-js serializers", async () => {
     const repository = createRepository();

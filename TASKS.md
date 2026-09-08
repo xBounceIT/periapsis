@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34210260958` reaches the live SLA email assertion, but Mailpit
+      receives no warning. Native API/worker/notifier reproduction identifies
+      fanout validation rejecting PostgreSQL's canonical ungrouped defaults
+      (`windowMs: 0`, `maximumItems: 1`). Decode those defaults to the input
+      representation while rejecting real grouping settings in `none` mode.
+      Allow the three bounded fanout delivery counters in the structured logger;
+      logging a committed fanout must not enter the dead-letter failure path.
+      Decoder regressions and fanout tests using the production logger cover both
+      defects. Complete Linux acceptance on the successor commit remains required.
 - [ ] Run `34201899933` passes 34 of 35 jobs, including the V58 upgrade,
       full PostgreSQL/RLS suite and Mailpit acceptance. Compose hits a concurrent
       assignment conflict on the separate claim-race Alert. Retry only setup

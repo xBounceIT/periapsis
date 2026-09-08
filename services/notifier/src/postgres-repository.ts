@@ -1922,8 +1922,17 @@ function decodeGroupingPolicy(value: unknown): GroupingPolicyInput {
   let mode: GroupingPolicyInput["mode"];
   switch (requireString(row.mode)) {
     case "none":
-      mode = "none";
-      break;
+      // PostgreSQL persists the canonical no-grouping defaults. The rule input
+      // deliberately omits them, while rejecting any actual grouping window.
+      if (
+        (row.windowMs !== undefined && row.windowMs !== 0) ||
+        (row.maximumItems !== undefined && row.maximumItems !== 1)
+      ) {
+        throw new NotificationValidationError(
+          "database returned an invalid ungrouped policy",
+        );
+      }
+      return { mode: "none" };
     case "object":
       mode = "object";
       break;

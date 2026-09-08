@@ -20,10 +20,12 @@ const deliveryOutcomes = new Set<DeliveryOutcome>([
 const logAttributeNames = new Set([
   "attempt",
   "claimed",
+  "cancelledWebhookDeliveries",
   "deadLettered",
   "deliveries",
   "deliveryId",
   "durationMs",
+  "emailDeliveries",
   "errorClass",
   "eventId",
   "failureClass",
@@ -41,6 +43,7 @@ const logAttributeNames = new Set([
   "tenantId",
   "uncertain",
   "workerId",
+  "webhookDeliveries",
 ]);
 
 export class NotifierMetrics implements DeliveryTelemetry {
