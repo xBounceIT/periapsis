@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34228500759` still fails the direct RLS probe: Compose initializes
+      local PostgreSQL sockets with peer authentication. Connect the API login
+      over loopback TCP using its password, including the audit immutability
+      probes so authentication failure cannot masquerade as denied mutation.
+      Complete composed browser acceptance remains required.
 - [ ] Run `34226289187` completes Globex LDAP setup and fails in the direct
       RLS probe. Feed SQL through psql stdin so quoted psql variables expand;
       install transaction-local contexts in separate statements before querying.

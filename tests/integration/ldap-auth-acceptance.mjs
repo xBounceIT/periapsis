@@ -4258,6 +4258,8 @@ function proveTenantRLSIsolation(
       `source_tenant_id=${sourceTenantId}`,
       "-v",
       `source_user_id=${sourceUserId}`,
+      "-h",
+      "127.0.0.1",
       "-U",
       "periapsis_api_login",
       "-d",

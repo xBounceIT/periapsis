@@ -514,13 +514,13 @@ jobs:
           postgres_container="$(docker compose --file deploy/compose/compose.yaml --profile full ps --quiet postgres)"
           test -n "${postgres_container}"
           if PGPASSWORD="${PERIAPSIS_API_DATABASE_PASSWORD}" docker exec -e PGPASSWORD "${postgres_container}" \
-            psql -X -v ON_ERROR_STOP=1 -U periapsis_api_login -d periapsis \
+            psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U periapsis_api_login -d periapsis \
             -c 'UPDATE public.audit_events SET action = action WHERE false'; then
             echo 'periapsis_api_login unexpectedly updated audit_events' >&2
             exit 1
           fi
           if PGPASSWORD="${PERIAPSIS_API_DATABASE_PASSWORD}" docker exec -e PGPASSWORD "${postgres_container}" \
-            psql -X -v ON_ERROR_STOP=1 -U periapsis_api_login -d periapsis \
+            psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U periapsis_api_login -d periapsis \
             -c 'DELETE FROM public.audit_events WHERE false'; then
             echo 'periapsis_api_login unexpectedly deleted audit_events' >&2
             exit 1
