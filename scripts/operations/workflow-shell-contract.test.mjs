@@ -80,6 +80,7 @@ const secretNames = [
   "PERIAPSIS_MASTER_KEY",
   "PERIAPSIS_MINIO_ROOT_PASSWORD",
   "PERIAPSIS_MINIO_ROOT_USER",
+  "PERIAPSIS_MINIO_KMS_SECRET_KEY",
   "PERIAPSIS_NOTIFIER_DATABASE_PASSWORD",
   "PERIAPSIS_NOTIFIER_PREVIEW_TOKEN",
   "PERIAPSIS_NOTIFICATION_KEYRING",
@@ -239,7 +240,7 @@ async function runCredentialShell(t, source, extra = {}) {
   };
 }
 
-test("Compose generation masks all 21 secrets and three keyring components before environment publication", async (t) => {
+test("Compose generation masks all 22 secrets and three keyring components before environment publication", async (t) => {
   const start = credentialGeneration.indexOf(
     'api_credential_root="$(openssl rand',
   );
@@ -268,8 +269,12 @@ test("Compose generation masks all 21 secrets and three keyring components befor
       const separator = line.indexOf("=");
       return [line.slice(0, separator), line.slice(separator + 1)];
     });
-  assert.equal(entries.length, 27);
+  assert.equal(entries.length, 28);
   const values = Object.fromEntries(entries);
+  assert.match(
+    values.PERIAPSIS_MINIO_KMS_SECRET_KEY,
+    /^ci-export:[A-Za-z0-9+/]{43}=$/u,
+  );
   const masks = result.stdout
     .trimEnd()
     .split("\n")
@@ -280,7 +285,7 @@ test("Compose generation masks all 21 secrets and three keyring components befor
       );
       return line.slice("::add-mask::".length);
     });
-  assert.equal(masks.length, 24);
+  assert.equal(masks.length, 25);
   for (const name of secretNames) {
     assert.ok(values[name]?.length > 0, `${name} must be published`);
     assert.equal(

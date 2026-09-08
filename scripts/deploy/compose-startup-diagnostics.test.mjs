@@ -19,6 +19,35 @@ const state = {
 };
 const canary = "private-canary-never-print";
 
+test("ticket worker failures retain bounded classifications without payloads", () => {
+  for (const operation of [
+    "ticket bulk run failed",
+    "ticket export run failed",
+    "ticket export reconciliation run failed",
+    "ticket export reconciliation queue observation failed",
+  ]) {
+    const diagnostic = redactComposeStartupLogs(
+      "worker",
+      JSON.stringify({
+        level: "WARN",
+        msg: operation,
+        failure: "invalid_projection",
+        error: canary,
+        tenant_id: canary,
+        query: canary,
+      }),
+    );
+    assert.deepEqual(diagnostic.events, [
+      {
+        kind: "worker_readiness",
+        operation,
+        failure: "invalid_projection",
+      },
+    ]);
+    assert.ok(!JSON.stringify(diagnostic).includes(canary));
+  }
+});
+
 test("readiness diagnostics preserve only finite dependency and failure labels", () => {
   const api = redactComposeStartupLogs(
     "api",

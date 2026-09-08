@@ -561,10 +561,12 @@ services:
     environment:
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
       MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_KMS_SECRET_KEY_FILE: /run/secrets/minio_kms_secret_key
       MINIO_API_CORS_ALLOW_ORIGIN: https://localhost:${PERIAPSIS_WEB_PORT:-8443}
     secrets:
       - minio_root_password
       - minio_root_user
+      - minio_kms_secret_key
     volumes:
       - minio_data:/data
     tmpfs:
@@ -863,6 +865,8 @@ secrets:
     file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_root_user
   minio_root_password:
     file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_root_password
+  minio_kms_secret_key:
+    file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_kms_secret_key
   minio_access_key:
     file: ${PERIAPSIS_COMPOSE_SECRETS_DIR:?prepare an external Compose secret directory}/minio_access_key
   minio_secret_key:

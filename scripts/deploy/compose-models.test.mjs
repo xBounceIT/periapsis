@@ -270,6 +270,15 @@ function assertApplicationHardening(model) {
     model.services.minio.environment.MINIO_ROOT_PASSWORD_FILE,
     "/run/secrets/minio_root_password",
   );
+  assert.equal(
+    model.services.minio.environment.MINIO_KMS_SECRET_KEY_FILE,
+    "/run/secrets/minio_kms_secret_key",
+  );
+  assert.ok(
+    model.services.minio.secrets.some(
+      (secret) => secret.source === "minio_kms_secret_key",
+    ),
+  );
   assert.ok(
     Object.values(model.secrets).every(
       (secret) => typeof secret.file === "string" && !secret.environment,

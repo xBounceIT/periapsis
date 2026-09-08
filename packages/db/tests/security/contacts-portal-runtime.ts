@@ -1006,10 +1006,13 @@ try {
     operatorCandidates,
     /private_ticket_comment_user_scope_allows_v1/u,
   );
-  assert.match(
-    operatorCandidates,
-    /membership\.role\s+NOT\s+IN\s*\(\s*'customer_manager',\s*'customer_user',\s*'read_only'/u,
+  assert.doesNotMatch(operatorCandidates, /membership\.role/u);
+  const commentScope = await functionDefinition(
+    "app.private_ticket_comment_user_scope_allows_v1(uuid,public.ticket_aggregate_kind,uuid,uuid,public.ticket_comment_visibility)",
   );
+  assert.doesNotMatch(commentScope, /membership\.role/u);
+  assert.match(commentScope, /tenant_human_has_exact_permission_v3/u);
+  assert.match(commentScope, /private_ticket_watcher_user_scope_allows_v2/u);
 
   const fanoutCommit = await functionDefinition(
     "app.commit_notification_fanout_v1(uuid,uuid,jsonb,timestamp with time zone)",

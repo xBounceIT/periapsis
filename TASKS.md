@@ -13,6 +13,14 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34241850543` accepts the LDAP export request but times out awaiting
+      worker completion. Native API/PostgreSQL claim and populated export through
+      the real Go worker succeed with a test artifact store. The pinned MinIO rejects
+      SSE-S3 writes without KMS; provide its local key through a dedicated file secret
+      and retain composed storage/download evidence. Preserve bounded ticket-worker failure categories
+      in Compose diagnostics. The same run exposes a stale contacts-portal source
+      assertion requiring the retired membership-label filter; assert explicit
+      permission and comment-visibility helpers instead and rerun that runtime gate.
 - [ ] Run `34236982037` reaches export creation but rejects the LDAP operator.
       Native reproduction retains all explicit grants and changes only the legacy
       membership label to `read_only`, reproducing 403. V60 authorizes export

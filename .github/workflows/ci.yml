@@ -317,6 +317,7 @@ jobs:
           publish_secret PERIAPSIS_MASTER_KEY "$(openssl rand -base64 32)"
           publish_secret PERIAPSIS_MINIO_ROOT_PASSWORD "$(openssl rand -hex 32)"
           publish_secret PERIAPSIS_MINIO_ROOT_USER "ciroot$(openssl rand -hex 8)"
+          publish_secret PERIAPSIS_MINIO_KMS_SECRET_KEY "ci-export:$(openssl rand -base64 32)"
           publish_secret PERIAPSIS_NOTIFIER_DATABASE_PASSWORD "$(openssl rand -hex 32)"
           publish_secret PERIAPSIS_NOTIFIER_PREVIEW_TOKEN "$(openssl rand -hex 32)"
           publish_secret PERIAPSIS_NOTIFICATION_KEYRING "{\"activeVersion\":1,\"keys\":[{\"version\":1,\"key\":\"${notification_root}\"}]}"

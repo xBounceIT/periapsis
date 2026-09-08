@@ -54,11 +54,11 @@ async function fixture(t) {
   return { parent, environment };
 }
 
-test("preparation creates exactly the 15 distinct files with unchanged bytes and private parent", async (t) => {
+test("preparation creates exactly the 16 distinct files with unchanged bytes and private parent", async (t) => {
   const { environment } = await fixture(t);
   const directory = environment.PERIAPSIS_COMPOSE_SECRETS_DIR;
-  assert.equal(await prepareComposeSecrets(environment), 15);
-  assert.equal(new Set(Object.values(composeSecretVariables)).size, 15);
+  assert.equal(await prepareComposeSecrets(environment), 16);
+  assert.equal(new Set(Object.values(composeSecretVariables)).size, 16);
   assert.deepEqual(
     (await readdir(directory)).toSorted(),
     Object.keys(composeSecretVariables).toSorted(),
@@ -93,7 +93,7 @@ test("preparation refuses existing material instead of silently rotating it", as
   assert.deepEqual(await readFile(file), original);
 });
 
-for (const failureAt of [1, 8, 15]) {
+for (const failureAt of [1, 8, 16]) {
   test(`partial I/O failure at file ${failureAt} rolls back completed and incomplete material`, async (t) => {
     const { parent, environment } = await fixture(t);
     const probe = await open(join(parent, "empty-handle-probe"), "wx");
@@ -199,7 +199,7 @@ test("dotenv preserves JSON and process environment takes precedence", async (t)
     await run(["--env-file", envFile], {
       PERIAPSIS_LDAP_ADMIN_PASSWORD: overridden,
     }),
-    15,
+    16,
   );
   assert.equal(
     await readFile(

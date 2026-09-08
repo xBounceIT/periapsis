@@ -241,6 +241,14 @@ exposed, with a 300-second preflight lifetime and origin/method/header cache var
 Changing the web port recreates the edge/MinIO configuration on the next profile start;
 resource provisioning remains idempotent and never resets existing storage.
 
+Ticket and audit exports require SSE-S3 encryption. Before preparing the secret
+directory, set `PERIAPSIS_MINIO_KMS_SECRET_KEY` to a named random 256-bit key
+(for example, generate the value with `printf 'local-export:'; openssl rand -base64 32`).
+The preparation command writes `minio_kms_secret_key`, which only MinIO mounts through
+`MINIO_KMS_SECRET_KEY_FILE`. Keep that file with the local storage volume: replacing
+the key makes existing encrypted objects unreadable. CI generates a new key only for
+its disposable volume. Production object storage uses its own managed encryption keys.
+
 `pnpm test:storage-cors` runs the deployed policy with real Caddy 2.11.4 against an
 owned loopback HTTP fixture; set `PERIAPSIS_CADDY_BINARY` to the checksum-verified
 executable returned by `node scripts/deploy/install-caddy-test-binary.mjs`. Missing

@@ -27,6 +27,7 @@ export const composeSecretVariables = Object.freeze({
   ldap_admin_password: "PERIAPSIS_LDAP_ADMIN_PASSWORD",
   minio_root_user: "PERIAPSIS_MINIO_ROOT_USER",
   minio_root_password: "PERIAPSIS_MINIO_ROOT_PASSWORD",
+  minio_kms_secret_key: "PERIAPSIS_MINIO_KMS_SECRET_KEY",
   minio_access_key: "PERIAPSIS_S3_ACCESS_KEY",
   minio_secret_key: "PERIAPSIS_S3_SECRET_KEY",
 });
