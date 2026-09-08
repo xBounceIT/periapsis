@@ -20,6 +20,19 @@ https://localhost:{$PERIAPSIS_WEB_PORT:8443} {
 
 https://idp.localhost:{$PERIAPSIS_IDP_PORT:18090} {
 	import periapsis_dev_tls
+	# The disposable realm publishes pinned public trust documents for ten minutes.
+	# Keycloak otherwise marks them immediately stale, preventing snapshot admission.
+	@trust_documents {
+		method GET
+		path /realms/periapsis-test/.well-known/openid-configuration /realms/periapsis-test/protocol/openid-connect/certs
+	}
+	reverse_proxy @trust_documents http://identity-provider:8080 {
+		@document status 200
+		handle_response @document {
+			header >Cache-Control "public, max-age=600"
+			copy_response
+		}
+	}
 	reverse_proxy http://identity-provider:8080
 }
 

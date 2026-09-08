@@ -13,6 +13,13 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34220144226` passes OIDC document parsing but rejects snapshot
+      admission: native Keycloak returns immediately stale discovery/JWKS cache
+      metadata. The disposable realm's edge now publishes only successful GETs
+      of those two public documents with a bounded ten-minute lifetime. A real
+      Caddy test retains upstream bodies/statuses and verifies that authentication,
+      token, other-realm, POST and error responses keep their original no-store
+      policy. Complete composed OIDC/browser acceptance remains required.
 - [ ] Run `34218132866` reaches OIDC trust refresh, where the default Keycloak
       realm's mixed RS256/RSA-OAEP JWKS is rejected by the signing-only trust policy.
       Configure the disposable realm's generated key provider explicitly for RS256.

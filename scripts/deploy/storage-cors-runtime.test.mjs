@@ -44,6 +44,113 @@ const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const tokens = (value = "") =>
   value.split(",").map((part) => part.trim().toLowerCase());
 
+test(
+  "the real identity edge bounds caching to successful public trust documents",
+  { timeout: 30_000 },
+  async () => {
+    const binary = process.env.PERIAPSIS_CADDY_BINARY;
+    assert.ok(
+      binary && path.isAbsolute(binary),
+      "the actual Caddy binary is required",
+    );
+    const upstream = http.createServer((request, response) => {
+      response.writeHead(Number(request.headers["x-fixture-status"] ?? 200), {
+        "Cache-Control": "no-store, no-cache",
+        "Content-Type": "application/json",
+      });
+      response.end('{"fixture":"unchanged"}');
+    });
+    let child;
+    let childClosed;
+    try {
+      upstream.listen(0, "127.0.0.1");
+      await once(upstream, "listening");
+      const reservation = http.createServer();
+      reservation.listen(0, "127.0.0.1");
+      await once(reservation, "listening");
+      const port = reservation.address().port;
+      await new Promise((resolve) => reservation.close(resolve));
+      const source = await readFile(sourcePath, "utf8");
+      const marker = "https://idp.localhost:{$PERIAPSIS_IDP_PORT:18090} {";
+      const start = source.indexOf(marker);
+      assert.ok(start >= 0);
+      const site = source
+        .slice(start, source.indexOf("\n}", start) + 2)
+        .replace(marker, `http://127.0.0.1:${port} {`)
+        .replace("import periapsis_dev_tls", "")
+        .replaceAll(
+          "http://identity-provider:8080",
+          `http://127.0.0.1:${upstream.address().port}`,
+        );
+      const configuration = execFileSync(
+        binary,
+        ["adapt", "--config", "-", "--adapter", "caddyfile"],
+        {
+          input: `{\n admin off\n auto_https off\n}\n${site}`,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 5_000,
+          stdio: ["pipe", "pipe", "ignore"],
+        },
+      );
+      child = spawn(binary, ["run", "--config", "-"], {
+        windowsHide: true,
+        stdio: ["pipe", "ignore", "ignore"],
+      });
+      childClosed = once(child, "close");
+      child.stdin.end(configuration);
+      const origin = `http://127.0.0.1:${port}`;
+      let ready = false;
+      for (let attempt = 0; attempt < 50 && !ready; attempt += 1) {
+        try {
+          const response = await fetch(origin, {
+            signal: AbortSignal.timeout(500),
+          });
+          await response.arrayBuffer();
+          ready = response.ok;
+        } catch {
+          await delay(50);
+        }
+      }
+      assert.ok(ready, "owned identity edge did not start");
+      const paths = [
+        "/realms/periapsis-test/.well-known/openid-configuration",
+        "/realms/periapsis-test/protocol/openid-connect/certs",
+        "/realms/periapsis-test/protocol/openid-connect/auth",
+        "/realms/periapsis-test/protocol/openid-connect/token",
+        "/realms/other/.well-known/openid-configuration",
+      ];
+      for (const [index, target] of paths.entries()) {
+        for (const method of ["GET", "POST"]) {
+          for (const status of [200, 400, 503]) {
+            const response = await fetch(origin + target, {
+              method,
+              headers: { "x-fixture-status": String(status) },
+            });
+            assert.equal(response.status, status);
+            assert.equal(await response.text(), '{"fixture":"unchanged"}');
+            assert.equal(
+              response.headers.get("cache-control"),
+              index < 2 && method === "GET" && status === 200
+                ? "public, max-age=600"
+                : "no-store, no-cache",
+              `${method} ${target} ${status}`,
+            );
+          }
+        }
+      }
+    } finally {
+      if (child) {
+        child.kill();
+        await childClosed;
+      }
+      upstream.closeAllConnections();
+      if (upstream.listening)
+        await new Promise((resolve) => upstream.close(resolve));
+    }
+  },
+);
+
 function replaceExactlyOnce(source, from, to) {
   assert.equal(
     source.split(from).length,
