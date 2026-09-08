@@ -15,8 +15,8 @@ const v49Migration = source(
 const v51Migration = source(
   "packages/db/migrations/0233_v51_compatibility.sql",
 );
-const v57Migration = source(
-  "packages/db/migrations/0245_v57_compatibility.sql",
+const v58Migration = source(
+  "packages/db/migrations/0247_v58_compatibility.sql",
 );
 const notifierRepository = source(
   "services/notifier/src/postgres-repository.ts",
@@ -108,7 +108,7 @@ describe("SMTP runtime assurance contract", () => {
       "FROM app.load_pinned_smtp_configuration_v1(",
     );
     expect(notifierRepository).toContain(
-      "FROM app.notification_dispatch_readiness_v57()",
+      "FROM app.notification_dispatch_readiness_v58()",
     );
     expect(notifierRepository).not.toContain(
       "FROM app.notification_dispatch_readiness_v51()",
@@ -157,11 +157,11 @@ describe("SMTP runtime assurance contract", () => {
     expect(v51Migration).toContain(
       "schema_safe := app.release_runtime_schema_readiness_v51();",
     );
-    expect(v57Migration).toMatch(
-      /GRANT EXECUTE ON FUNCTION app\.notification_dispatch_readiness_v57\(\)\s+TO periapsis_migrator,periapsis_notifier;/,
+    expect(v58Migration).toMatch(
+      /GRANT EXECUTE ON FUNCTION app\.notification_dispatch_readiness_v58\(\)\s+TO periapsis_migrator,periapsis_notifier;/,
     );
-    expect(v57Migration).toContain(
-      "schema_safe := app.release_runtime_schema_readiness_v57();",
+    expect(v58Migration).toContain(
+      "schema_safe := app.release_runtime_schema_readiness_v58();",
     );
   });
 

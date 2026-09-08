@@ -2026,8 +2026,10 @@ func mapTicketActivityActor(
 }
 
 func mapTicketActivityKind(value string, principal kernel.PrincipalKind, visibility string) string {
-	if index := strings.IndexByte(value, '.'); index >= 0 {
-		value = value[index+1:]
+	if strings.HasPrefix(value, "alert.") {
+		value = strings.TrimPrefix(value, "alert.")
+	} else if strings.HasPrefix(value, "case.") {
+		value = strings.TrimPrefix(value, "case.")
 	}
 	if value == "transitioned" && principal == kernel.PrincipalCustomer {
 		return "status_changed"

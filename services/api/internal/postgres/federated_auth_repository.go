@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/periapsis-im/periapsis/modules/identity/federatedoidc"
@@ -23,7 +24,7 @@ const (
 	failOIDCAuthenticationTransactionSQL   = `select app.fail_oidc_authentication_transaction_v1($1::jsonb)`
 	createSAMLAuthenticationTransactionSQL = `select app.create_saml_authentication_transaction_v1($1::jsonb)`
 	lookupSAMLAuthenticationTransactionSQL = `select app.lookup_saml_authentication_transaction_v1($1::jsonb)`
-	federatedAuthenticationReadinessSQL    = `select app.federated_authentication_schema_readiness_v57()`
+	federatedAuthenticationReadinessSQL    = `select app.federated_authentication_schema_readiness_v58()`
 
 	maximumFederatedAuthenticationWireBytes = 2 * 1024 * 1024
 )
@@ -241,6 +242,10 @@ func (repository *FederatedAuthRepository) queryJSONWithLimits(
 	var raw []byte
 	if err := repository.queryer.QueryRow(ctx, query, payload).Scan(&raw); err != nil {
 		clear(raw)
+		var databaseError *pgconn.PgError
+		if query == applyFederatedSessionRevalidationSQL && errors.As(err, &databaseError) && (databaseError.Code == "40001" || databaseError.Code == "55P03") {
+			return federatedauth.ErrSessionRevalidationConflict
+		}
 		return errFederatedAuthPersistence
 	}
 	defer clear(raw)

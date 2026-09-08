@@ -30,6 +30,9 @@ func TestTicketActivityKindMapsCommentVisibilityFailClosed(t *testing.T) {
 		{name: "operator private", stored: "case.commented", principal: "operator", visibility: "private", want: "comment.private"},
 		{name: "missing visibility", stored: "alert.commented", principal: "operator"},
 		{name: "unknown visibility", stored: "alert.commented", principal: "operator", visibility: "operator"},
+		{name: "custom-field import namespace", stored: "custom_field.imported", principal: "operator", want: "custom_field.imported"},
+		{name: "SLA action namespace", stored: "sla.action.executed", principal: "operator", want: "sla.action.executed"},
+		{name: "unknown namespace retained for validation", stored: "unknown.created", principal: "operator", want: "unknown.created"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

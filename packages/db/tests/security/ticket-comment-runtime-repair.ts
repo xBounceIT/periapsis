@@ -173,7 +173,7 @@ async function listCustomerComments(
 
 try {
   const [readyBefore] = await database<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v57() AS ready
+    SELECT app.release_runtime_schema_readiness_v58() AS ready
   `;
   assert.equal(readyBefore?.ready, true, "0209 readiness is false");
 
@@ -531,7 +531,7 @@ try {
         "GRANT EXECUTE ON FUNCTION app.guard_ticket_comment_aggregate_v1() TO periapsis_api",
       );
       const [tampered] = await transaction<{ ready: boolean }[]>`
-        SELECT app.release_runtime_schema_readiness_v57() AS ready
+        SELECT app.release_runtime_schema_readiness_v58() AS ready
       `;
       assert.equal(tampered?.ready, false, "readiness accepted a widened ACL");
       throw aclRollback;
@@ -539,7 +539,7 @@ try {
     (error: unknown) => error === aclRollback,
   );
   const [readyAfter] = await database<{ ready: boolean }[]>`
-    SELECT app.release_runtime_schema_readiness_v57() AS ready
+    SELECT app.release_runtime_schema_readiness_v58() AS ready
   `;
   assert.equal(
     readyAfter?.ready,

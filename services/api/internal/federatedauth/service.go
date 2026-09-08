@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -316,6 +317,39 @@ func revalidateSession(
 	operationTimeout time.Duration,
 	now func() time.Time,
 ) (SessionResult, error) {
+	if ctx == nil {
+		return SessionResult{}, ErrInvalidInput
+	}
+	operation, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	for attempt := 0; ; attempt++ {
+		result, err := revalidateSessionOnce(operation, lookup, sessions, credentials, operationTimeout, now)
+		if !errors.Is(err, ErrSessionRevalidationConflict) {
+			return result, err
+		}
+		if attempt >= 5 {
+			return SessionResult{}, ErrSessionRejected
+		}
+		// Another request may advance the session version. Reread authority
+		// and recompute the decision after an aborted usable-session mutation.
+		timer := time.NewTimer(10 * time.Millisecond << attempt)
+		select {
+		case <-operation.Done():
+			timer.Stop()
+			return SessionResult{}, ErrSessionRejected
+		case <-timer.C:
+		}
+	}
+}
+
+func revalidateSessionOnce(
+	ctx context.Context,
+	lookup SessionLookup,
+	sessions SessionStore,
+	credentials ApplyCredentialIssuer,
+	operationTimeout time.Duration,
+	now func() time.Time,
+) (SessionResult, error) {
 	if sessions == nil || credentials == nil || now == nil ||
 		lookup.SessionID == (identity.EntityID{}) || lookup.TenantID == (identity.EntityID{}) ||
 		!validPublicText(lookup.Audience, 256) || !validSessionLookupAuthenticationMethod(lookup.AuthenticationMethod) {
@@ -375,13 +409,16 @@ func revalidateSession(
 	var mutation SessionMutationResult
 	for range 2 {
 		mutation, err = sessions.ApplySessionRevalidation(operation, mutationRequest)
-		if err == nil || operation.Err() != nil {
+		if err == nil || operation.Err() != nil || errors.Is(err, ErrSessionRevalidationConflict) {
 			break
 		}
 	}
 	if err != nil || !validSessionMutationResult(decision.Decision, mutation, mutationRequest) {
 		if credential != nil {
 			credential.Destroy()
+		}
+		if credential == nil && decision.Decision == mfa.SessionUsable && errors.Is(err, ErrSessionRevalidationConflict) {
+			return SessionResult{}, ErrSessionRevalidationConflict
 		}
 		return SessionResult{}, ErrSessionRejected
 	}

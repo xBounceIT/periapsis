@@ -2,7 +2,7 @@ package postgres
 
 import "context"
 
-const platformOIDCDirectReadinessSQL = `select app.platform_oidc_direct_runtime_schema_readiness_v57()`
+const platformOIDCDirectReadinessSQL = `select app.platform_oidc_direct_runtime_schema_readiness_v58()`
 
 // ReadyDirectPlatformOIDC verifies the sealed, direct-platform OIDC runtime
 // independently from tenant federation. A missing, stale, or inaccessible

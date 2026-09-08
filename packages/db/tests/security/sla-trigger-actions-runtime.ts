@@ -72,6 +72,7 @@ async function asRole<T>(
   role:
     | "periapsis_api"
     | "periapsis_worker"
+    | "periapsis_sla_worker_owner"
     | "periapsis_notifier"
     | "periapsis_auditor",
   operation: (sql: TransactionSql) => Promise<T>,
@@ -225,6 +226,52 @@ try {
                set_config('app.user_id', ${fixture.user}, true),
                set_config('app.service_account_id', '', true)
       `;
+      for (const relation of [
+        "tenant_notification_smtp_configurations",
+        "tenant_notification_webhook_configurations",
+      ] as const) {
+        // eslint-disable-next-line no-await-in-loop -- Each role proof shares the fixture transaction.
+        await transaction.savepoint(async (proof) => {
+          const table = proof(`public.${relation}`);
+          await proof`
+            INSERT INTO ${table} (
+              id, tenant_id, created_by_membership_id, created_by_user_id
+            ) VALUES
+              (${fixture.request}::uuid, ${fixture.tenant}::uuid,
+               ${fixture.membership}::uuid, ${fixture.user}::uuid),
+              (${fixture.correlation}::uuid, ${fixture.foreignTenant}::uuid,
+               ${fixture.foreignMembership}::uuid, ${fixture.foreignUser}::uuid)
+          `;
+          await asRole(proof, "periapsis_sla_worker_owner", async (owner) => {
+            const rows = await owner<{ id: string }[]>`
+              SELECT id::text FROM ${table} FOR SHARE
+            `;
+            assert.deepEqual(
+              rows.map((row) => row.id),
+              [fixture.request],
+            );
+            await expectSqlState(
+              owner.savepoint(async (denied) => {
+                await denied`UPDATE ${table} SET id = id`;
+              }),
+              "42501",
+              "lock privilege enabled writes",
+            );
+          });
+          await proof`
+            UPDATE ${table} SET revoked_at = transaction_timestamp()
+            WHERE id = ${fixture.request}::uuid
+          `;
+          await asRole(proof, "periapsis_sla_worker_owner", async (owner) => {
+            const rows = await owner`SELECT id FROM ${table} FOR SHARE`;
+            assert.equal(
+              rows.length,
+              0,
+              "revoked configuration remained visible",
+            );
+          });
+        });
+      }
       await transaction`
         INSERT INTO public.alerts (
           id, tenant_id, number, workflow_id, workflow_version, state_key,
@@ -303,7 +350,7 @@ try {
         "periapsis_worker",
         (sql) =>
           sql<{ ready: boolean }[]>`
-            SELECT app.sla_trigger_action_runtime_schema_readiness_v57()
+            SELECT app.sla_trigger_action_runtime_schema_readiness_v58()
               AS ready
           `,
       );

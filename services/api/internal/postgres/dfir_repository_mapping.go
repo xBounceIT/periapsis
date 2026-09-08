@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -63,6 +64,8 @@ func loadDFIRIndicator(
 	if err != nil {
 		return kernel.Indicator{}, 0, err
 	}
+	firstSeen = firstSeen.UTC()
+	lastSeen = lastSeen.UTC()
 	identifier, err := parseDFIREntityID(storedID)
 	if err != nil {
 		return kernel.Indicator{}, 0, err
@@ -82,7 +85,7 @@ func loadDFIRIndicator(
 		return kernel.Indicator{}, 0, unexpectedDFIRProjection("non-canonical IOC")
 	}
 	isIP := indicator.Type() == kernel.IndicatorIPv4 || indicator.Type() == kernel.IndicatorIPv6
-	if isIP != (ipValue != nil) || ipValue != nil && *ipValue != indicator.NormalizedValue() {
+	if isIP != (ipValue != nil) || ipValue != nil && dfirInetHost(*ipValue) != indicator.NormalizedValue() {
 		return kernel.Indicator{}, 0, unexpectedDFIRProjection("IOC address projection mismatch")
 	}
 	return indicator, uint64(version), nil
@@ -129,6 +132,8 @@ func loadDFIRAsset(
 	if err != nil {
 		return kernel.Asset{}, 0, err
 	}
+	firstSeen = firstSeen.UTC()
+	lastSeen = lastSeen.UTC()
 	identifier, err := parseDFIREntityID(storedID)
 	if err != nil {
 		return kernel.Asset{}, 0, err
@@ -162,6 +167,10 @@ func loadDFIRAsset(
 		return kernel.Asset{}, 0, unexpectedDFIRProjection("non-canonical asset")
 	}
 	assetIPs := asset.IPAddresses()
+	for index, address := range normalizedIPs {
+		normalizedIPs[index] = dfirInetHost(address)
+	}
+	slices.Sort(normalizedIPs)
 	expectedIPs := make([]string, len(assetIPs))
 	for index, address := range assetIPs {
 		expectedIPs[index] = address.Normalized()
@@ -938,6 +947,18 @@ func loadDFIRCustody(
 		return nil, unexpectedDFIRProjection("custody cardinality mismatch")
 	}
 	return result, nil
+}
+
+// PostgreSQL inet::text includes a host prefix, even for a single address.
+// Reject network prefixes while preserving the kernel's canonical host form.
+func dfirInetHost(value string) string {
+	if address, err := netip.ParseAddr(value); err == nil {
+		return address.String()
+	}
+	if prefix, err := netip.ParsePrefix(value); err == nil && prefix.Bits() == prefix.Addr().BitLen() {
+		return prefix.Addr().String()
+	}
+	return ""
 }
 
 func canonicalJSONObject(value []byte) json.RawMessage {

@@ -285,6 +285,8 @@ describe("PostgreSQL migration chain", () => {
       "0243_v56_compatibility.sql",
       "0244_sla_authority_epochs.sql",
       "0245_v57_compatibility.sql",
+      "0246_sla_notification_contact_runtime.sql",
+      "0247_v58_compatibility.sql",
     ]);
   });
 

@@ -37353,6 +37353,8 @@ components:
           relation_retracted,
           comment.public,
           comment.private,
+          custom_field.imported,
+          sla.action.executed,
         ]
     CustomerActivityKind:
       type: string

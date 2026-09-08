@@ -1025,7 +1025,7 @@ func validActivityEnvelope(activity Activity, tenantID uuid.UUID, kind kernel.Ag
 	if activity.TenantID != tenantID || activity.ResourceKind != kind ||
 		!validText(activity.Summary, 1_000, true) || !validStoredInstant(activity.OccurredAt) ||
 		!validText(activity.DisplayName, 200, true) || !validEnum(activity.Origin, "operator", "customer") ||
-		len(activity.Details) > 25 || !validCustomFields(activity.Details) {
+		!validActivityDetails(activity.Details) {
 		return false
 	}
 	if _, err := entityID(activity.ID); err != nil {
@@ -1035,9 +1035,22 @@ func validActivityEnvelope(activity Activity, tenantID uuid.UUID, kind kernel.Ag
 	return err == nil
 }
 
+func validActivityDetails(values map[string]any) bool {
+	if len(values) > 25 || !validJSONMap(values, 64*1024) {
+		return false
+	}
+	for key, value := range values {
+		// Runtime event metadata uses camelCase keys; custom-field keys do not.
+		if _, err := customKey(strings.ToLower(key)); err != nil || !validCustomFieldValue(value, 10_000) {
+			return false
+		}
+	}
+	return true
+}
+
 func validOperatorActivity(activity Activity, tenantID uuid.UUID, kind kernel.AggregateKind) bool {
 	return validActivityEnvelope(activity, tenantID, kind) && validActivityActor(activity) &&
-		validEnum(activity.Kind, "created", "transitioned", "assigned", "claimed", "released", "transferred", "comment.public", "comment.private", "escalated", "linked", "unlinked", "relation_added", "relation_retracted")
+		validEnum(activity.Kind, "created", "transitioned", "assigned", "claimed", "released", "transferred", "comment.public", "comment.private", "escalated", "linked", "unlinked", "relation_added", "relation_retracted", "custom_field.imported", "sla.action.executed")
 }
 
 func validActivityActor(activity Activity) bool {

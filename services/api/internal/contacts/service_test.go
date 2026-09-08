@@ -822,7 +822,7 @@ func contactFields(emailValue string) kernel.ContactFields {
 	tag, _ := kernel.NewKey("security")
 	return kernel.ContactFields{
 		FirstName: "Arianna", LastName: "Rossi", Email: email, Function: "Incident manager",
-		Language: "it-it", Timezone: "Europe/Rome", EscalationPriority: 20, Class: class,
+		Language: "it-IT", Timezone: "Europe/Rome", EscalationPriority: 20, Class: class,
 		NotificationCategories: []kernel.Key{category}, EmailAllowed: true, Active: true, Tags: []kernel.Key{tag},
 	}
 }

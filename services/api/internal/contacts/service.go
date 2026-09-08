@@ -879,7 +879,7 @@ func mustEntityID(value uuid.UUID) kernel.EntityID {
 }
 
 func (service *Service) now() (time.Time, error) {
-	now := service.clock()
+	now := service.clock().UTC().Truncate(time.Microsecond)
 	if !validInstant(now) {
 		return time.Time{}, ErrUnavailable
 	}

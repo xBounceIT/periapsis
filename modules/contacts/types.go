@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -251,39 +252,9 @@ func directionalControl(character rune) bool {
 		character >= '\u2066' && character <= '\u2069'
 }
 
-func validLanguage(value string) bool {
-	if len(value) < 2 || len(value) > 35 || value != strings.ToLower(value) || value == "und" {
-		return false
-	}
-	parts := strings.Split(value, "-")
-	if len(parts[0]) < 2 || len(parts[0]) > 3 || !allASCIILetters(parts[0]) {
-		return false
-	}
-	for _, part := range parts[1:] {
-		if len(part) < 2 || len(part) > 8 || !allASCIIAlphaNumeric(part) {
-			return false
-		}
-	}
-	return true
-}
+var contactLanguagePattern = regexp.MustCompile(`^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$`)
 
-func allASCIILetters(value string) bool {
-	for _, character := range value {
-		if character < 'a' || character > 'z' {
-			return false
-		}
-	}
-	return true
-}
-
-func allASCIIAlphaNumeric(value string) bool {
-	for _, character := range value {
-		if (character < 'a' || character > 'z') && (character < '0' || character > '9') {
-			return false
-		}
-	}
-	return true
-}
+func validLanguage(value string) bool { return contactLanguagePattern.MatchString(value) }
 
 func validTimezone(value string) bool {
 	if len(value) < 1 || len(value) > 64 || value == "Local" || strings.HasPrefix(value, "/") ||

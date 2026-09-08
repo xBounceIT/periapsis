@@ -13,6 +13,34 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34163097509` passes ingestion, typed-field import, concurrent claim
+      and SLA projection, then the activity feed returns 503. Preserve the
+      namespaces of `custom_field.imported` and `sla.action.executed`, publish
+      those operator activity kinds in OpenAPI, and accept bounded camelCase
+      event metadata separately from custom-field keys. Customer feeds retain
+      their closed public event list and redacted projection.
+      Native concurrent requests also expose `40001` authority-lock contention:
+      classify aborted transient statements only for the session-revalidation
+      ABI. Retry usable-session conflicts with bounded, cancellable backoff,
+      rereading the current version, authority and time before each decision.
+      Credential transitions are not restarted by this retry path; revocation
+      discovered during the retry remains authoritative.
+      Contact creation requires a UTC microsecond clock and the canonical
+      language casing already specified by OpenAPI and PostgreSQL (`it-IT`).
+      The contact-link acceptance step must use the current Alert ETag after
+      import and assignment. V58 grants the SLA owner column-scoped lock
+      privileges on notification configurations while retaining tenant/revocation
+      filtering and a false UPDATE check. Contact-link commit and replay now expose
+      the same creator field for Alert and Case authorization records. Published
+      migrations remain unchanged; 0246/0247 introduce and attest these repairs.
+      Contact metadata uses the exact ticket update permission, not the separate
+      Alert-to-Case workflow link action; stale versions and read-only operators
+      remain denied. SLA timer events can independently advance the projection
+      version beyond the claim's ticket version.
+      IOC and asset projections normalize PostgreSQL inet host prefixes and
+      scanned observation times to canonical host addresses and UTC; network
+      prefixes remain rejected. Native HTTP acceptance covers both writes.
+      Retain complete Linux acceptance for these repairs.
 - [ ] Run `34159066895` passes composed notification preview/test-send and SLA
       setup/simulation, then acceptance includes operator-team assignment in
       machine Alert ingestion and correctly receives 403. Create/replay through

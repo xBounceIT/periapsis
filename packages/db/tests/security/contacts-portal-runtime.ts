@@ -2080,6 +2080,76 @@ try {
     }),
     (error: unknown) => assertSqlState(error, "42501"),
   );
+  for (const [index, target] of portalDownloadTargets.entries()) {
+    // eslint-disable-next-line no-await-in-loop -- Exercise each ticket variant and its replay in one transaction.
+    await sql.begin(async (transaction) => {
+      const relation = target.kind === "alert" ? "alerts" : "cases";
+      const [ticket] = await transaction<{ version: number }[]>`
+        SELECT version FROM ${transaction(`public.${relation}`)}
+        WHERE id = ${target.rootId}::uuid
+      `;
+      assert(ticket);
+      await setApiContext(transaction, fixture.adminUser, fixture.tenant);
+      const linkId = `01a10700-1000-7000-8000-000000000e0${index + 1}`;
+      const key = Buffer.alloc(32, 0x71 + index);
+      const request = Buffer.alloc(32, 0x73 + index);
+      const payload = {
+        ticketKind: target.kind,
+        ticketId: target.rootId,
+        contactId: fixture.unlinkedRecipientContact,
+        role: "watcher",
+        origin: "manual",
+        sourceAlertId: null,
+        sourceAlertVersion: null,
+        version: 1,
+        createdAt: new Date().toISOString(),
+        archivedAt: null,
+      };
+      const commit = (
+        context = transaction,
+        expectedVersion = ticket.version,
+        membershipId: string = fixture.adminMembership,
+      ) => context<{ replayed: boolean }[]>`
+        SELECT * FROM app.commit_ticket_customer_contact_v1(
+          'ticket_contact.link', ${linkId}::uuid, 0, ${expectedVersion}::bigint,
+          ${transaction.json(payload)}::jsonb, ${key}, ${request}, '',
+          ${linkId}::uuid, ${fixture.replayCorrelation}::uuid,
+          ${membershipId}::uuid, '192.0.2.42'::inet,
+          'contacts-portal-runtime', 'totp'
+        )
+      `;
+      await assert.rejects(
+        transaction.savepoint(async (stale) => {
+          await commit(stale, ticket.version + 1);
+        }),
+        (error: unknown) => assertSqlState(error, "40001"),
+      );
+      await assert.rejects(
+        transaction.savepoint(async (denied) => {
+          await setApiContext(
+            denied,
+            fixture.readOnlyOperatorUser,
+            fixture.tenant,
+          );
+          await commit(
+            denied,
+            ticket.version,
+            fixture.readOnlyOperatorMembership,
+          );
+        }),
+        (error: unknown) => assertSqlState(error, "42501"),
+      );
+      assert.equal((await commit())[0]?.replayed, false);
+      assert.equal((await commit())[0]?.replayed, true);
+      const [replay] = await transaction<{ resource_id: string }[]>`
+        SELECT resource_id::text FROM app.replay_customer_contact_command_v1(
+          'ticket_contact.link', ${key}, ${request}, ${linkId}::uuid,
+          ${target.kind}::public.ticket_aggregate_kind, ${target.rootId}::uuid
+        )
+      `;
+      assert.equal(replay?.resource_id, linkId);
+    });
+  }
 } finally {
   await Promise.allSettled([sql.end(), notifier.end()]);
 }

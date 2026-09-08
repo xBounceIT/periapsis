@@ -1215,6 +1215,11 @@ async function runLivePhaseThreeAcceptance({
     customerContact.body?.id,
     "live customer contact ID",
   );
+  const alertBeforeContactLink = await request(
+    `/api/v1/tenants/${liveTenantId}/alerts/${alertId}`,
+    { cookie },
+  );
+  expectStatus(alertBeforeContactLink, 200, "Alert contact-link precondition");
   const linkedContact = await request(
     `/api/v1/tenants/${liveTenantId}/alerts/${alertId}/contacts`,
     {
@@ -1222,7 +1227,11 @@ async function runLivePhaseThreeAcceptance({
       cookie,
       csrfToken,
       origin: browserOrigin,
-      ifMatch: '"v1"',
+      ifMatch: requiredHeader(
+        alertBeforeContactLink,
+        "etag",
+        "Alert version before linking contact",
+      ),
       idempotencyKey: acceptanceKey("live-contact-link"),
       json: { contactId: customerContactId, role: "primary" },
     },
@@ -3216,9 +3225,9 @@ async function proveConcurrentClaim({
     expectedVersion + 1,
   );
   assert(
-    claimedSLA.aggregateVersion === expectedVersion + 1 &&
+    claimedSLA.aggregateVersion >= expectedVersion + 1 &&
       claimedSLA.metrics?.length > 0,
-    "claim race must advance the SLA projection to the persisted winner version",
+    "claim race must advance the SLA projection; timer events may advance it further",
   );
 }
 

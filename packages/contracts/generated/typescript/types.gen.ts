@@ -7222,7 +7222,7 @@ export type CustomerCommentRevisionList = {
     nextAfterRevision?: number;
 };
 
-export type OperatorActivityKind = 'created' | 'transitioned' | 'assigned' | 'claimed' | 'released' | 'transferred' | 'escalated' | 'linked' | 'unlinked' | 'relation_added' | 'relation_retracted' | 'comment.public' | 'comment.private';
+export type OperatorActivityKind = 'created' | 'transitioned' | 'assigned' | 'claimed' | 'released' | 'transferred' | 'escalated' | 'linked' | 'unlinked' | 'relation_added' | 'relation_retracted' | 'comment.public' | 'comment.private' | 'custom_field.imported' | 'sla.action.executed';
 
 export type CustomerActivityKind = 'created' | 'status_changed' | 'escalated' | 'linked' | 'unlinked' | 'comment.public';
 

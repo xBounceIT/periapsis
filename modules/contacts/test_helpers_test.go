@@ -43,7 +43,7 @@ func testFields(email string) ContactFields {
 		Email:                  testEmail(email),
 		Phone:                  "+390212345678",
 		Function:               "Incident manager",
-		Language:               "it-it",
+		Language:               "it-IT",
 		Timezone:               "Europe/Rome",
 		EscalationPriority:     20,
 		Class:                  testKey("gold"),

@@ -18,14 +18,15 @@ import (
 )
 
 var (
-	ErrInvalidOptions      = errors.New("invalid federated authentication options")
-	ErrInvalidInput        = errors.New("federated authentication input rejected")
-	ErrAuthentication      = errors.New("federated authentication rejected")
-	ErrIdentityCollision   = errors.New("federated identity collision")
-	ErrStaleConfiguration  = errors.New("federated configuration changed")
-	ErrSessionRejected     = errors.New("session rejected")
-	ErrRefreshRejected     = errors.New("OIDC refresh rejected")
-	ErrUpstreamLogoutRetry = errors.New("upstream logout retry failed")
+	ErrInvalidOptions              = errors.New("invalid federated authentication options")
+	ErrInvalidInput                = errors.New("federated authentication input rejected")
+	ErrAuthentication              = errors.New("federated authentication rejected")
+	ErrIdentityCollision           = errors.New("federated identity collision")
+	ErrStaleConfiguration          = errors.New("federated configuration changed")
+	ErrSessionRejected             = errors.New("session rejected")
+	ErrSessionRevalidationConflict = errors.New("session revalidation authority changed")
+	ErrRefreshRejected             = errors.New("OIDC refresh rejected")
+	ErrUpstreamLogoutRetry         = errors.New("upstream logout retry failed")
 )
 
 type Protocol string
