@@ -3431,45 +3431,43 @@ async function prepareSLAAcceptance(liveTenantId, smtpConfigurationId) {
   );
   expectStatus(policy, 201, "SLA policy creation");
 
-  await Promise.all(
-    [
+  for (const column of [
+    {
+      id: uuidv7(),
+      key: "first_response_due",
+      label: "First response due",
+      metricDefinitionId: firstResponseMetricId,
+      calculation: "due_at",
+      format: "datetime",
+      position: 10,
+    },
+    {
+      id: uuidv7(),
+      key: "resolution_remaining",
+      label: "Resolution remaining",
+      metricDefinitionId: resolutionMetricId,
+      calculation: "remaining_seconds",
+      format: "duration",
+      position: 20,
+    },
+  ]) {
+    const created = await administratorRequest(
+      `/api/v1/tenants/${liveTenantId}/sla-columns`,
       {
-        id: uuidv7(),
-        key: "first_response_due",
-        label: "First response due",
-        metricDefinitionId: firstResponseMetricId,
-        calculation: "due_at",
-        format: "datetime",
-        position: 10,
-      },
-      {
-        id: uuidv7(),
-        key: "resolution_remaining",
-        label: "Resolution remaining",
-        metricDefinitionId: resolutionMetricId,
-        calculation: "remaining_seconds",
-        format: "duration",
-        position: 20,
-      },
-    ].map(async (column) => {
-      const created = await administratorRequest(
-        `/api/v1/tenants/${liveTenantId}/sla-columns`,
-        {
-          method: "POST",
-          idempotencyKey: acceptanceKey(`sla-column-${column.key}`),
-          json: {
-            ...column,
-            sortable: true,
-            filterable: true,
-            customerVisible: true,
-            visibleRoleKeys: ["senior_analyst"],
-            styleRules: [],
-          },
+        method: "POST",
+        idempotencyKey: acceptanceKey(`sla-column-${column.key}`),
+        json: {
+          ...column,
+          sortable: true,
+          filterable: true,
+          customerVisible: true,
+          visibleRoleKeys: ["senior_analyst"],
+          styleRules: [],
         },
-      );
-      expectStatus(created, 201, `SLA ${column.key} column creation`);
-    }),
-  );
+      },
+    );
+    expectStatus(created, 201, `SLA ${column.key} column creation`);
+  }
 
   const simulationCoordinates = {
     policyVersion: 1,

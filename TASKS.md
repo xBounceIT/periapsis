@@ -13,6 +13,11 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34214756368` encounters an intermittent 412 while two SLA columns
+      are created concurrently during fixture setup. Serialize these configuration
+      writes and retain both successful-creation assertions. The deliberate ticket
+      claim-race acceptance remains concurrent. Complete Linux acceptance on the
+      successor commit remains required.
 - [ ] Run `34213161528` passes real SLA email capture, system-Alert creation
       and non-recursive SLA checks. Its next audit request uses an invalid trailing
       dot in `actionPrefix`. Use the canonical `tenant.sla.action` namespace;
