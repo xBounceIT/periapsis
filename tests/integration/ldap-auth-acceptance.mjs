@@ -3650,7 +3650,7 @@ async function verifyLiveSLATriggers({
     "non-recursive SLA system Alert projection",
   );
   const actionAudit = await administratorRequest(
-    `/api/v1/tenants/${liveTenantId}/audit-events?actionPrefix=tenant.sla.action.&limit=100`,
+    `/api/v1/tenants/${liveTenantId}/audit-events?actionPrefix=tenant.sla.action&limit=100`,
   );
   expectStatus(actionAudit, 200, "SLA trigger-action audit listing");
   const serializedAudit = JSON.stringify(actionAudit.body?.items ?? []);

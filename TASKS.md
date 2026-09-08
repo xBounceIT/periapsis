@@ -13,6 +13,12 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34213161528` passes real SLA email capture, system-Alert creation
+      and non-recursive SLA checks. Its next audit request uses an invalid trailing
+      dot in `actionPrefix`. Use the canonical `tenant.sla.action` namespace;
+      the API and SQL already match its dotted descendants. Keep the occurrence,
+      action-kind and exactly-once audit/activity assertions unchanged.
+      Complete Linux acceptance on the successor commit remains required.
 - [ ] Run `34210260958` reaches the live SLA email assertion, but Mailpit
       receives no warning. Native API/worker/notifier reproduction identifies
       fanout validation rejecting PostgreSQL's canonical ungrouped defaults
