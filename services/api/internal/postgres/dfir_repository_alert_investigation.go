@@ -353,6 +353,8 @@ func (repository *DFIRRepository) CommitAlertEvidence(
 				return application.MutationResult[kernel.AlertEvidence]{Resource: replayed, Replayed: true}, nil
 			}
 			var attachedStorage uuid.UUID
+			// The security-definer creation function locks and validates storage in
+			// this serializable transaction; the API role only reads these tables.
 			if err := tx.QueryRow(ctx, `
 				SELECT storage.id
 				FROM public.dfir_storage_objects AS storage
@@ -361,8 +363,7 @@ func (repository *DFIRRepository) CommitAlertEvidence(
 				WHERE storage.tenant_id = $1 AND storage.id = $2
 				  AND attachment.subject_kind = 'alert' AND attachment.alert_id = $3
 				  AND attachment.case_id IS NULL AND attachment.ioc_id IS NULL AND attachment.asset_id IS NULL
-				  AND attachment.evidence_id IS NULL AND attachment.task_id IS NULL
-				FOR UPDATE OF storage, attachment`, tenantID, storageID, alertID).Scan(&attachedStorage); err != nil {
+				  AND attachment.evidence_id IS NULL AND attachment.task_id IS NULL`, tenantID, storageID, alertID).Scan(&attachedStorage); err != nil {
 				return application.MutationResult[kernel.AlertEvidence]{}, err
 			}
 			storage, err := loadDFIRStorageObject(ctx, tx, tenantID, attachedStorage)
@@ -469,11 +470,8 @@ func (repository *DFIRRepository) MutateAlertEvidence(
 				}
 				return application.MutationResult[kernel.AlertEvidence]{Resource: replayed, Replayed: true}, nil
 			}
-			var locked int
-			if err := tx.QueryRow(ctx, `SELECT 1 FROM public.dfir_evidence
-				WHERE tenant_id = $1 AND alert_id = $2 AND case_id IS NULL AND id = $3 FOR UPDATE`, tenantID, alertID, evidenceID).Scan(&locked); err != nil {
-				return application.MutationResult[kernel.AlertEvidence]{}, err
-			}
+			// append_alert_dfir_custody_event_v1 locks the row and checks the
+			// expected version before appending in this serializable transaction.
 			current, err := loadDFIRAlertEvidence(ctx, tx, tenantID, alertID, evidenceID)
 			if err != nil {
 				return application.MutationResult[kernel.AlertEvidence]{}, err

@@ -13,6 +13,13 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Native PostgreSQL/API DFIR evidence proof reproduces denied direct row
+      locks on storage and evidence, then an Alert custody actor mismatch. Keep
+      locking and revision checks in the authorized SQL mutation functions within
+      the serializable transaction. Read Alert custody actors as user identities
+      while retaining Case membership identities. Synthetic verified-storage proof
+      passes evidence creation, custody append and exact historical replay; retain
+      the full real-storage browser proof on the final commit.
 - [ ] Run `34260601299` completes real DFIR upload and scanner processing, then
       consumed upload replay returns 412 instead of the contracted 409. Return
       repository conflict for failed live upload-replay eligibility on both Alert

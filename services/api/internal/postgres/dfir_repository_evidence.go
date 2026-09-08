@@ -51,14 +51,15 @@ func (repository *DFIRRepository) CreateEvidence(
 				return application.MutationResult[kernel.Evidence]{Resource: historical, Replayed: true}, nil
 			}
 			var attachedStorage uuid.UUID
+			// The security-definer creation function locks and validates storage in
+			// this serializable transaction; the API role only reads these tables.
 			if lockErr := tx.QueryRow(ctx, `
 				SELECT storage.id
 				FROM public.dfir_storage_objects AS storage
 				JOIN public.dfir_attachments AS attachment
 				  ON attachment.tenant_id = storage.tenant_id AND attachment.storage_object_id = storage.id
 				WHERE storage.tenant_id = $1 AND storage.id = $2
-				  AND app.dfir_attachment_belongs_to_root_v1($1, 'case', $3, attachment.id)
-				FOR UPDATE OF storage, attachment`, tenantID, storageID, caseID).Scan(&attachedStorage); lockErr != nil {
+				  AND app.dfir_attachment_belongs_to_root_v1($1, 'case', $3, attachment.id)`, tenantID, storageID, caseID).Scan(&attachedStorage); lockErr != nil {
 				return application.MutationResult[kernel.Evidence]{}, lockErr
 			}
 			storage, storageErr := loadDFIRStorageObject(ctx, tx, tenantID, attachedStorage)
@@ -187,12 +188,8 @@ func (repository *DFIRRepository) AppendCustody(
 				}
 				return application.MutationResult[kernel.Evidence]{Resource: historical, Replayed: true}, nil
 			}
-			var locked int
-			if lockErr := tx.QueryRow(ctx, `SELECT 1 FROM public.dfir_evidence
-				WHERE tenant_id = $1 AND case_id = $2 AND alert_id IS NULL AND id = $3 FOR UPDATE`,
-				tenantID, caseID, id).Scan(&locked); lockErr != nil {
-				return application.MutationResult[kernel.Evidence]{}, lockErr
-			}
+			// append_dfir_custody_event_v1 locks the row and checks the expected
+			// version before appending in this serializable transaction.
 			stored, loadErr := loadDFIREvidence(ctx, tx, tenantID, caseID, id)
 			if loadErr != nil {
 				return application.MutationResult[kernel.Evidence]{}, loadErr

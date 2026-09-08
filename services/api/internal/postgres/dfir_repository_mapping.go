@@ -890,12 +890,15 @@ func loadDFIRCustody(
 	expected int64,
 ) ([]kernel.CustodyEventState, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id, tenant_id, evidence_id, sequence, action::text,
-		       coalesce(actor_membership_id, actor_service_account_id, actor_id),
-		       reason, state_value, previous_hash, event_hash, occurred_at
-		FROM public.dfir_custody_events
-		WHERE tenant_id = $1 AND evidence_id = $2
-		ORDER BY sequence LIMIT 1001`, tenantID, evidenceID)
+		SELECT event.id, event.tenant_id, event.evidence_id, event.sequence, event.action::text,
+		       CASE WHEN evidence.alert_id IS NOT NULL THEN event.actor_id
+		         ELSE coalesce(event.actor_membership_id, event.actor_service_account_id, event.actor_id) END,
+		       event.reason, event.state_value, event.previous_hash, event.event_hash, event.occurred_at
+		FROM public.dfir_custody_events AS event
+		JOIN public.dfir_evidence AS evidence
+		  ON evidence.tenant_id = event.tenant_id AND evidence.id = event.evidence_id
+		WHERE event.tenant_id = $1 AND event.evidence_id = $2
+		ORDER BY event.sequence LIMIT 1001`, tenantID, evidenceID)
 	if err != nil {
 		return nil, err
 	}

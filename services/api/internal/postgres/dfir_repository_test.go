@@ -207,7 +207,7 @@ func TestLoadDFIRCustodyUsesMembershipIdentityForCanonicalHashProjection(t *test
 	previous[0], eventHash[0] = 1, 2
 	occurredAt := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	tx := &dfirTransactionStub{query: func(query string, _ []any) (pgx.Rows, error) {
-		if !strings.Contains(query, "coalesce(actor_membership_id, actor_service_account_id, actor_id)") {
+		if !strings.Contains(query, "ELSE coalesce(event.actor_membership_id, event.actor_service_account_id, event.actor_id)") {
 			return nil, errors.New("custody query did not select the canonical membership identity")
 		}
 		return &dfirRowsStub{rows: [][]any{{
