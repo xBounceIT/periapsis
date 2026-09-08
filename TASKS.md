@@ -13,6 +13,14 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34256987533` passes export, isolation and customer-comment scenarios,
+      then DFIR upload preparation returns 503. Native API reproduction identifies
+      non-canonical storage and attachment timestamps after PostgreSQL readback.
+      Normalize scanned instants to UTC through the existing mapper boundary,
+      covering shared storage, attachments, Case investigation readback and worker
+      scan restoration. Native upload preparation returns 201; mapper regressions
+      cover pending, verified and retained storage. Retain real upload, scan,
+      download and custody evidence on the final commit.
 - [ ] Run `34253971208` passes the full export and isolation scenario, then
       customer comment creation returns 503. The native PostgreSQL regression
       reproduces ambiguous `contact_id` in the activity author trigger. V62

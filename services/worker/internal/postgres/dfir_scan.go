@@ -267,15 +267,23 @@ func restoreDFIRStorageObject(
 	object, err := kernel.RestoreStorageObject(kernel.StorageObjectState{
 		ID: storageEntityID, TenantID: tenantEntityID, Bucket: bucket, ObjectKey: key,
 		OriginalFilename: filename, Classification: kernel.EvidenceClassification(classification),
-		ExpectedSizeBytes: expectedSize, UploadExpiresAt: uploadExpires, CreatedBy: creatorEntityID,
-		CreatedAt: createdAt, UpdatedAt: updatedAt, State: kernel.ScanState(state),
+		ExpectedSizeBytes: expectedSize, UploadExpiresAt: uploadExpires.UTC(), CreatedBy: creatorEntityID,
+		CreatedAt: createdAt.UTC(), UpdatedAt: updatedAt.UTC(), State: kernel.ScanState(state),
 		ContentSHA256: contentSHA256, SizeBytes: size, DetectedMIME: detectedMIME,
-		VerifiedAt: verifiedAt, RetentionUntil: retentionUntil, LegalHold: legalHold, Version: uint64(version),
+		VerifiedAt: canonicalDFIRScanOptionalTime(verifiedAt), RetentionUntil: canonicalDFIRScanOptionalTime(retentionUntil), LegalHold: legalHold, Version: uint64(version),
 	})
 	if err != nil {
 		return kernel.StorageObject{}, dfirscan.ErrInvalidClaim
 	}
 	return object, nil
+}
+
+func canonicalDFIRScanOptionalTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	canonical := value.UTC()
+	return &canonical
 }
 
 func nullableFailureCategory(value string) any {

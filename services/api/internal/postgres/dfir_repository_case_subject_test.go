@@ -105,7 +105,7 @@ func TestDFIRCaseAttachmentLoadAndStoragePurposeRemainPathBound(t *testing.T) {
 						*(destinations[11].(*string)) = visibility
 						*(destinations[12].(*string)) = string(kernel.ScanAvailable)
 						*(destinations[13].(*uuid.UUID)) = alertTestUUID(236)
-						*(destinations[14].(*time.Time)) = alertTestTime(0)
+						*(destinations[14].(*time.Time)) = alertTestTime(0).In(time.FixedZone("database", 7200))
 						*(destinations[15].(*int64)) = version
 					case strings.Contains(query, "FROM public.dfir_attachment_case_links"):
 						if len(args) != 3 || args[1] != attachmentID || args[2] != caseID {
@@ -134,6 +134,9 @@ func TestDFIRCaseAttachmentLoadAndStoragePurposeRemainPathBound(t *testing.T) {
 				attachment, err := loadDFIRAttachment(context.Background(), tx, tenantID, caseID, attachmentID)
 				if err != nil || attachment.Subject().Kind() != kind || attachment.Subject().ID() != entityID(resourceID) {
 					t.Fatalf("shared Case attachment = %v", err)
+				}
+				if attachment.UploadedAt().Location() != time.UTC || !attachment.UploadedAt().Equal(alertTestTime(0)) {
+					t.Fatal("attachment upload instant was not normalized to UTC")
 				}
 				if _, err := loadExactDFIRStorageObjectForRoot(context.Background(), tx, tenantID, kernel.EntityCase, caseID, attachmentID, storageID); !errors.Is(err, storageRead) {
 					t.Fatalf("exact Case storage read = %v", err)

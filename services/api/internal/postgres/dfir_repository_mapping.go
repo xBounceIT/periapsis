@@ -251,8 +251,8 @@ func loadDFIRTimelineEvent(
 		return kernel.TimelineEvent{}, 0, err
 	}
 	input := kernel.TimelineEventInput{
-		ID: identifier, TenantID: tenant, EventTime: eventTime,
-		IngestedAt: ingestedAt, OriginalTimezone: timezone, Precision: kernel.TemporalPrecision(precision),
+		ID: identifier, TenantID: tenant, EventTime: canonicalAlertDatabaseTime(eventTime),
+		IngestedAt: canonicalAlertDatabaseTime(ingestedAt), OriginalTimezone: timezone, Precision: kernel.TemporalPrecision(precision),
 		Source: source, Category: category, Title: title, Description: description,
 		ActorID: actorEntity, IOCIDs: iocIDs, AssetIDs: assetIDs, EvidenceIDs: evidenceIDs, Tags: tags,
 	}
@@ -409,7 +409,7 @@ func loadDFIRTask(
 		}
 		checklist[index], err = kernel.NewChecklistItem(kernel.ChecklistItemInput{
 			ID: itemEntity, Title: row.Title, Completed: row.Completed,
-			CompletedAt: itemAt, CompletedBy: itemBy,
+			CompletedAt: canonicalOptionalAlertDatabaseTime(itemAt), CompletedBy: itemBy,
 		})
 		if err != nil {
 			return kernel.Task{}, unexpectedDFIRProjection("non-canonical checklist item")
@@ -425,9 +425,9 @@ func loadDFIRTask(
 	task, err := kernel.NewTask(kernel.TaskInput{
 		ID: identifier, TenantID: tenant, CaseID: caseEntity, Title: title,
 		Description: description, Status: kernel.TaskStatus(status), Priority: kernel.TaskPriority(priority),
-		AssigneeID: assignee, OperatorTeamID: team, DueAt: dueAt, Checklist: checklist,
-		CompletedAt: completedAt, CompletedBy: completer, CompletionData: canonicalJSONObject(completionData),
-		CommentIDs: comments, SLAInstanceID: sla, CreatedAt: createdAt, UpdatedAt: updatedAt,
+		AssigneeID: assignee, OperatorTeamID: team, DueAt: canonicalOptionalAlertDatabaseTime(dueAt), Checklist: checklist,
+		CompletedAt: canonicalOptionalAlertDatabaseTime(completedAt), CompletedBy: completer, CompletionData: canonicalJSONObject(completionData),
+		CommentIDs: comments, SLAInstanceID: sla, CreatedAt: canonicalAlertDatabaseTime(createdAt), UpdatedAt: canonicalAlertDatabaseTime(updatedAt),
 		Version: uint64(version),
 	})
 	if err != nil {
@@ -490,10 +490,10 @@ func loadDFIRStorageObject(
 	object, err := kernel.RestoreStorageObject(kernel.StorageObjectState{
 		ID: identifier, TenantID: tenant, Bucket: bucket, ObjectKey: objectKey,
 		OriginalFilename: filename, Classification: kernel.EvidenceClassification(classification),
-		ExpectedSizeBytes: expectedSizeBytes, UploadExpiresAt: uploadExpiresAt,
-		CreatedBy: creator, CreatedAt: createdAt, UpdatedAt: updatedAt,
+		ExpectedSizeBytes: expectedSizeBytes, UploadExpiresAt: canonicalAlertDatabaseTime(uploadExpiresAt),
+		CreatedBy: creator, CreatedAt: canonicalAlertDatabaseTime(createdAt), UpdatedAt: canonicalAlertDatabaseTime(updatedAt),
 		State: kernel.ScanState(state), ContentSHA256: contentHash, SizeBytes: size,
-		DetectedMIME: mediaType, VerifiedAt: verifiedAt, RetentionUntil: retentionUntil,
+		DetectedMIME: mediaType, VerifiedAt: canonicalOptionalAlertDatabaseTime(verifiedAt), RetentionUntil: canonicalOptionalAlertDatabaseTime(retentionUntil),
 		LegalHold: legalHold, Version: uint64(version),
 	})
 	if err != nil {
@@ -631,7 +631,7 @@ func loadDFIRAttachmentForRoot(
 		ID: identifier, TenantID: tenant, Subject: subject, StorageObjectID: storage,
 		OriginalFilename: filename, RequestedVisibility: requested,
 		SubjectVisibility: inheritedVisibility, UploadedBy: uploader,
-		UploadedAt: uploadedAt, ScanState: kernel.ScanState(scanState),
+		UploadedAt: canonicalAlertDatabaseTime(uploadedAt), ScanState: kernel.ScanState(scanState),
 	})
 	if err != nil || attachment.Visibility() != requested {
 		return kernel.Attachment{}, unexpectedDFIRProjection("non-canonical attachment")
@@ -854,9 +854,9 @@ func loadDFIREvidence(
 		Title: title, Description: description, EvidenceType: evidenceType,
 		Classification: kernel.EvidenceClassification(classification),
 		ContentSHA256:  hex.EncodeToString(contentDigest), SizeBytes: sizeBytes,
-		DetectedMIME: detectedMIME, CollectedAt: collectedAt, CollectedBy: collector,
-		Source: source, RetentionUntil: retention, LegalHold: legalHold,
-		ScanState: kernel.ScanState(scanState), InitialRetentionUntil: initialRetention,
+		DetectedMIME: detectedMIME, CollectedAt: canonicalAlertDatabaseTime(collectedAt), CollectedBy: collector,
+		Source: source, RetentionUntil: canonicalOptionalAlertDatabaseTime(retention), LegalHold: legalHold,
+		ScanState: kernel.ScanState(scanState), InitialRetentionUntil: canonicalOptionalAlertDatabaseTime(initialRetention),
 		InitialLegalHold: initialLegalHold, InitialScanState: kernel.ScanState(initialScanState),
 		Sealed: sealed, Destroyed: destroyed, Version: uint64(version), CustodyEvents: custody,
 	})
@@ -937,7 +937,7 @@ func loadDFIRCustody(
 			ID: idEntity, TenantID: tenantEntity, EvidenceID: evidenceEntity,
 			Sequence: uint64(sequence), Action: kernel.CustodyAction(action),
 			ActorID: actorEntity, Reason: reason, StateValue: stateValue,
-			PreviousHash: previous, EventHash: eventHashArray, OccurredAt: occurredAt,
+			PreviousHash: previous, EventHash: eventHashArray, OccurredAt: canonicalAlertDatabaseTime(occurredAt),
 		})
 	}
 	if rows.Err() != nil {
