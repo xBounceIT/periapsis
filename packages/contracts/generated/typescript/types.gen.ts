@@ -7222,7 +7222,7 @@ export type CustomerCommentRevisionList = {
     nextAfterRevision?: number;
 };
 
-export type OperatorActivityKind = 'created' | 'transitioned' | 'assigned' | 'claimed' | 'released' | 'transferred' | 'escalated' | 'linked' | 'unlinked' | 'relation_added' | 'relation_retracted' | 'comment.public' | 'comment.private' | 'custom_field.imported' | 'sla.action.executed';
+export type OperatorActivityKind = 'created' | 'transitioned' | 'assigned' | 'claimed' | 'released' | 'transferred' | 'escalated' | 'linked' | 'unlinked' | 'relation_added' | 'relation_retracted' | 'comment.public' | 'comment.private' | 'custom_field.imported' | 'sla.action.executed' | 'dfir.ioc.created' | 'dfir.ioc.replaced' | 'dfir.ioc.linked' | 'dfir.ioc.unlinked' | 'dfir.asset.created' | 'dfir.asset.replaced' | 'dfir.asset.linked' | 'dfir.asset.unlinked' | 'dfir.attachment.prepared' | 'dfir.timeline.created' | 'evidence.added' | 'evidence.custody_appended' | 'task.created' | 'task.transitioned' | 'task.assigned' | 'task.rescheduled' | 'task.checklist_replaced' | 'relationship.created' | 'relationship.retracted';
 
 export type CustomerActivityKind = 'created' | 'status_changed' | 'escalated' | 'linked' | 'unlinked' | 'comment.public';
 

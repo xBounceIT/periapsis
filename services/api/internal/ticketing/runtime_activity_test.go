@@ -10,7 +10,7 @@ import (
 
 func TestRuntimeActivityKindsRemainOperatorOnly(t *testing.T) {
 	fixture := newServiceFixture(t)
-	for _, kind := range []string{"custom_field.imported", "sla.action.executed"} {
+	for _, kind := range []string{"custom_field.imported", "sla.action.executed", "dfir.ioc.created", "dfir.ioc.replaced", "dfir.ioc.linked", "dfir.ioc.unlinked", "dfir.asset.created", "dfir.asset.replaced", "dfir.asset.linked", "dfir.asset.unlinked", "dfir.attachment.prepared", "dfir.timeline.created", "evidence.added", "evidence.custody_appended", "task.created", "task.transitioned", "task.assigned", "task.rescheduled", "task.checklist_replaced", "relationship.created", "relationship.retracted"} {
 		activity := Activity{ID: mustUUIDv7(t), TenantID: fixture.tenantUUID, ResourceID: fixture.ticketUUID, ResourceKind: kernel.AggregateAlert, Kind: kind, Summary: "Runtime action", ActorKind: ActivityActorSystem, DisplayName: "System", Origin: "operator", OccurredAt: fixture.record.CreatedAt, Details: map[string]any{"contentRedacted": true}}
 		if !validActivity(activity, View{Record: fixture.record, Projection: ProjectionOperator}, fixture.tenantUUID, kernel.AggregateAlert) {
 			t.Fatalf("operator runtime activity rejected: %s", kind)

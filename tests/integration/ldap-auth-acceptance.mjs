@@ -3115,7 +3115,7 @@ async function createServiceAccountAlert({
       claimRaceAlert.body?.creator?.serviceAccountId === serviceAccountId,
     "claim race must use a separate Alert created by the ingestion principal",
   );
-  const assignCreatedAlert = async (created) => {
+  const assignCreatedAlert = async (created, attempt = 0) => {
     const alertId = requiredIdentifier(created.body?.id, "created Alert ID");
     const current = await administratorRequest(
       `/api/v1/tenants/${liveTenantId}/alerts/${alertId}`,
@@ -3138,6 +3138,13 @@ async function createServiceAccountAlert({
         },
       },
     );
+    // The SLA worker may lock or advance the ticket between GET and POST.
+    // Retry the setup with a fresh precondition; the claim race below remains
+    // simultaneous and must still produce exactly one committed winner.
+    if ([409, 412].includes(assigned.response.status) && attempt < 5) {
+      await delay(250 * (attempt + 1));
+      return assignCreatedAlert(created, attempt + 1);
+    }
     expectStatus(assigned, 200, "operator assignment of ingested Alert");
     const assignedVersion = versionFromStrongETag(
       requiredHeader(assigned, "etag", "assigned Alert version"),

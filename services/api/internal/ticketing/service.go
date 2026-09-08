@@ -1050,7 +1050,8 @@ func validActivityDetails(values map[string]any) bool {
 
 func validOperatorActivity(activity Activity, tenantID uuid.UUID, kind kernel.AggregateKind) bool {
 	return validActivityEnvelope(activity, tenantID, kind) && validActivityActor(activity) &&
-		validEnum(activity.Kind, "created", "transitioned", "assigned", "claimed", "released", "transferred", "comment.public", "comment.private", "escalated", "linked", "unlinked", "relation_added", "relation_retracted", "custom_field.imported", "sla.action.executed")
+		validEnum(activity.Kind, "created", "transitioned", "assigned", "claimed", "released", "transferred", "comment.public", "comment.private", "escalated", "linked", "unlinked", "relation_added", "relation_retracted", "custom_field.imported", "sla.action.executed",
+			"dfir.ioc.created", "dfir.ioc.replaced", "dfir.ioc.linked", "dfir.ioc.unlinked", "dfir.asset.created", "dfir.asset.replaced", "dfir.asset.linked", "dfir.asset.unlinked", "dfir.attachment.prepared", "dfir.timeline.created", "evidence.added", "evidence.custody_appended", "task.created", "task.transitioned", "task.assigned", "task.rescheduled", "task.checklist_replaced", "relationship.created", "relationship.retracted")
 }
 
 func validActivityActor(activity Activity) bool {

@@ -13,6 +13,15 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34201899933` passes 34 of 35 jobs, including the V58 upgrade,
+      full PostgreSQL/RLS suite and Mailpit acceptance. Compose hits a concurrent
+      assignment conflict on the separate claim-race Alert. Retry only setup
+      assignment conflicts with bounded backoff and a freshly read ETag;
+      retain the simultaneous claim winner, version, activity and audit assertions.
+      Native HTTP also reproduces a 503 reading activities after IOC/asset writes:
+      admit the exact persisted DFIR event inventory in the operator contract
+      and validator while preserving the closed customer event list.
+      Complete Linux acceptance on the successor commit remains required.
 - [ ] Run `34163097509` passes ingestion, typed-field import, concurrent claim
       and SLA projection, then the activity feed returns 503. Preserve the
       namespaces of `custom_field.imported` and `sla.action.executed`, publish
