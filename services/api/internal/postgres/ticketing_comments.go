@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math/rand/v2"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -186,6 +188,8 @@ type portalTicketCommentRevisionWire struct {
 	Attachments  []ticketCommentAttachmentWire `json:"attachments"`
 }
 
+var errTicketCommentSerialization = fmt.Errorf("%w: comment transaction serialization abort", application.ErrUnavailable)
+
 func mapTicketCommentDatabaseError(err error) error {
 	var databaseError *pgconn.PgError
 	if !errors.As(err, &databaseError) || databaseError.Code != "40001" {
@@ -194,7 +198,7 @@ func mapTicketCommentDatabaseError(err error) error {
 	if databaseError.Message == ticketCommentRevisionConflictMessage {
 		return application.ErrPreconditionFailed
 	}
-	return application.ErrUnavailable
+	return errTicketCommentSerialization
 }
 
 func withinTicketCommentReadTransaction[T any](
@@ -217,10 +221,30 @@ func withinTicketCommentWriteTransaction[T any](
 	tenantID uuid.UUID,
 	work func(databaseTransaction) (T, error),
 ) (T, error) {
-	return withinTicketActorTransactionWithOptionsAndMapper(
-		ctx, repository, actor, tenantID, pgx.TxOptions{IsoLevel: pgx.Serializable}, work,
-		mapTicketCommentDatabaseError,
-	)
+	var zero T
+	for attempt := 0; attempt < 6; attempt++ {
+		if ctx.Err() != nil {
+			return zero, application.ErrUnavailable
+		}
+		result, err := withinTicketActorTransactionWithOptionsAndMapper(
+			ctx, repository, actor, tenantID, pgx.TxOptions{IsoLevel: pgx.Serializable}, work,
+			mapTicketCommentDatabaseError,
+		)
+		if !errors.Is(err, errTicketCommentSerialization) || attempt == 5 {
+			return result, err
+		}
+		// PostgreSQL has aborted the entire transaction. Reinstall actor context
+		// and retry the same idempotent command; explicit revision conflicts exit above.
+		delay := 25 * time.Millisecond * time.Duration(1<<attempt)
+		timer := time.NewTimer(delay + time.Duration(rand.Int64N(int64(delay))))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return zero, application.ErrUnavailable
+		case <-timer.C:
+		}
+	}
+	return zero, application.ErrUnavailable
 }
 
 func (repository *TicketingRepository) CreateComment(

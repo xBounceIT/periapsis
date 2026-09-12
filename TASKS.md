@@ -13,6 +13,12 @@ final-journal database gates and the remaining release boundaries.
 
 ## CI consolidation (2026-09-07)
 
+- [ ] Run `34262734542` intermittently returns 503 on private comment creation.
+      A native eight-writer probe reproduces PostgreSQL serialization aborts with
+      six failed writes. Bounded whole-transaction retries retain serializable
+      isolation, reinstall actor context and preserve idempotency; explicit CAS
+      conflicts and ambiguous commit errors are not retried. The native probe
+      passes all eight writes after the fix; retain the final composed run.
 - [ ] Native PostgreSQL/API DFIR evidence proof reproduces denied direct row
       locks on storage and evidence, then an Alert custody actor mismatch. Keep
       locking and revision checks in the authorized SQL mutation functions within
